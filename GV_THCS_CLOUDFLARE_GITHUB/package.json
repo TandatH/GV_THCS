@@ -1,0 +1,57 @@
+{
+  "name": "quan-ly-giao-vien",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "22"
+  },
+  "workspaces": [
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @school/shared && next dev",
+    "build": "npm run build:cloudflare",
+    "build:cloudflare": "npm run build -w @school/shared && next build",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
+    "typecheck": "npm run build -w @school/shared && tsc --noEmit"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.18",
+    "@fullcalendar/daygrid": "^6.1.18",
+    "@fullcalendar/interaction": "^6.1.18",
+    "@fullcalendar/react": "^6.1.18",
+    "@fullcalendar/timegrid": "^6.1.18",
+    "@hookform/resolvers": "^5.2.1",
+    "@radix-ui/react-alert-dialog": "^1.1.14",
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-dropdown-menu": "^2.1.15",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-select": "^2.2.5",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@school/shared": "*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "firebase": "^12.0.0",
+    "lucide-react": "^0.525.0",
+    "next": "^15.4.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.60.0",
+    "recharts": "^3.1.0",
+    "sonner": "^2.0.6",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.10",
+    "@types/node": "^22.16.5",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.120.0"
+  }
+}
