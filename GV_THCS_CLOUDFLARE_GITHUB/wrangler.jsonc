@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gv-thcs-2026-2027",
+  "name": "gv-thcs",
   "compatibility_date": "2026-08-08",
   "assets": {
     "directory": "./out",
