@@ -144,7 +144,7 @@ export default function TeacherAttendancePage() {
 
   const confirmedPeriods = monthCheckins
     .filter((checkin) => ["confirmed", "adjusted"].includes(String(checkin.status)))
-    .reduce((sum, checkin) => sum + Number(checkin.periodCount || 0), 0);
+    .reduce((sum, checkin) => sum + Number(checkin.payablePeriods ?? checkin.periodCount ?? 0), 0);
   const pendingSchedules = monthSchedules.filter((schedule) => !checkinBySchedule.has(schedule.id)).length;
 
   return (
@@ -153,7 +153,7 @@ export default function TeacherAttendancePage() {
         <PageHeader
           eyebrow="Chấm công"
           title="Chấm công của tôi"
-          description="Theo dõi lịch trong tháng và các bản ghi chấm công đã được admin xác nhận hoặc điều chỉnh."
+          description="Theo dõi lịch trong tháng và tiết thực dạy. Chỉ chấm công ở trạng thái Đã chấm công/Đã điều chỉnh mới được tính vào thù lao; lịch phân công chưa tự động phát sinh tiền."
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -186,12 +186,13 @@ export default function TeacherAttendancePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[980px]">
-                <thead><tr><th>Ngày</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Số tiết</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
+                <thead><tr><th>Ngày</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Tiết tính công</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
                 <tbody>
                   {filteredRows.map(({ schedule, checkin }) => {
                     const date = checkin?.date || (schedule ? scheduleDate(schedule) : "");
                     const status = checkin?.status;
-                    const periods = checkin?.periodCount ?? (schedule ? periodCount(schedule) : 0);
+                    const payable = checkin ? ["confirmed", "adjusted"].includes(String(checkin.status)) : false;
+                    const periods = checkin ? (payable ? Number(checkin.payablePeriods ?? checkin.periodCount ?? 0) : 0) : 0;
                     return (
                       <tr key={schedule?.id || checkin?.id}>
                         <td>{formatDate(date)}</td>

@@ -52,6 +52,7 @@ export default function AvailabilityPage() {
   const { loading: authLoading, user } = useAuth();
   const [teacherId, setTeacherId] = useState("");
   const [teacherName, setTeacherName] = useState("");
+  const [teacherType, setTeacherType] = useState("");
   const [semesters, setSemesters] = useState<SemesterRow[]>([]);
   const [semesterId, setSemesterId] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
@@ -100,6 +101,7 @@ export default function AvailabilityPage() {
         if (!active) return;
         setTeacherId(teacherContext.teacherId);
         setTeacherName(String(teacherContext.teacherProfile.fullName || teacherContext.userProfile.displayName || "Giáo viên"));
+        setTeacherType(String(teacherContext.teacherProfile.teacherType || ""));
         setSemesters(activeSemesters);
         setSemesterId((current) => activeSemesters.some((semester) => semester.id === current) ? current : activeSemesters[0].id);
       } catch (loadError) {
@@ -158,6 +160,14 @@ export default function AvailabilityPage() {
 
   async function save(nextStatus: "draft" | "submitted") {
     if (!availabilityId || !teacherId || !semesterId || !user) return;
+    if (teacherType !== "thinh_giang") {
+      setError("Chức năng đăng ký khung giờ rảnh chỉ áp dụng cho giáo viên thỉnh giảng.");
+      return;
+    }
+    if (nextStatus === "submitted" && slots.length === 0) {
+      setError("Vui lòng chọn ít nhất một khung giờ có thể dạy trước khi gửi đăng ký.");
+      return;
+    }
     if (deadlinePassed) {
       setError("Thời hạn đăng ký khung giờ rảnh cho học kỳ này đã kết thúc.");
       return;
@@ -168,6 +178,7 @@ export default function AvailabilityPage() {
       const reference = doc(firestore, "teacherAvailability", availabilityId);
       const basePayload = {
         teacherId,
+        teacherType: "thinh_giang",
         semesterId,
         slots,
         status: nextStatus,
@@ -205,7 +216,7 @@ export default function AvailabilityPage() {
   }
 
   const busy = contextLoading || availabilityLoading || saving;
-  const canEdit = Boolean(availabilityId && !deadlinePassed && !error && !contextLoading);
+  const canEdit = Boolean(teacherType === "thinh_giang" && availabilityId && !deadlinePassed && !error && !contextLoading);
   const reviewLabel = status === "draft"
     ? "Bản nháp"
     : reviewStatus === "approved"
@@ -221,12 +232,20 @@ export default function AvailabilityPage() {
         <PageHeader
           eyebrow="Lịch cá nhân"
           title="Đăng ký khung giờ rảnh"
-          description="Chọn các tiết có thể nhận lớp. Giáo viên thỉnh giảng chỉ được xếp lịch trong các ô đã đăng ký."
+          description="Dành cho giáo viên thỉnh giảng đăng ký các tiết có thể nhận lớp. Khung giờ được duyệt chỉ là điều kiện để xếp lịch, chưa phải lịch dạy chính thức và chưa được tính thù lao."
           actions={<Badge tone={reviewTone}>{reviewLabel}</Badge>}
         />
 
         {contextLoading ? (
           <Card className="p-5"><Skeleton className="h-72 w-full" /></Card>
+        ) : teacherType !== "thinh_giang" ? (
+          <Card>
+            <EmptyState
+              icon={<Clock3 className="h-6 w-6" />}
+              title="Không cần đăng ký khung giờ rảnh"
+              description="Chức năng này chỉ áp dụng cho giáo viên thỉnh giảng. Giáo viên cơ hữu được xếp theo thời khóa biểu và quy định phân công chung của nhà trường."
+            />
+          </Card>
         ) : semesters.length === 0 ? (
           <Card>
             <EmptyState icon={<Clock3 className="h-6 w-6" />} title="Chưa có học kỳ đang hoạt động" description="Vui lòng liên hệ quản trị viên để mở học kỳ đăng ký khung giờ rảnh." />
@@ -265,7 +284,7 @@ export default function AvailabilityPage() {
                 reviewStatus === "pending" && "border-amber-200 bg-amber-50 text-amber-800",
               )}>
                 {reviewStatus === "approved"
-                  ? "Quản trị viên đã duyệt khung giờ này. Nhà trường có thể dùng các ô đã chọn để xếp lịch."
+                  ? "Quản trị viên đã duyệt khung giờ này. Nhà trường có thể dùng các ô đã chọn để xếp lịch. Chỉ lịch đã xếp và tiết dạy thực tế được xác nhận mới được tính chấm công/thù lao."
                   : reviewStatus === "rejected"
                     ? `Đăng ký bị từ chối${reviewNote ? `: ${reviewNote}` : ". Hãy điều chỉnh và gửi lại."}`
                     : "Đăng ký đang chờ quản trị viên duyệt."}

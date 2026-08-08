@@ -177,10 +177,17 @@ function availabilitySlotLabel(slot: unknown) {
   return parsed ? `Thứ ${parsed.dayOfWeek} · Tiết ${parsed.period}` : String(slot);
 }
 
+function approvedAvailabilitySlots(row: AvailabilityRow | null) {
+  if (!row) return [] as string[];
+  if (Array.isArray(row.approvedSlots)) return row.approvedSlots.map(String);
+  return Array.isArray(row.slots) ? row.slots.map(String) : [];
+}
+
 function availabilityCoversSelection(row: AvailabilityRow | null, dayOfWeek: number, startPeriod: number, lastPeriod: number) {
-  if (!row || !Array.isArray(row.slots)) return false;
+  const approvedSlots = approvedAvailabilitySlots(row);
+  if (approvedSlots.length === 0) return false;
   for (let period = startPeriod; period <= lastPeriod; period += 1) {
-    if (!row.slots.includes(`${dayOfWeek}:${period}`)) return false;
+    if (!approvedSlots.includes(`${dayOfWeek}:${period}`)) return false;
   }
   return true;
 }
@@ -352,9 +359,13 @@ export default function SchedulesPage() {
   const selectedSubject = useMemo(() => selectedCatalogRow(subjects, form.subjectId), [form.subjectId, subjects]);
   const subjectDepartmentId = textValue(selectedSubject?.departmentId);
   const selectedSemester = useMemo(() => selectedCatalogRow(semesters, form.semesterId), [form.semesterId, semesters]);
+  const adjunctAvailabilityRows = useMemo(
+    () => availabilityRows.filter((row) => teachers.find((teacher) => teacher.id === row.teacherId)?.teacherType === "thinh_giang"),
+    [availabilityRows, teachers],
+  );
   const selectedAvailability = useMemo(
-    () => availabilityRows.find((row) => row.teacherId === form.teacherId && row.semesterId === form.semesterId) ?? null,
-    [availabilityRows, form.semesterId, form.teacherId],
+    () => adjunctAvailabilityRows.find((row) => row.teacherId === form.teacherId && row.semesterId === form.semesterId) ?? null,
+    [adjunctAvailabilityRows, form.semesterId, form.teacherId],
   );
   const selectedTeacherIsAdjunct = selectedTeacher?.teacherType === "thinh_giang";
   const selectedAvailabilityReviewStatus = selectedAvailability ? reviewStatusOf(selectedAvailability) : "not_submitted";
@@ -376,7 +387,7 @@ export default function SchedulesPage() {
             : ""
     : "";
   const sortedAvailabilityRows = useMemo(
-    () => [...availabilityRows].sort((first, second) => {
+    () => [...adjunctAvailabilityRows].sort((first, second) => {
       const order = { pending: 0, approved: 1, rejected: 2, not_submitted: 3 } as const;
       const statusDiff = order[reviewStatusOf(first)] - order[reviewStatusOf(second)];
       if (statusDiff !== 0) return statusDiff;
@@ -384,7 +395,7 @@ export default function SchedulesPage() {
       const secondTeacher = teachers.find((row) => row.id === second.teacherId);
       return primaryCatalogName(firstTeacher ?? first).localeCompare(primaryCatalogName(secondTeacher ?? second), "vi");
     }),
-    [availabilityRows, teachers],
+    [adjunctAvailabilityRows, teachers],
   );
   const exportCandidateRows = useMemo(
     () => rows.filter((row) => {
@@ -639,7 +650,7 @@ export default function SchedulesPage() {
             <div className="flex flex-col gap-2 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-5 w-5 text-primary" />Khung giờ rảnh của giáo viên thỉnh giảng</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Hệ thống sẽ không cho lưu ngoài khung giờ đã duyệt.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Duyệt hiện tại áp dụng cho toàn bộ các ô trong phiếu; khung giờ chỉ là điều kiện xếp lịch, chưa phải tiết được tính công.</p>
               </div>
               <Badge tone={sortedAvailabilityRows.some((row) => reviewStatusOf(row) === "pending") ? "warning" : "success"}>
                 {sortedAvailabilityRows.filter((row) => reviewStatusOf(row) === "pending").length} chờ duyệt
@@ -655,7 +666,7 @@ export default function SchedulesPage() {
                   const teacher = teachers.find((row) => row.id === availability.teacherId);
                   const semester = semesters.find((row) => row.id === availability.semesterId);
                   const reviewStatus = reviewStatusOf(availability);
-                  const slots = Array.isArray(availability.slots) ? [...availability.slots].sort((a, b) => String(a).localeCompare(String(b), "vi", { numeric: true })) : [];
+                  const slots = approvedAvailabilitySlots(availability).sort((a, b) => String(a).localeCompare(String(b), "vi", { numeric: true }));
                   return (
                     <div key={availability.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -679,7 +690,7 @@ export default function SchedulesPage() {
                       </div>
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
                         {reviewStatus !== "rejected" ? <Button variant="danger" loading={reviewingAvailabilityId === availability.id} onClick={() => void reviewAvailability(availability, "rejected")}><XCircle className="h-4 w-4" />Từ chối</Button> : null}
-                        {reviewStatus !== "approved" ? <Button loading={reviewingAvailabilityId === availability.id} onClick={() => void reviewAvailability(availability, "approved")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button> : null}
+                        {reviewStatus !== "approved" ? <Button loading={reviewingAvailabilityId === availability.id} onClick={() => void reviewAvailability(availability, "approved")}><CheckCircle2 className="h-4 w-4" />Duyệt toàn bộ</Button> : null}
                       </div>
                     </div>
                   );

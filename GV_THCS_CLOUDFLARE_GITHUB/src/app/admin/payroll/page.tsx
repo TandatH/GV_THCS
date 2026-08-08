@@ -62,6 +62,14 @@ function rateDocId(teacherId: string, subjectId: string) {
   return `${teacherId}_${subjectId}`;
 }
 
+function localTodayDateOnly() {
+  return dateOnlyFromDate(new Date());
+}
+
+function isPayableAttendanceStatus(status: unknown) {
+  return ["confirmed", "adjusted"].includes(String(status));
+}
+
 export default function AdminPayrollPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"attendance" | "summary" | "payroll">("attendance");
@@ -138,7 +146,17 @@ export default function AdminPayrollPage() {
     })
     .sort((first, second) => String(first.teacherName || first.teacherId).localeCompare(String(second.teacherName || second.teacherId), "vi")), [departmentFilter, rateRows, teacherById]);
 
-  const monthSchedules = useMemo(() => schedules.filter((schedule) => dateFromSchedule(schedule).startsWith(selectedMonth)), [schedules, selectedMonth]);
+  const monthSchedules = useMemo(
+    () => schedules.filter((schedule) => schedule.status !== "cancelled" && dateFromSchedule(schedule).startsWith(selectedMonth)),
+    [schedules, selectedMonth],
+  );
+  const unconfirmedPastSchedules = useMemo(() => {
+    const today = localTodayDateOnly();
+    return monthSchedules.filter((schedule) => {
+      const date = dateFromSchedule(schedule);
+      return Boolean(date && date <= today && !checkinByScheduleId.has(schedule.id));
+    });
+  }, [checkinByScheduleId, monthSchedules]);
 
   const filteredSchedules = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
@@ -181,6 +199,7 @@ export default function AdminPayrollPage() {
     const teacher = teacherById.get(actualTeacherId);
     const status = override?.status || "confirmed";
     const periodCount = Math.max(0, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+    const payable = isPayableAttendanceStatus(status);
     await setDoc(doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`), {
       scheduleId: schedule.id,
       month: selectedMonth,
@@ -195,8 +214,15 @@ export default function AdminPayrollPage() {
       startPeriod: schedule.startPeriod || null,
       endPeriod: schedule.endPeriod || null,
       periodCount,
+      payablePeriods: payable ? periodCount : 0,
+      payable,
       status,
       actualTeacherId,
+      originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+      teacherType: teacher?.teacherType || schedule.teacherType || "",
+      attendanceSource: "admin_confirmation",
+      confirmedAt: serverTimestamp(),
+      confirmedBy: user.uid,
       adjustedBy: user.uid,
       adjustmentReason: override?.reason || "Xác nhận đã dạy",
       note: override?.note || "",
@@ -272,8 +298,13 @@ export default function AdminPayrollPage() {
   }
 
   async function calculatePayroll() {
-    setCalculating(true);
     setError("");
+    if (unconfirmedPastSchedules.length > 0) {
+      setError(`Còn ${unconfirmedPastSchedules.length} lịch dạy đã qua nhưng chưa được xác nhận chấm công. Hãy xác nhận “Đã dạy”, “Vắng” hoặc điều chỉnh giáo viên thực dạy trước khi tính bảng lương.`);
+      setTab("attendance");
+      return;
+    }
+    setCalculating(true);
     try {
       const result = await calculateMonthlyPayroll(selectedMonth);
       toast.success(`Đã tính bảng lương cho ${result.count} giáo viên.`);
@@ -323,17 +354,22 @@ export default function AdminPayrollPage() {
         <PageHeader
           eyebrow="Chấm công và bảng lương"
           title="Quản lý chấm công, tổng hợp tháng và bảng lương"
-          description="Chấm công đọc từ lịch dạy theo tháng. Bảng lương cuối cùng được tính bởi Cloud Function."
+          description="Lịch dạy chỉ là phân công. Chỉ bản ghi chấm công đã xác nhận (Đã dạy/Đã điều chỉnh) mới được tính là tiết thực dạy và đưa vào thù lao."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={exportPayrollCsv} disabled={filteredPayrollRows.length === 0}><Download className="h-4 w-4" />Xuất CSV</Button>
               <Button variant="secondary" onClick={() => { setRateOpen(true); setRateError(""); }}><CircleDollarSign className="h-4 w-4" />Thành tiền</Button>
-              <Button loading={calculating} onClick={calculatePayroll}><Calculator className="h-4 w-4" />Tính bảng lương</Button>
+              <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}><Calculator className="h-4 w-4" />Tính bảng lương</Button>
             </div>
           }
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+        {unconfirmedPastSchedules.length > 0 ? (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Còn <strong>{unconfirmedPastSchedules.length}</strong> lịch dạy đã qua chưa xác nhận chấm công. Bảng lương sẽ bị khóa tính cho đến khi các lịch này được xác nhận “Đã dạy”, “Vắng” hoặc điều chỉnh giáo viên thực dạy.
+          </div>
+        ) : null}
 
         <Card className="mb-5 p-4">
           <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr]">
@@ -401,7 +437,7 @@ export default function AdminPayrollPage() {
         {tab === "payroll" ? (
           <Card className="overflow-hidden">
             <div className="border-b border-border px-5 py-4 sm:px-6"><h2 className="text-lg font-bold">Bảng lương</h2><p className="mt-1 text-sm text-muted-foreground">Dữ liệu được đọc từ collection payroll sau khi Cloud Function tính toán.</p></div>
-            {filteredPayrollRows.length === 0 ? <EmptyState icon={<Calculator className="h-6 w-6" />} title="Chưa có bảng lương" description="Bấm Tính bảng lương để chạy Cloud Function và tải dữ liệu tháng này." action={<Button loading={calculating} onClick={calculatePayroll}>Tính bảng lương</Button>} /> : (
+            {filteredPayrollRows.length === 0 ? <EmptyState icon={<Calculator className="h-6 w-6" />} title="Chưa có bảng lương" description="Bấm Tính bảng lương để chạy Cloud Function và tải dữ liệu tháng này." action={<Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>Tính bảng lương</Button>} /> : (
               <div className="overflow-x-auto"><table className="data-table min-w-[1080px]"><thead><tr><th>Giáo viên</th><th>Loại giáo viên</th><th>Số tiết thực dạy</th><th>Số tiết chuẩn</th><th>Số tiết vượt/thiếu</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th></tr></thead><tbody>{filteredPayrollRows.map((row) => { const teacher = teacherById.get(String(row.teacherId)); const subjectAmounts = Array.isArray(row.subjectAmounts) ? row.subjectAmounts : []; const rateText = subjectAmounts.length > 1 ? `${subjectAmounts.length} mức đơn giá` : row.ratePerPeriod === null || row.ratePerPeriod === undefined ? "—" : formatCurrency(Number(row.ratePerPeriod)); return <tr key={row.id}><td className="font-semibold">{teacher?.fullName || row.teacherId}</td><td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td><td>{row.actualPeriods ?? 0}</td><td>{row.standardPeriods ?? "—"}</td><td>{row.differencePeriods ?? "—"}</td><td>{rateText}</td><td>{row.amount === null || row.amount === undefined ? "—" : formatCurrency(Number(row.amount))}</td><td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td></tr>; })}</tbody></table></div>
             )}
           </Card>

@@ -74,9 +74,11 @@ export type CatalogInput = z.infer<typeof catalogSchema>;
 
 export const availabilitySchema = z.object({
   teacherId: z.string().min(1),
+  teacherType: z.literal("thinh_giang").optional(),
   semesterId: z.string().min(1),
   schoolYearId: z.string().optional().default(""),
   slots: z.array(z.string().regex(/^[2-7]:[1-9][0-9]?$/)).max(100),
+  approvedSlots: z.array(z.string().regex(/^[2-7]:[1-9][0-9]?$/)).max(100).optional(),
   status: z.enum(["draft", "submitted"]),
 });
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
@@ -157,7 +159,15 @@ export const payrollSchema = z.object({
 export const suggestionSchema = z.object({ scheduleId: z.string().min(1) });
 
 export const evaluationSchema = z.object({ id: z.string().optional(), teacherId: z.string().min(1), periodId: z.string().min(1), criteria: z.array(z.object({ name: z.string().trim().min(2).max(100), score: z.number().min(0).max(10), weight: z.number().min(1).max(100) })).min(1).max(20), notes: z.string().trim().max(2000).default(""), status: z.enum(["draft", "published"]) });
-export const attendanceSchema = z.object({ scheduleId: z.string().min(1), status: z.enum(["confirmed", "absent"]), periodCount: z.number().int().min(0).max(20).optional(), note: z.string().trim().max(500).optional() });
+export const attendanceSchema = z.object({
+  scheduleId: z.string().min(1),
+  status: z.enum(["confirmed", "absent", "adjusted"]),
+  actualTeacherId: z.string().min(1).optional(),
+  periodCount: z.number().int().min(0).max(20).optional(),
+  payablePeriods: z.number().int().min(0).max(20).optional(),
+  payable: z.boolean().optional(),
+  note: z.string().trim().max(500).optional(),
+});
 
 export type ScheduleConflictCode =
   | "TEACHER_BUSY" | "CLASS_BUSY" | "ROOM_BUSY" | "OUTSIDE_AVAILABILITY"
