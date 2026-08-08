@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Clock3, Save } from "lucide-react";
 import { collection, getDocs, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,8 +11,8 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
-import { firestore } from "@/lib/firebase/client";
-import { firebaseErrorMessage, saveTeacherAvailability } from "@/lib/firebase/callables";
+import { firebaseFunctions, firestore } from "@/lib/firebase/client";
+import { firebaseErrorMessage } from "@/lib/firebase/callables";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { FirebaseUiError, firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { cn, formatDate } from "@/lib/utils";
@@ -20,6 +21,26 @@ const days = [2, 3, 4, 5, 6, 7];
 const periods = Array.from({ length: 10 }, (_, index) => index + 1);
 
 type SemesterRow = DocumentData & { id: string };
+
+type TeacherAvailabilitySaveInput = {
+  semesterId: string;
+  slots: string[];
+  status: "draft" | "submitted";
+};
+
+type TeacherAvailabilitySaveOutput = {
+  ok: true;
+  availabilityId: string;
+};
+
+const saveTeacherAvailabilityCallable = httpsCallable<
+  TeacherAvailabilitySaveInput,
+  TeacherAvailabilitySaveOutput
+>(firebaseFunctions, "saveTeacherAvailability");
+
+async function saveTeacherAvailability(input: TeacherAvailabilitySaveInput) {
+  return (await saveTeacherAvailabilityCallable(input)).data;
+}
 
 function asDate(value: unknown): Date | null {
   if (!value) return null;
