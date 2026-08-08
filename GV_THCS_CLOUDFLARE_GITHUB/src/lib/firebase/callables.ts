@@ -35,41 +35,31 @@ const createTeacherAccountCallable = callable<
   { teacher: TeacherInput; password?: string },
   { uid: string; teacherId: string }
 >("createTeacherAccount");
-
 const createOrUpdateScheduleCallable = callable<
   ScheduleInput,
   { scheduleId: string }
 >("createOrUpdateSchedule");
-
 const reviewTeacherAvailabilityCallable = callable<
   AvailabilityReviewInput,
   Record<string, never>
 >("reviewTeacherAvailability");
-
 const saveTeacherAvailabilityCallable = callable<
   TeacherAvailabilitySaveInput,
   { availabilityId: string }
 >("saveTeacherAvailability");
-
 const approveLeaveRequestCallable = callable<
   ApproveLeaveInput,
   Record<string, never>
 >("approveLeaveRequest");
-
-const setUserRoleCallable = callable<SetUserRoleInput, Record<string, never>>(
-  "setUserRole",
-);
-
+const setUserRoleCallable = callable<SetUserRoleInput, Record<string, never>>("setUserRole");
 const suggestSubstituteTeachersCallable = callable<
   { scheduleId: string },
   { candidates: SubstituteCandidate[] }
 >("suggestSubstituteTeachers");
-
 const calculateMonthlyPayrollCallable = callable<
   { month: string },
   { count: number }
 >("calculateMonthlyPayroll");
-
 const respondToScheduleAssignmentCallable = callable<
   ScheduleAssignmentResponseInput,
   Record<string, never>
@@ -79,7 +69,6 @@ export function firebaseErrorMessage(error: unknown) {
   if (!(error instanceof FirebaseError)) {
     return error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
   }
-
   const messages: Record<string, string> = {
     "functions/unauthenticated": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
     "functions/permission-denied": "Bạn không có quyền thực hiện thao tác này.",
@@ -91,7 +80,6 @@ export function firebaseErrorMessage(error: unknown) {
     "auth/network-request-failed": "Không thể kết nối mạng. Vui lòng thử lại.",
     "auth/too-many-requests": "Bạn thao tác quá nhiều lần. Vui lòng thử lại sau.",
   };
-
   if (error.code.startsWith("functions/") && error.message) return error.message;
   return messages[error.code] || error.message;
 }
@@ -111,9 +99,7 @@ export async function reviewTeacherAvailability(input: AvailabilityReviewInput) 
   return (await reviewTeacherAvailabilityCallable(input)).data;
 }
 
-export async function saveTeacherAvailability(
-  input: TeacherAvailabilitySaveInput,
-) {
+export async function saveTeacherAvailability(input: TeacherAvailabilitySaveInput) {
   return (await saveTeacherAvailabilityCallable(input)).data;
 }
 
@@ -133,9 +119,7 @@ export async function calculateMonthlyPayroll(month: string) {
   return (await calculateMonthlyPayrollCallable({ month })).data;
 }
 
-export async function respondToScheduleAssignment(
-  input: ScheduleAssignmentResponseInput,
-) {
+export async function respondToScheduleAssignment(input: ScheduleAssignmentResponseInput) {
   const payload: ScheduleAssignmentResponseInput = input.reason
     ? {
         scheduleId: input.scheduleId,
