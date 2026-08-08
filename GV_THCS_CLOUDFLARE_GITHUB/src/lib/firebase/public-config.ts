@@ -8,15 +8,7 @@ const requiredConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
 };
-if (typeof window !== "undefined") {
-  console.log("FIREBASE CONFIG CHECK", {
-    authDomain: requiredConfig.authDomain,
-    projectId: requiredConfig.projectId,
-    storageBucket: requiredConfig.storageBucket,
-    messagingSenderId: requiredConfig.messagingSenderId,
-    appId: requiredConfig.appId,
-  });
-}
+
 
 const missing = Object.entries(requiredConfig)
   .filter(([, value]) => !value)
