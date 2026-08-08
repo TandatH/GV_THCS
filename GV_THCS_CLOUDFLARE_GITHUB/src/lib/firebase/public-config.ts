@@ -1,16 +1,12 @@
 import type { FirebaseOptions } from "firebase/app";
 
-function env(name: string) {
-  return process.env[name]?.trim() || "";
-}
-
 const requiredConfig = {
-  apiKey: env("NEXT_PUBLIC_FIREBASE_API_KEY"),
-  authDomain: env("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"),
-  projectId: env("NEXT_PUBLIC_FIREBASE_PROJECT_ID"),
-  storageBucket: env("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"),
-  messagingSenderId: env("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
-  appId: env("NEXT_PUBLIC_FIREBASE_APP_ID"),
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
 };
 
 const missing = Object.entries(requiredConfig)
@@ -19,20 +15,20 @@ const missing = Object.entries(requiredConfig)
 
 if (missing.length > 0) {
   throw new Error(
-    `Thiếu Firebase Web config: ${missing.join(", ")}. Hãy kiểm tra .env.local hoặc apphosting.yaml.`,
+    `Thiếu Firebase Web config: ${missing.join(", ")}. Hãy kiểm tra Cloudflare Build Variables.`,
   );
 }
 
 export const firebasePublicConfig: FirebaseOptions = {
   ...requiredConfig,
-  measurementId: env("NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID") || undefined,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID?.trim() || undefined,
 };
 
 export const useFirebaseEmulators =
-  env("NEXT_PUBLIC_USE_FIREBASE_EMULATORS") === "true";
+  (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS?.trim() || "") === "true";
 
 export const firebaseAppCheckSiteKey =
-  env("NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY");
+  process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY?.trim() || "";
 
 export const appCheckDebugEnabled =
-  env("NEXT_PUBLIC_APP_CHECK_DEBUG") === "true";
+  (process.env.NEXT_PUBLIC_APP_CHECK_DEBUG?.trim() || "") === "true";
