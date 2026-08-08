@@ -9,6 +9,7 @@ const requiredConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
 };
 
+
 const missing = Object.entries(requiredConfig)
   .filter(([, value]) => !value)
   .map(([key]) => key);

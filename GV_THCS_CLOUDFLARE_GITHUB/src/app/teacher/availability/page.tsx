@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock3, Save } from "lucide-react";
-import { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
+import { collection, getDocs, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +11,7 @@ import { Badge, Button, Card, EmptyState, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
+import { firebaseErrorMessage, saveTeacherAvailability } from "@/lib/firebase/callables";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { FirebaseUiError, firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { cn, formatDate } from "@/lib/utils";
@@ -62,6 +63,8 @@ export default function AvailabilityPage() {
   const [contextLoading, setContextLoading] = useState(true);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityExists, setAvailabilityExists] = useState(false);
+  const [lockedSlots, setLockedSlots] = useState<Record<string, string>>({});
+  const [locksLoading, setLocksLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -153,8 +156,47 @@ export default function AvailabilityPage() {
     };
   }, [availabilityId, semesterId, teacherId]);
 
+  useEffect(() => {
+    if (!semesterId || teacherType !== "thinh_giang") {
+      setLockedSlots({});
+      setLocksLoading(false);
+      return;
+    }
+
+    setLocksLoading(true);
+    const lockQuery = query(
+      collection(firestore, "availabilitySlotLocks"),
+      where("semesterId", "==", semesterId),
+    );
+    return onSnapshot(
+      lockQuery,
+      (snapshot) => {
+        const nextLocks: Record<string, string> = {};
+        for (const document of snapshot.docs) {
+          const data = document.data();
+          if (data.isActive === false) continue;
+          const slot = typeof data.slot === "string" ? data.slot : "";
+          const ownerTeacherId = typeof data.teacherId === "string" ? data.teacherId : "";
+          if (slot) nextLocks[slot] = ownerTeacherId;
+        }
+        setLockedSlots(nextLocks);
+        setSlots((current) => current.filter((slot) => !nextLocks[slot] || nextLocks[slot] === teacherId));
+        setLocksLoading(false);
+      },
+      (snapshotError) => {
+        setLocksLoading(false);
+        setError(firebaseDataErrorMessage(snapshotError));
+      },
+    );
+  }, [semesterId, teacherId, teacherType]);
+
   function toggleSlot(slot: string) {
-    if (deadlinePassed || saving) return;
+    if (deadlinePassed || saving || locksLoading) return;
+    const lockedByTeacherId = lockedSlots[slot];
+    if (lockedByTeacherId && lockedByTeacherId !== teacherId) {
+      toast.error("Khung giờ này đã được giáo viên thỉnh giảng khác đăng ký.");
+      return;
+    }
     setSlots((current) => current.includes(slot) ? current.filter((item) => item !== slot) : [...current, slot]);
   }
 
@@ -175,33 +217,7 @@ export default function AvailabilityPage() {
     setSaving(true);
     setError("");
     try {
-      const reference = doc(firestore, "teacherAvailability", availabilityId);
-      const basePayload = {
-        teacherId,
-        teacherType: "thinh_giang",
-        semesterId,
-        slots,
-        status: nextStatus,
-        reviewStatus: nextStatus === "submitted" ? "pending" : "not_submitted",
-        reviewNote: "",
-        reviewedAt: null,
-        reviewedBy: "",
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-        ...(nextStatus === "submitted" ? { submittedAt: serverTimestamp() } : {}),
-      };
-      await setDoc(
-        reference,
-        availabilityExists
-          ? basePayload
-          : {
-              ...basePayload,
-              createdAt: serverTimestamp(),
-              createdBy: user.uid,
-              isActive: true,
-            },
-        { merge: availabilityExists },
-      );
+      await saveTeacherAvailability({ semesterId, slots, status: nextStatus });
       setAvailabilityExists(true);
       setStatus(nextStatus);
       setReviewStatus(nextStatus === "submitted" ? "pending" : "not_submitted");
@@ -209,13 +225,13 @@ export default function AvailabilityPage() {
       const message = nextStatus === "submitted" ? "Đã gửi đăng ký khung giờ rảnh và đang chờ quản trị viên duyệt." : "Đã lưu bản nháp.";
       toast.success(message);
     } catch (saveError) {
-      setError(firebaseDataErrorMessage(saveError) || "Tài khoản không có quyền cập nhật khung giờ này.");
+      setError(firebaseErrorMessage(saveError) || "Không thể lưu khung giờ. Có thể một giáo viên khác vừa đăng ký cùng tiết.");
     } finally {
       setSaving(false);
     }
   }
 
-  const busy = contextLoading || availabilityLoading || saving;
+  const busy = contextLoading || availabilityLoading || locksLoading || saving;
   const canEdit = Boolean(teacherType === "thinh_giang" && availabilityId && !deadlinePassed && !error && !contextLoading);
   const reviewLabel = status === "draft"
     ? "Bản nháp"
@@ -297,6 +313,11 @@ export default function AvailabilityPage() {
                 <Skeleton className="h-[520px] min-w-[760px]" />
               ) : (
                 <div className="min-w-[760px]">
+                  <div className="mb-4 flex flex-wrap gap-2 text-xs font-semibold">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />Khung giờ của bạn</span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1.5 text-rose-700"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Đã có giáo viên thỉnh giảng khác đăng ký</span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />Còn trống</span>
+                  </div>
                   <div className="grid grid-cols-[120px_repeat(6,minmax(90px,1fr))] gap-2">
                     <div className="grid place-items-center rounded-xl bg-muted p-3 text-sm font-semibold"><Clock3 className="mr-2 inline h-4 w-4" />Tiết</div>
                     {days.map((day) => <div key={day} className="grid place-items-center rounded-xl bg-muted p-3 text-sm font-semibold">Thứ {day}</div>)}
@@ -305,19 +326,24 @@ export default function AvailabilityPage() {
                         <div className="grid place-items-center rounded-xl border border-border bg-card p-3 text-sm font-semibold">Tiết {period}</div>
                         {days.map((day) => {
                           const slot = `${day}:${period}`;
-                          const selected = slots.includes(slot);
+                          const lockedByTeacherId = lockedSlots[slot];
+                          const blockedByOther = Boolean(lockedByTeacherId && lockedByTeacherId !== teacherId);
+                          const selected = !blockedByOther && slots.includes(slot);
                           return (
                             <button
                               key={slot}
                               type="button"
-                              disabled={deadlinePassed || saving}
+                              disabled={deadlinePassed || saving || locksLoading || blockedByOther}
                               onClick={() => toggleSlot(slot)}
+                              title={blockedByOther ? "Khung giờ này đã được giáo viên thỉnh giảng khác đăng ký." : undefined}
                               className={cn(
-                                "min-h-14 rounded-xl border p-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60",
-                                selected ? "border-primary bg-primary text-white shadow-sm" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-blue-50 hover:text-blue-700",
+                                "min-h-14 rounded-xl border p-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed",
+                                selected && "border-primary bg-primary text-white shadow-sm",
+                                blockedByOther && "border-rose-300 bg-rose-100 text-rose-700 opacity-100",
+                                !selected && !blockedByOther && "border-border bg-card text-muted-foreground hover:border-primary/40 hover:bg-blue-50 hover:text-blue-700",
                               )}
                             >
-                              {selected ? "Có thể dạy" : "Trống"}
+                              {blockedByOther ? "Đã có GV" : selected ? "Có thể dạy" : "Trống"}
                             </button>
                           );
                         })}
