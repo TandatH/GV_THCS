@@ -6,7 +6,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import type { ScheduleInput } from "@school/shared";
 import { addDays, addMinutes, parseISO } from "date-fns";
-import { CalendarClock, CalendarPlus, CheckCircle2, FileSpreadsheet, Info, PencilLine, Trash2, XCircle } from "lucide-react";
+import { CalendarClock, CalendarPlus, CheckCircle2, FileSpreadsheet, Info, PencilLine, Sparkles, Trash2, XCircle } from "lucide-react";
 import { collection, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -625,9 +625,14 @@ export default function SchedulesPage() {
           actions={(
             <div className="flex flex-wrap gap-2">
               {role === "admin" ? (
-                <Button variant="secondary" onClick={() => { setExportError(""); setExportOpen(true); }}>
-                  <FileSpreadsheet className="h-4 w-4" />Xuất TKB học sinh
-                </Button>
+                <>
+                  <Button variant="secondary" asChild>
+                    <a href="/admin/ai-scheduler/"><Sparkles className="h-4 w-4" />AI xếp lịch</a>
+                  </Button>
+                  <Button variant="secondary" onClick={() => { setExportError(""); setExportOpen(true); }}>
+                    <FileSpreadsheet className="h-4 w-4" />Xuất TKB học sinh
+                  </Button>
+                </>
               ) : null}
               <Button onClick={openCreate}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
             </div>
