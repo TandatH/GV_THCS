@@ -18,6 +18,7 @@ import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { todayDateOnly } from "@/lib/date-only";
 import { formatCurrency, initials } from "@/lib/utils";
+import { teachingAssignments } from "@/lib/teaching-assignments";
 import { toast } from "sonner";
 
 type TeacherRow = DocumentData & { id: string };
@@ -30,6 +31,7 @@ type FormState = {
   phone: string;
   departmentId: string;
   subjectIds: string[];
+  gradeLevelsBySubject: Record<string, number[]>;
   specialization: string;
   degree: string;
   startDate: string;
@@ -52,6 +54,7 @@ const initialForm: FormState = {
   phone: "",
   departmentId: "",
   subjectIds: [],
+  gradeLevelsBySubject: {},
   specialization: "",
   degree: "Đại học",
   startDate: todayDateOnly(),
@@ -90,6 +93,9 @@ function activeCatalogRows(rows: CatalogRow[]) {
 
 function formFromTeacher(row: TeacherRow): FormState {
   const contract = typeof row.contract === "object" && row.contract ? row.contract as Record<string, unknown> : {};
+  const assignmentMap = Object.fromEntries(
+    teachingAssignments(row).map((assignment) => [assignment.subjectId, assignment.gradeLevels]),
+  );
   return {
     teacherCode: textValue(row.teacherCode),
     fullName: textValue(row.fullName),
@@ -97,6 +103,7 @@ function formFromTeacher(row: TeacherRow): FormState {
     phone: textValue(row.phone),
     departmentId: textValue(row.departmentId),
     subjectIds: Array.isArray(row.subjectIds) ? row.subjectIds.map(String) : textValue(row.subjectIds).split(",").map((value) => value.trim()).filter(Boolean),
+    gradeLevelsBySubject: assignmentMap,
     specialization: textValue(row.specialization),
     degree: textValue(row.degree) || "Đại học",
     startDate: textValue(row.startDate) || todayDateOnly(),
@@ -212,6 +219,16 @@ export default function TeachersPage() {
       if (form.subjectIds.length === 0) {
         throw new Error("Vui lòng chọn ít nhất một môn giảng dạy.");
       }
+      for (const subjectId of form.subjectIds) {
+        const grades = form.gradeLevelsBySubject[subjectId] ?? [];
+        if (grades.length === 0) {
+          throw new Error(`Vui lòng chọn ít nhất một khối được dạy cho môn ${catalogName(subjects, subjectId) || subjectId}.`);
+        }
+      }
+      const teachingAssignments = form.subjectIds.map((subjectId) => ({
+        subjectId,
+        gradeLevels: [...(form.gradeLevelsBySubject[subjectId] ?? [])].sort((a, b) => a - b),
+      }));
       const teacher: TeacherInput = {
         teacherCode: form.teacherCode.trim(),
         fullName: form.fullName,
@@ -219,6 +236,7 @@ export default function TeachersPage() {
         phone: form.phone,
         departmentId: form.departmentId,
         subjectIds: form.subjectIds,
+        teachingAssignments,
         specialization: form.specialization,
         degree: form.degree,
         startDate: form.startDate,
@@ -245,7 +263,14 @@ export default function TeachersPage() {
         setSuccessMessage("Đã cập nhật hồ sơ giáo viên.");
         toast.success("Đã cập nhật hồ sơ giáo viên.");
       } else {
-        await createTeacherAccount({ teacher, password: form.password || undefined });
+        const created = await createTeacherAccount({ teacher, password: form.password || undefined });
+        // Backend cũ có thể chưa biết field teachingAssignments. Ghi merge lại từ admin
+        // để phạm vi môn/khối luôn được lưu ngay cả khi Cloud Function chưa cập nhật schema.
+        await setDoc(doc(firestore, "teachers", created.teacherId), {
+          teachingAssignments,
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+        }, { merge: true });
         setSuccessMessage("Đã tạo tài khoản và hồ sơ giáo viên thành công.");
         setForm(initialForm);
       }
@@ -374,8 +399,8 @@ export default function TeachersPage() {
             <EmptyState icon={<UsersRound className="h-6 w-6" />} title="Chưa có giáo viên" description="Thêm giáo viên đầu tiên hoặc thay đổi điều kiện tìm kiếm." action={<Button onClick={openCreate}>Thêm giáo viên</Button>} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="data-table min-w-[1120px]">
-                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <table className="data-table min-w-[1280px]">
+                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Môn / khối</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const status = teacherStatus(row.status);
@@ -384,6 +409,16 @@ export default function TeachersPage() {
                         <td><div className="flex items-center gap-2"><code className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold">{row.id}</code><Button size="sm" variant="ghost" onClick={() => copyTeacherId(row.id)} aria-label="Copy ID giáo viên"><Copy className="h-4 w-4" /></Button></div></td>
                         <td><div className="flex items-center gap-3">{row.avatarUrl ? <img alt={row.fullName || "Giáo viên"} className="h-10 w-10 rounded-full object-cover ring-1 ring-border" src={String(row.avatarUrl)} /> : <div className="grid h-10 w-10 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{initials(row.fullName)}</div>}<div><p className="font-semibold">{row.fullName || "Chưa cập nhật"}</p><p className="text-xs text-muted-foreground">{row.email || row.phone || row.id}</p></div></div></td>
                         <td>{catalogName(departments, row.departmentId) || "—"}</td>
+                        <td>
+                          {(() => {
+                            const assignments = teachingAssignments(row);
+                            const subjectIds = Array.isArray(row.subjectIds) ? row.subjectIds.map(String) : [];
+                            if (assignments.length > 0) {
+                              return <div className="max-w-64 space-y-1">{assignments.map((assignment) => <p key={assignment.subjectId} className="text-xs"><span className="font-semibold">{catalogName(subjects, assignment.subjectId) || assignment.subjectId}</span> · Khối {assignment.gradeLevels.join(", ") || "chưa chọn"}</p>)}</div>;
+                            }
+                            return <div className="max-w-64 text-xs text-muted-foreground">{subjectIds.map((id) => catalogName(subjects, id) || id).join(", ") || "—"}<br />Chưa giới hạn khối</div>;
+                          })()}
+                        </td>
                         <td><Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>{row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}</Badge></td>
                         <td><p className="max-w-52 truncate">{row.specialization || "—"}</p><p className="text-xs text-muted-foreground">{row.degree || ""}</p></td>
                         <td>{row.teacherType === "co_huu" ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần` : formatCurrency(Number(row.ratePerPeriod || 0)) + "/tiết"}</td>
@@ -411,9 +446,64 @@ export default function TeachersPage() {
             <div><Label>Họ và tên</Label><Input required value={form.fullName} onChange={(e) => setField("fullName", e.target.value)} /></div>
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>
             <div><Label>Số điện thoại</Label><Input required value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></div>
-            <div><Label>Bộ môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.departmentId} onChange={(e) => setForm((current) => ({ ...current, departmentId: e.target.value, subjectIds: current.subjectIds.filter((id) => subjects.find((subject) => subject.id === id)?.departmentId === e.target.value) }))}><option value="">Chọn bộ môn</option>{departments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
+            <div><Label>Bộ môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.departmentId} onChange={(e) => setForm((current) => { const nextSubjectIds = current.subjectIds.filter((id) => subjects.find((subject) => subject.id === id)?.departmentId === e.target.value); return { ...current, departmentId: e.target.value, subjectIds: nextSubjectIds, gradeLevelsBySubject: Object.fromEntries(Object.entries(current.gradeLevelsBySubject).filter(([id]) => nextSubjectIds.includes(id))) }; })}><option value="">Chọn bộ môn</option>{departments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
             <div><Label>Cơ sở chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.campusId} onChange={(e) => setField("campusId", e.target.value)}><option value="">Chọn cơ sở</option>{campuses.map((row) => <option key={row.id} value={row.id}>{catalogName(campuses, row.id)}</option>)}</select></div>
-            <div className="sm:col-span-2"><Label>Môn được phân công</Label><div className="mt-1 grid max-h-44 gap-2 overflow-y-auto rounded-xl border border-border p-3 sm:grid-cols-2">{subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).map((subject) => { const checked = form.subjectIds.includes(subject.id); return <label className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted" key={subject.id}><input type="checkbox" checked={checked} onChange={(event) => setField("subjectIds", event.target.checked ? [...form.subjectIds, subject.id] : form.subjectIds.filter((id) => id !== subject.id))} /><span>{catalogName(subjects, subject.id)}</span></label>; })}{subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn thuộc bộ môn đã chọn.</p> : null}</div>{form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn giảng dạy.</p> : null}</div>
+            <div className="sm:col-span-2">
+              <Label>Môn và khối được phân công</Label>
+              <div className="mt-1 space-y-2 rounded-xl border border-border p-3">
+                {subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).map((subject) => {
+                  const checked = form.subjectIds.includes(subject.id);
+                  const grades = form.gradeLevelsBySubject[subject.id] ?? [];
+                  return (
+                    <div className="rounded-lg border border-border/70 p-3" key={subject.id}>
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => setForm((current) => {
+                            if (event.target.checked) {
+                              return {
+                                ...current,
+                                subjectIds: current.subjectIds.includes(subject.id) ? current.subjectIds : [...current.subjectIds, subject.id],
+                                gradeLevelsBySubject: { ...current.gradeLevelsBySubject, [subject.id]: current.gradeLevelsBySubject[subject.id]?.length ? current.gradeLevelsBySubject[subject.id] : [6, 7, 8, 9] },
+                              };
+                            }
+                            const nextGrades = { ...current.gradeLevelsBySubject };
+                            delete nextGrades[subject.id];
+                            return { ...current, subjectIds: current.subjectIds.filter((id) => id !== subject.id), gradeLevelsBySubject: nextGrades };
+                          })}
+                        />
+                        <span>{catalogName(subjects, subject.id)}</span>
+                      </label>
+                      {checked ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+                          <span className="text-xs text-muted-foreground">Khối:</span>
+                          {[6, 7, 8, 9].map((grade) => {
+                            const active = grades.includes(grade);
+                            return (
+                              <button
+                                key={grade}
+                                type="button"
+                                onClick={() => setForm((current) => {
+                                  const currentGrades = current.gradeLevelsBySubject[subject.id] ?? [];
+                                  const next = currentGrades.includes(grade) ? currentGrades.filter((value) => value !== grade) : [...currentGrades, grade];
+                                  return { ...current, gradeLevelsBySubject: { ...current.gradeLevelsBySubject, [subject.id]: next } };
+                                })}
+                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${active ? "border-primary bg-primary text-white" : "border-border bg-card text-muted-foreground hover:border-primary/40"}`}
+                              >
+                                Khối {grade}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn thuộc bộ môn đã chọn.</p> : null}
+              </div>
+              {form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn giảng dạy.</p> : <p className="mt-1 text-xs text-muted-foreground">Mỗi môn phải chọn ít nhất một khối. Ví dụ: Công nghệ · Khối 9.</p>}
+            </div>
             <div><Label>Chuyên môn</Label><Input required value={form.specialization} onChange={(e) => setField("specialization", e.target.value)} /></div>
             <div><Label>Trình độ</Label><Input required value={form.degree} onChange={(e) => setField("degree", e.target.value)} /></div>
             <div><Label>Ngày vào làm</Label><Input required type="date" value={form.startDate} onChange={(e) => setField("startDate", e.target.value)} /></div>
