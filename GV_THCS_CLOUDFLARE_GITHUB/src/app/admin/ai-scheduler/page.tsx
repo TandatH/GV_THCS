@@ -31,6 +31,7 @@ import type {
 import { createOrUpdateSchedule, firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { currentWeekStartDateOnly } from "@/lib/date-only";
+import { classGrade, gradeScopeForSubject, teacherCanTeachClass } from "@/lib/teaching-assignments";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 
 type CatalogRow = DocumentData & { id: string };
@@ -253,6 +254,11 @@ export default function AiSchedulerPage() {
     return assigned.length > 0 ? subjects.filter((subject) => assigned.includes(subject.id)) : subjects;
   }, [selectedTeacher, subjects]);
 
+  const availableClasses = useMemo(() => {
+    if (!selectedTeacher || !requirementForm.subjectId) return classes;
+    return classes.filter((schoolClass) => teacherCanTeachClass(selectedTeacher, requirementForm.subjectId, schoolClass));
+  }, [classes, requirementForm.subjectId, selectedTeacher]);
+
   const selectedSemester = useMemo(
     () => semesters.find((semester) => semester.id === semesterId) ?? null,
     [semesterId, semesters],
@@ -343,6 +349,12 @@ export default function AiSchedulerPage() {
     const teacherSubjectIds = Array.isArray(teacher.subjectIds) ? teacher.subjectIds.map(String) : [];
     if (teacherSubjectIds.length > 0 && !teacherSubjectIds.includes(subject.id)) {
       setProposalError("Môn đã chọn không nằm trong danh sách môn được phân công của giáo viên.");
+      return;
+    }
+    if (!teacherCanTeachClass(teacher, subject.id, schoolClass)) {
+      const grade = classGrade(schoolClass);
+      const allowedGrades = gradeScopeForSubject(teacher, subject.id);
+      setProposalError(`Giáo viên không được phân công dạy ${catalogName(subject)} cho khối ${grade ?? "của lớp này"}.${allowedGrades.length ? ` Khối được phép: ${allowedGrades.join(", ")}.` : ""}`);
       return;
     }
     const classCampus = textValue(schoolClass.campusId);
@@ -745,7 +757,7 @@ export default function AiSchedulerPage() {
                 </div>
                 <div>
                   <Label>Môn</Label>
-                  <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.subjectId} onChange={(event) => setRequirementField("subjectId", event.target.value)}>
+                  <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.subjectId} onChange={(event) => setRequirementForm((current) => { const nextSubjectId = event.target.value; const currentClass = classes.find((row) => row.id === current.classId); return { ...current, subjectId: nextSubjectId, classId: selectedTeacher && currentClass && !teacherCanTeachClass(selectedTeacher, nextSubjectId, currentClass) ? "" : current.classId }; })}>
                     <option value="">Chọn môn</option>
                     {availableSubjects.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}</option>)}
                   </select>
@@ -754,8 +766,9 @@ export default function AiSchedulerPage() {
                   <Label>Lớp</Label>
                   <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.classId} onChange={(event) => setRequirementField("classId", event.target.value)}>
                     <option value="">Chọn lớp</option>
-                    {classes.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}</option>)}
+                    {availableClasses.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}</option>)}
                   </select>
+                  {selectedTeacher && requirementForm.subjectId ? <p className="mt-1 text-xs text-muted-foreground">Chỉ hiển thị lớp thuộc khối giáo viên được phân công.</p> : null}
                 </div>
                 <div>
                   <Label>Phòng</Label>
