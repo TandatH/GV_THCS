@@ -20,6 +20,7 @@ import { createOrUpdateSchedule, firebaseErrorMessage, reviewTeacherAvailability
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { currentWeekStartDateOnly } from "@/lib/date-only";
+import { classGrade, gradeScopeForSubject, teacherCanTeachClass, teacherCanTeachSubject } from "@/lib/teaching-assignments";
 import { buildStudentTimetableWorkbook, downloadStudentTimetableWorkbook } from "@/lib/exports/student-timetable";
 
 const fallbackPeriodStartHour = 7;
@@ -345,20 +346,48 @@ export default function SchedulesPage() {
   const calendarStart = textValue(timeSlots[0]?.startTime) || "06:30:00";
   const calendarEnd = textValue(timeSlots[timeSlots.length - 1]?.endTime) || "19:00:00";
 
-  const catalogFields: { key: Exclude<CatalogFieldKey, "departmentId">; label: string; options: CatalogRow[] }[] = [
-    { key: "teacherId", label: "Giáo viên", options: teachers },
-    { key: "subjectId", label: "Môn học", options: subjects },
-    { key: "classId", label: "Lớp học", options: classes },
-    { key: "roomId", label: "Phòng học", options: rooms },
-    { key: "campusId", label: "Cơ sở", options: campuses },
-    { key: "semesterId", label: "Học kỳ", options: semesters },
-  ];
-
   const selectedTeacher = useMemo(() => selectedCatalogRow(teachers, form.teacherId), [form.teacherId, teachers]);
   const teacherDepartmentId = textValue(selectedTeacher?.departmentId);
   const selectedSubject = useMemo(() => selectedCatalogRow(subjects, form.subjectId), [form.subjectId, subjects]);
   const subjectDepartmentId = textValue(selectedSubject?.departmentId);
+  const selectedClass = useMemo(() => selectedCatalogRow(classes, form.classId), [classes, form.classId]);
   const selectedSemester = useMemo(() => selectedCatalogRow(semesters, form.semesterId), [form.semesterId, semesters]);
+
+  const eligibleTeachers = useMemo(
+    () => teachers.filter((teacher) => {
+      if (form.subjectId && !teacherCanTeachSubject(teacher, form.subjectId)) return false;
+      if (form.subjectId && selectedClass && !teacherCanTeachClass(teacher, form.subjectId, selectedClass)) return false;
+      return true;
+    }),
+    [form.subjectId, selectedClass, teachers],
+  );
+  const eligibleSubjects = useMemo(
+    () => selectedTeacher ? subjects.filter((subject) => teacherCanTeachSubject(selectedTeacher, subject.id)) : subjects,
+    [selectedTeacher, subjects],
+  );
+  const eligibleClasses = useMemo(
+    () => selectedTeacher && form.subjectId
+      ? classes.filter((schoolClass) => teacherCanTeachClass(selectedTeacher, form.subjectId, schoolClass))
+      : classes,
+    [classes, form.subjectId, selectedTeacher],
+  );
+
+  const teacherTeachingIssue = selectedTeacher && form.subjectId
+    ? !teacherCanTeachSubject(selectedTeacher, form.subjectId)
+      ? "Môn học đã chọn không nằm trong phân công của giáo viên."
+      : selectedClass && !teacherCanTeachClass(selectedTeacher, form.subjectId, selectedClass)
+        ? `Giáo viên không được phân công dạy ${catalogName(subjects, form.subjectId) || form.subjectId} cho khối ${classGrade(selectedClass) ?? "của lớp này"}.`
+        : ""
+    : "";
+
+  const catalogFields: { key: Exclude<CatalogFieldKey, "departmentId">; label: string; options: CatalogRow[] }[] = [
+    { key: "teacherId", label: "Giáo viên", options: eligibleTeachers },
+    { key: "subjectId", label: "Môn học", options: eligibleSubjects },
+    { key: "classId", label: "Lớp học", options: eligibleClasses },
+    { key: "roomId", label: "Phòng học", options: rooms },
+    { key: "campusId", label: "Cơ sở", options: campuses },
+    { key: "semesterId", label: "Học kỳ", options: semesters },
+  ];
   const adjunctAvailabilityRows = useMemo(
     () => availabilityRows.filter((row) => teachers.find((teacher) => teacher.id === row.teacherId)?.teacherType === "thinh_giang"),
     [availabilityRows, teachers],
@@ -451,10 +480,23 @@ export default function SchedulesPage() {
         const teacher = teachers.find((row) => row.id === value);
         next.departmentId = textValue(teacher?.departmentId);
         if (textValue(teacher?.campusId)) next.campusId = textValue(teacher?.campusId);
+        if (teacher && next.subjectId && !teacherCanTeachSubject(teacher, next.subjectId)) next.subjectId = "";
+        const currentClass = classes.find((row) => row.id === next.classId);
+        if (teacher && next.subjectId && currentClass && !teacherCanTeachClass(teacher, next.subjectId, currentClass)) next.classId = "";
       }
-      if (key === "subjectId" && !next.teacherId && !next.departmentId) {
-        const subject = subjects.find((row) => row.id === value);
-        if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
+      if (key === "subjectId") {
+        if (!next.teacherId && !next.departmentId) {
+          const subject = subjects.find((row) => row.id === value);
+          if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
+        }
+        const teacher = teachers.find((row) => row.id === next.teacherId);
+        const currentClass = classes.find((row) => row.id === next.classId);
+        if (teacher && currentClass && value && !teacherCanTeachClass(teacher, value, currentClass)) next.classId = "";
+      }
+      if (key === "classId") {
+        const teacher = teachers.find((row) => row.id === next.teacherId);
+        const schoolClass = classes.find((row) => row.id === value);
+        if (teacher && next.subjectId && schoolClass && !teacherCanTeachClass(teacher, next.subjectId, schoolClass)) next.teacherId = "";
       }
       if (key === "roomId") {
         const room = rooms.find((row) => row.id === value);
@@ -510,6 +552,7 @@ export default function SchedulesPage() {
       const scheduleDepartmentId = teacherDepartmentId || form.departmentId;
       if (!scheduleDepartmentId) throw new Error("Hồ sơ giáo viên chưa có bộ môn. Vui lòng cập nhật bộ môn trước khi tạo lịch.");
       if (subjectDepartmentWarning) throw new Error(subjectDepartmentWarning);
+      if (teacherTeachingIssue) throw new Error(teacherTeachingIssue);
       const lastPeriod = Number(form.endPeriod);
       const startPeriod = Number(form.startPeriod);
       if (lastPeriod < startPeriod) throw new Error("Tiết cuối không được nhỏ hơn tiết bắt đầu.");
@@ -655,7 +698,7 @@ export default function SchedulesPage() {
             <div className="flex flex-col gap-2 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-5 w-5 text-primary" />Khung giờ rảnh của giáo viên thỉnh giảng</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Duyệt hiện tại áp dụng cho toàn bộ các ô trong phiếu; khung giờ chỉ là điều kiện xếp lịch, chưa phải tiết được tính công.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Nhiều giáo viên có thể cùng được duyệt một khung giờ; chỉ khi tạo lịch dạy chính thức hệ thống mới kiểm tra trùng giáo viên, lớp và phòng.</p>
               </div>
               <Badge tone={sortedAvailabilityRows.some((row) => reviewStatusOf(row) === "pending") ? "warning" : "success"}>
                 {sortedAvailabilityRows.filter((row) => reviewStatusOf(row) === "pending").length} chờ duyệt
@@ -785,7 +828,7 @@ export default function SchedulesPage() {
           </div>
         </Modal>
 
-        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={timeSlots.length === 0 || Boolean(selectedAvailabilityIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
+        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={timeSlots.length === 0 || Boolean(selectedAvailabilityIssue) || Boolean(teacherTeachingIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
           <form id="schedule-form" className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
             {catalogFields.map(({ key, label, options }) => (
               <div key={key}>
@@ -801,6 +844,11 @@ export default function SchedulesPage() {
               <Label>Bộ môn của lịch</Label>
               <div className="flex min-h-11 items-center rounded-xl border border-border bg-muted px-3 py-2 text-sm font-semibold text-foreground">{departmentSummary}</div>
               {subjectDepartmentWarning ? <p className="mt-1 text-xs text-amber-700">{subjectDepartmentWarning}</p> : <p className="mt-1 text-xs text-muted-foreground">Bộ môn lấy theo hồ sơ giáo viên.</p>}
+              {selectedTeacher && form.subjectId ? (
+                <p className={`mt-1 text-xs ${teacherTeachingIssue ? "text-rose-700" : "text-emerald-700"}`}>
+                  {teacherTeachingIssue || (() => { const grades = gradeScopeForSubject(selectedTeacher, form.subjectId); return grades.length ? `Phạm vi được phân công: khối ${grades.join(", ")}.` : "Hồ sơ cũ chưa giới hạn khối; hệ thống tạm cho phép các khối của môn này."; })()}
+                </p>
+              ) : null}
             </div>
             <div><Label>Tuần bắt đầu</Label><Input required type="date" value={form.weekStart} onChange={(event) => setField("weekStart", event.target.value)} /></div>
             <div><Label>Thứ</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.dayOfWeek} onChange={(event) => setField("dayOfWeek", event.target.value)}>{[2,3,4,5,6,7].map((day) => <option key={day} value={day}>Thứ {day}</option>)}</select></div>
