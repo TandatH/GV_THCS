@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import type { Role, TeacherInput } from "@school/shared";
+import type { Role, SchoolLevel, TeacherInput, TeachingRole } from "@school/shared";
 import { CirclePlus, Copy, ImagePlus, PencilLine, Search, ShieldCheck, Upload, UsersRound } from "lucide-react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -18,11 +18,15 @@ import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { todayDateOnly } from "@/lib/date-only";
 import { formatCurrency, initials } from "@/lib/utils";
-import { teachingAssignments } from "@/lib/teaching-assignments";
 import { toast } from "sonner";
 
 type TeacherRow = DocumentData & { id: string };
 type CatalogRow = DocumentData & { id: string };
+
+type TeachingAssignmentForm = {
+  subjectId: string;
+  gradeLevels: number[];
+};
 
 type FormState = {
   teacherCode: string;
@@ -31,7 +35,9 @@ type FormState = {
   phone: string;
   departmentId: string;
   subjectIds: string[];
-  gradeLevelsBySubject: Record<string, number[]>;
+  schoolLevels: SchoolLevel[];
+  teachingRole: TeachingRole;
+  teachingAssignments: TeachingAssignmentForm[];
   specialization: string;
   degree: string;
   startDate: string;
@@ -54,7 +60,9 @@ const initialForm: FormState = {
   phone: "",
   departmentId: "",
   subjectIds: [],
-  gradeLevelsBySubject: {},
+  schoolLevels: ["secondary"],
+  teachingRole: "bo_mon",
+  teachingAssignments: [],
   specialization: "",
   degree: "Đại học",
   startDate: todayDateOnly(),
@@ -91,19 +99,95 @@ function activeCatalogRows(rows: CatalogRow[]) {
     .sort((first, second) => catalogName([first], first.id).localeCompare(catalogName([second], second.id), "vi"));
 }
 
-function formFromTeacher(row: TeacherRow): FormState {
+function schoolLevelForGrade(grade: number): SchoolLevel | "" {
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  return "";
+}
+
+function gradeOfSubject(subject: CatalogRow | undefined) {
+  const grade = Number(subject?.grade ?? subject?.gradeLevel ?? 0);
+  return Number.isInteger(grade) && grade >= 1 && grade <= 9 ? grade : 0;
+}
+
+function normalizeSchoolLevels(value: unknown): SchoolLevel[] {
+  if (Array.isArray(value)) {
+    const levels = value.filter((item): item is SchoolLevel => item === "primary" || item === "secondary");
+    if (levels.length > 0) return [...new Set(levels)];
+  }
+  return ["secondary"];
+}
+
+function gradesForSchoolLevels(levels: SchoolLevel[]) {
+  const grades: number[] = [];
+  if (levels.includes("primary")) grades.push(1, 2, 3, 4, 5);
+  if (levels.includes("secondary")) grades.push(6, 7, 8, 9);
+  return grades;
+}
+
+function subjectMatchesSchoolLevels(subject: CatalogRow, levels: SchoolLevel[]) {
+  const explicitLevel = textValue(subject.schoolLevel);
+  if (explicitLevel === "both") return true;
+  if (explicitLevel === "primary" || explicitLevel === "secondary") return levels.includes(explicitLevel);
+  const grade = gradeOfSubject(subject);
+  const inferred = schoolLevelForGrade(grade);
+  return !inferred || levels.includes(inferred);
+}
+
+function eligibleGradesForSubject(subject: CatalogRow, levels: SchoolLevel[]) {
+  const grade = gradeOfSubject(subject);
+  if (grade) return levels.includes(schoolLevelForGrade(grade) as SchoolLevel) ? [grade] : [];
+  return gradesForSchoolLevels(levels);
+}
+
+function departmentMatchesSchoolLevels(department: CatalogRow, levels: SchoolLevel[]) {
+  const level = textValue(department.schoolLevel);
+  if (!level) return true; // Bộ môn cũ chưa gắn cấp học: giữ tương thích dữ liệu hiện hữu.
+  if (level === "both") return true;
+  if (levels.length === 2) return false; // GV dạy cả hai cấp phải thuộc tổ dùng chung hai cấp.
+  return levels.includes(level as SchoolLevel);
+}
+
+function schoolLevelLabel(value: unknown) {
+  const levels = normalizeSchoolLevels(value);
+  if (levels.length === 2) return "Tiểu học + THCS";
+  return levels[0] === "primary" ? "Tiểu học" : "THCS";
+}
+
+function teachingRoleLabel(value: unknown) {
+  if (value === "chu_nhiem") return "Chủ nhiệm";
+  if (value === "ca_hai") return "Chủ nhiệm + bộ môn";
+  return "Bộ môn";
+}
+
+function formFromTeacher(row: TeacherRow, subjects: CatalogRow[]): FormState {
   const contract = typeof row.contract === "object" && row.contract ? row.contract as Record<string, unknown> : {};
-  const assignmentMap = Object.fromEntries(
-    teachingAssignments(row).map((assignment) => [assignment.subjectId, assignment.gradeLevels]),
-  );
+  const schoolLevels = normalizeSchoolLevels(row.schoolLevels);
+  const subjectIds = Array.isArray(row.subjectIds) ? row.subjectIds.map(String) : textValue(row.subjectIds).split(",").map((value) => value.trim()).filter(Boolean);
+  const storedAssignments = Array.isArray(row.teachingAssignments) ? row.teachingAssignments : [];
+  const teachingAssignments: TeachingAssignmentForm[] = storedAssignments.length > 0
+    ? storedAssignments.map((assignment) => {
+        const item = assignment as Record<string, unknown>;
+        return {
+          subjectId: textValue(item.subjectId),
+          gradeLevels: Array.isArray(item.gradeLevels) ? item.gradeLevels.map(Number).filter((grade) => Number.isInteger(grade) && grade >= 1 && grade <= 9) : [],
+        };
+      }).filter((assignment) => assignment.subjectId && assignment.gradeLevels.length > 0)
+    : subjectIds.map((subjectId) => {
+        const subject = subjects.find((item) => item.id === subjectId);
+        const eligible = subject ? eligibleGradesForSubject(subject, schoolLevels) : gradesForSchoolLevels(schoolLevels);
+        return { subjectId, gradeLevels: eligible };
+      });
   return {
     teacherCode: textValue(row.teacherCode),
     fullName: textValue(row.fullName),
     email: textValue(row.email),
     phone: textValue(row.phone),
     departmentId: textValue(row.departmentId),
-    subjectIds: Array.isArray(row.subjectIds) ? row.subjectIds.map(String) : textValue(row.subjectIds).split(",").map((value) => value.trim()).filter(Boolean),
-    gradeLevelsBySubject: assignmentMap,
+    subjectIds,
+    schoolLevels,
+    teachingRole: row.teachingRole === "chu_nhiem" || row.teachingRole === "ca_hai" ? row.teachingRole : "bo_mon",
+    teachingAssignments,
     specialization: textValue(row.specialization),
     degree: textValue(row.degree) || "Đại học",
     startDate: textValue(row.startDate) || todayDateOnly(),
@@ -127,6 +211,7 @@ export default function TeachersPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [levelFilter, setLevelFilter] = useState("all");
   const [open, setOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherRow | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
@@ -183,12 +268,91 @@ export default function TeachersPage() {
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("vi").includes(keyword));
       const matchesType = typeFilter === "all" || row.teacherType === typeFilter;
-      return matchesKeyword && matchesType;
+      const levels = normalizeSchoolLevels(row.schoolLevels);
+      const matchesLevel = levelFilter === "all" || levels.includes(levelFilter as SchoolLevel);
+      return matchesKeyword && matchesType && matchesLevel;
     });
-  }, [rows, search, typeFilter]);
+  }, [levelFilter, rows, search, typeFilter]);
+
+  const availableDepartments = useMemo(
+    () => departments.filter((department) => departmentMatchesSchoolLevels(department, form.schoolLevels)),
+    [departments, form.schoolLevels],
+  );
+
+  const availableSubjects = useMemo(
+    () => subjects.filter((subject) => (!form.departmentId || subject.departmentId === form.departmentId) && subjectMatchesSchoolLevels(subject, form.schoolLevels)),
+    [form.departmentId, form.schoolLevels, subjects],
+  );
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleSchoolLevel(level: SchoolLevel, checked: boolean) {
+    setForm((current) => {
+      const nextLevels = checked
+        ? [...new Set([...current.schoolLevels, level])]
+        : current.schoolLevels.filter((item) => item !== level);
+      if (nextLevels.length === 0) return current;
+      const nextAssignments = current.teachingAssignments
+        .map((assignment) => {
+          const subject = subjects.find((item) => item.id === assignment.subjectId);
+          const allowed = subject ? eligibleGradesForSubject(subject, nextLevels) : gradesForSchoolLevels(nextLevels);
+          return { ...assignment, gradeLevels: assignment.gradeLevels.filter((grade) => allowed.includes(grade)) };
+        })
+        .filter((assignment) => assignment.gradeLevels.length > 0);
+      const nextSubjectIds = current.subjectIds.filter((subjectId) => nextAssignments.some((assignment) => assignment.subjectId === subjectId));
+      const currentDepartment = departments.find((item) => item.id === current.departmentId);
+      const departmentId = currentDepartment && departmentMatchesSchoolLevels(currentDepartment, nextLevels) ? current.departmentId : "";
+      return { ...current, schoolLevels: nextLevels, departmentId, subjectIds: departmentId ? nextSubjectIds : [], teachingAssignments: departmentId ? nextAssignments : [] };
+    });
+  }
+
+  function selectDepartment(departmentId: string) {
+    setForm((current) => ({ ...current, departmentId, subjectIds: [], teachingAssignments: [] }));
+  }
+
+  function toggleSubject(subject: CatalogRow, checked: boolean) {
+    setForm((current) => {
+      if (!checked) {
+        return {
+          ...current,
+          subjectIds: current.subjectIds.filter((id) => id !== subject.id),
+          teachingAssignments: current.teachingAssignments.filter((assignment) => assignment.subjectId !== subject.id),
+        };
+      }
+      const gradeLevels = eligibleGradesForSubject(subject, current.schoolLevels);
+      if (gradeLevels.length === 0) return current;
+      return {
+        ...current,
+        subjectIds: [...new Set([...current.subjectIds, subject.id])],
+        teachingAssignments: [
+          ...current.teachingAssignments.filter((assignment) => assignment.subjectId !== subject.id),
+          { subjectId: subject.id, gradeLevels },
+        ],
+      };
+    });
+  }
+
+  function toggleAssignmentGrade(subjectId: string, grade: number, checked: boolean) {
+    setForm((current) => {
+      const assignment = current.teachingAssignments.find((item) => item.subjectId === subjectId);
+      if (!assignment) return current;
+      const gradeLevels = checked
+        ? [...new Set([...assignment.gradeLevels, grade])].sort((a, b) => a - b)
+        : assignment.gradeLevels.filter((item) => item !== grade);
+      if (gradeLevels.length === 0) {
+        return {
+          ...current,
+          subjectIds: current.subjectIds.filter((id) => id !== subjectId),
+          teachingAssignments: current.teachingAssignments.filter((item) => item.subjectId !== subjectId),
+        };
+      }
+      return {
+        ...current,
+        teachingAssignments: current.teachingAssignments.map((item) => item.subjectId === subjectId ? { ...item, gradeLevels } : item),
+      };
+    });
   }
 
   function openCreate() {
@@ -201,7 +365,7 @@ export default function TeachersPage() {
 
   function openEdit(row: TeacherRow) {
     setEditingTeacher(row);
-    setForm(formFromTeacher(row));
+    setForm(formFromTeacher(row, subjects));
     setFormError("");
     setSuccessMessage("");
     setOpen(true);
@@ -216,19 +380,15 @@ export default function TeachersPage() {
       if (!user) {
         throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
       }
+      if (form.schoolLevels.length === 0) {
+        throw new Error("Vui lòng chọn ít nhất một cấp học phụ trách.");
+      }
       if (form.subjectIds.length === 0) {
         throw new Error("Vui lòng chọn ít nhất một môn giảng dạy.");
       }
-      for (const subjectId of form.subjectIds) {
-        const grades = form.gradeLevelsBySubject[subjectId] ?? [];
-        if (grades.length === 0) {
-          throw new Error(`Vui lòng chọn ít nhất một khối được dạy cho môn ${catalogName(subjects, subjectId) || subjectId}.`);
-        }
+      if (form.teachingAssignments.length !== form.subjectIds.length || form.teachingAssignments.some((assignment) => assignment.gradeLevels.length === 0)) {
+        throw new Error("Mỗi môn giảng dạy cần có ít nhất một khối phụ trách.");
       }
-      const teachingAssignments = form.subjectIds.map((subjectId) => ({
-        subjectId,
-        gradeLevels: [...(form.gradeLevelsBySubject[subjectId] ?? [])].sort((a, b) => a - b),
-      }));
       const teacher: TeacherInput = {
         teacherCode: form.teacherCode.trim(),
         fullName: form.fullName,
@@ -236,7 +396,9 @@ export default function TeachersPage() {
         phone: form.phone,
         departmentId: form.departmentId,
         subjectIds: form.subjectIds,
-        teachingAssignments,
+        schoolLevels: form.schoolLevels,
+        teachingRole: form.teachingRole,
+        teachingAssignments: form.teachingAssignments,
         specialization: form.specialization,
         degree: form.degree,
         startDate: form.startDate,
@@ -263,14 +425,7 @@ export default function TeachersPage() {
         setSuccessMessage("Đã cập nhật hồ sơ giáo viên.");
         toast.success("Đã cập nhật hồ sơ giáo viên.");
       } else {
-        const created = await createTeacherAccount({ teacher, password: form.password || undefined });
-        // Backend cũ có thể chưa biết field teachingAssignments. Ghi merge lại từ admin
-        // để phạm vi môn/khối luôn được lưu ngay cả khi Cloud Function chưa cập nhật schema.
-        await setDoc(doc(firestore, "teachers", created.teacherId), {
-          teachingAssignments,
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-        }, { merge: true });
+        await createTeacherAccount({ teacher, password: form.password || undefined });
         setSuccessMessage("Đã tạo tài khoản và hồ sơ giáo viên thành công.");
         setForm(initialForm);
       }
@@ -342,7 +497,7 @@ export default function TeachersPage() {
         <PageHeader
           eyebrow="Quản trị nhân sự"
           title="Quản lý giáo viên"
-          description="Quản lý hồ sơ giáo viên cơ hữu và thỉnh giảng. Tài khoản mới được tạo an toàn qua Cloud Functions."
+          description="Quản lý giáo viên Tiểu học và THCS trong cùng hệ thống, gồm cấp học, vai trò, môn và khối được phép giảng dạy."
           actions={
             <Button onClick={openCreate}>
               <CirclePlus className="h-4 w-4" />
@@ -386,11 +541,18 @@ export default function TeachersPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo tên, email, bộ môn…" />
             </div>
-            <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-              <option value="all">Tất cả loại giáo viên</option>
-              <option value="co_huu">Giáo viên cơ hữu</option>
-              <option value="thinh_giang">Giáo viên thỉnh giảng</option>
-            </select>
+            <div className="flex flex-wrap gap-2">
+              <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+                <option value="all">Tất cả cấp học</option>
+                <option value="primary">Tiểu học</option>
+                <option value="secondary">THCS</option>
+              </select>
+              <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                <option value="all">Tất cả loại giáo viên</option>
+                <option value="co_huu">Giáo viên cơ hữu</option>
+                <option value="thinh_giang">Giáo viên thỉnh giảng</option>
+              </select>
+            </div>
           </div>
 
           {loading ? (
@@ -399,8 +561,8 @@ export default function TeachersPage() {
             <EmptyState icon={<UsersRound className="h-6 w-6" />} title="Chưa có giáo viên" description="Thêm giáo viên đầu tiên hoặc thay đổi điều kiện tìm kiếm." action={<Button onClick={openCreate}>Thêm giáo viên</Button>} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="data-table min-w-[1280px]">
-                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Môn / khối</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <table className="data-table min-w-[1320px]">
+                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Cấp học</th><th>Vai trò</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const status = teacherStatus(row.status);
@@ -409,16 +571,8 @@ export default function TeachersPage() {
                         <td><div className="flex items-center gap-2"><code className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold">{row.id}</code><Button size="sm" variant="ghost" onClick={() => copyTeacherId(row.id)} aria-label="Copy ID giáo viên"><Copy className="h-4 w-4" /></Button></div></td>
                         <td><div className="flex items-center gap-3">{row.avatarUrl ? <img alt={row.fullName || "Giáo viên"} className="h-10 w-10 rounded-full object-cover ring-1 ring-border" src={String(row.avatarUrl)} /> : <div className="grid h-10 w-10 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{initials(row.fullName)}</div>}<div><p className="font-semibold">{row.fullName || "Chưa cập nhật"}</p><p className="text-xs text-muted-foreground">{row.email || row.phone || row.id}</p></div></div></td>
                         <td>{catalogName(departments, row.departmentId) || "—"}</td>
-                        <td>
-                          {(() => {
-                            const assignments = teachingAssignments(row);
-                            const subjectIds = Array.isArray(row.subjectIds) ? row.subjectIds.map(String) : [];
-                            if (assignments.length > 0) {
-                              return <div className="max-w-64 space-y-1">{assignments.map((assignment) => <p key={assignment.subjectId} className="text-xs"><span className="font-semibold">{catalogName(subjects, assignment.subjectId) || assignment.subjectId}</span> · Khối {assignment.gradeLevels.join(", ") || "chưa chọn"}</p>)}</div>;
-                            }
-                            return <div className="max-w-64 text-xs text-muted-foreground">{subjectIds.map((id) => catalogName(subjects, id) || id).join(", ") || "—"}<br />Chưa giới hạn khối</div>;
-                          })()}
-                        </td>
+                        <td><Badge tone={normalizeSchoolLevels(row.schoolLevels).includes("primary") ? "success" : "info"}>{schoolLevelLabel(row.schoolLevels)}</Badge></td>
+                        <td>{teachingRoleLabel(row.teachingRole)}</td>
                         <td><Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>{row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}</Badge></td>
                         <td><p className="max-w-52 truncate">{row.specialization || "—"}</p><p className="text-xs text-muted-foreground">{row.degree || ""}</p></td>
                         <td>{row.teacherType === "co_huu" ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần` : formatCurrency(Number(row.ratePerPeriod || 0)) + "/tiết"}</td>
@@ -446,63 +600,32 @@ export default function TeachersPage() {
             <div><Label>Họ và tên</Label><Input required value={form.fullName} onChange={(e) => setField("fullName", e.target.value)} /></div>
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>
             <div><Label>Số điện thoại</Label><Input required value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></div>
-            <div><Label>Bộ môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.departmentId} onChange={(e) => setForm((current) => { const nextSubjectIds = current.subjectIds.filter((id) => subjects.find((subject) => subject.id === id)?.departmentId === e.target.value); return { ...current, departmentId: e.target.value, subjectIds: nextSubjectIds, gradeLevelsBySubject: Object.fromEntries(Object.entries(current.gradeLevelsBySubject).filter(([id]) => nextSubjectIds.includes(id))) }; })}><option value="">Chọn bộ môn</option>{departments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
+            <div className="sm:col-span-2">
+              <Label>Cấp học phụ trách</Label>
+              <div className="mt-1 flex flex-wrap gap-3 rounded-xl border border-border p-3">
+                <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("primary")} onChange={(event) => toggleSchoolLevel("primary", event.target.checked)} />Tiểu học (khối 1–5)</label>
+                <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("secondary")} onChange={(event) => toggleSchoolLevel("secondary", event.target.checked)} />THCS (khối 6–9)</label>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Một giáo viên có thể phụ trách một hoặc cả hai cấp học.</p>
+            </div>
+            <div><Label>Vai trò giảng dạy</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teachingRole} onChange={(e) => setField("teachingRole", e.target.value as TeachingRole)}><option value="chu_nhiem">Giáo viên chủ nhiệm</option><option value="bo_mon">Giáo viên bộ môn</option><option value="ca_hai">Chủ nhiệm + bộ môn</option></select></div>
+            <div><Label>Bộ môn / tổ chuyên môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.departmentId} onChange={(e) => selectDepartment(e.target.value)}><option value="">Chọn bộ môn</option>{availableDepartments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
             <div><Label>Cơ sở chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.campusId} onChange={(e) => setField("campusId", e.target.value)}><option value="">Chọn cơ sở</option>{campuses.map((row) => <option key={row.id} value={row.id}>{catalogName(campuses, row.id)}</option>)}</select></div>
             <div className="sm:col-span-2">
               <Label>Môn và khối được phân công</Label>
-              <div className="mt-1 space-y-2 rounded-xl border border-border p-3">
-                {subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).map((subject) => {
+              <div className="mt-1 max-h-72 space-y-2 overflow-y-auto rounded-xl border border-border p-3">
+                {availableSubjects.map((subject) => {
                   const checked = form.subjectIds.includes(subject.id);
-                  const grades = form.gradeLevelsBySubject[subject.id] ?? [];
-                  return (
-                    <div className="rounded-lg border border-border/70 p-3" key={subject.id}>
-                      <label className="flex items-center gap-2 text-sm font-medium">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => setForm((current) => {
-                            if (event.target.checked) {
-                              return {
-                                ...current,
-                                subjectIds: current.subjectIds.includes(subject.id) ? current.subjectIds : [...current.subjectIds, subject.id],
-                                gradeLevelsBySubject: { ...current.gradeLevelsBySubject, [subject.id]: current.gradeLevelsBySubject[subject.id]?.length ? current.gradeLevelsBySubject[subject.id] : [6, 7, 8, 9] },
-                              };
-                            }
-                            const nextGrades = { ...current.gradeLevelsBySubject };
-                            delete nextGrades[subject.id];
-                            return { ...current, subjectIds: current.subjectIds.filter((id) => id !== subject.id), gradeLevelsBySubject: nextGrades };
-                          })}
-                        />
-                        <span>{catalogName(subjects, subject.id)}</span>
-                      </label>
-                      {checked ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
-                          <span className="text-xs text-muted-foreground">Khối:</span>
-                          {[6, 7, 8, 9].map((grade) => {
-                            const active = grades.includes(grade);
-                            return (
-                              <button
-                                key={grade}
-                                type="button"
-                                onClick={() => setForm((current) => {
-                                  const currentGrades = current.gradeLevelsBySubject[subject.id] ?? [];
-                                  const next = currentGrades.includes(grade) ? currentGrades.filter((value) => value !== grade) : [...currentGrades, grade];
-                                  return { ...current, gradeLevelsBySubject: { ...current.gradeLevelsBySubject, [subject.id]: next } };
-                                })}
-                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${active ? "border-primary bg-primary text-white" : "border-border bg-card text-muted-foreground hover:border-primary/40"}`}
-                              >
-                                Khối {grade}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
+                  const eligibleGrades = eligibleGradesForSubject(subject, form.schoolLevels);
+                  const assignedGrades = form.teachingAssignments.find((assignment) => assignment.subjectId === subject.id)?.gradeLevels ?? [];
+                  return <div className="rounded-lg border border-border/70 px-3 py-2" key={subject.id}>
+                    <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={checked} onChange={(event) => toggleSubject(subject, event.target.checked)} /><span>{catalogName(subjects, subject.id)}</span></label>
+                    {checked ? <div className="mt-2 flex flex-wrap gap-2 pl-6">{eligibleGrades.map((grade) => <label key={grade} className="flex items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-xs"><input type="checkbox" checked={assignedGrades.includes(grade)} onChange={(event) => toggleAssignmentGrade(subject.id, grade, event.target.checked)} />Khối {grade}</label>)}</div> : null}
+                  </div>;
                 })}
-                {subjects.filter((subject) => !form.departmentId || subject.departmentId === form.departmentId).length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn thuộc bộ môn đã chọn.</p> : null}
+                {availableSubjects.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn phù hợp với cấp học và bộ môn đã chọn.</p> : null}
               </div>
-              {form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn giảng dạy.</p> : <p className="mt-1 text-xs text-muted-foreground">Mỗi môn phải chọn ít nhất một khối. Ví dụ: Công nghệ · Khối 9.</p>}
+              {form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn và khối giảng dạy.</p> : null}
             </div>
             <div><Label>Chuyên môn</Label><Input required value={form.specialization} onChange={(e) => setField("specialization", e.target.value)} /></div>
             <div><Label>Trình độ</Label><Input required value={form.degree} onChange={(e) => setField("degree", e.target.value)} /></div>

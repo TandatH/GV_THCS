@@ -37,6 +37,16 @@ export type CatalogField = {
   options?: { value: string; label: string }[];
   optionsCollection?: string;
   optionLabelFields?: string[];
+  optionFilters?: {
+    formField: string;
+    optionField: string;
+    mode?: "equals" | "arrayIncludes" | "equalsOrBoth" | "teachingGradeIncludes";
+  }[];
+  optionAllowedValues?: {
+    optionField: string;
+    values: string[];
+    allowMissing?: boolean;
+  }[];
 };
 
 type CatalogRow = DocumentData & { id: string };
@@ -107,6 +117,64 @@ function referenceLabel(row: CatalogRow, fields: string[] | undefined) {
   const preferred = fields?.length ? fields : ["name", "fullName", "code", "email"];
   const values = preferred.map((field) => row[field]).filter((value) => typeof value === "string" && value.trim());
   return values.length ? values.join(" · ") : row.id;
+}
+
+function staticOptionLabel(field: CatalogField, value: unknown) {
+  const normalized = value === null || value === undefined ? "" : String(value);
+  return field.options?.find((option) => option.value === normalized)?.label || displayValue(value);
+}
+
+function staticOptionsForField(field: CatalogField, form: FormState) {
+  const options = field.options ?? [];
+  if (field.name !== "grade") return options;
+  const schoolLevel = String(form.schoolLevel ?? "");
+  if (schoolLevel !== "primary" && schoolLevel !== "secondary") return options;
+  return options.filter((option) => {
+    const grade = Number(option.value);
+    if (!Number.isInteger(grade)) return true;
+    return schoolLevel === "primary" ? grade >= 1 && grade <= 5 : grade >= 6 && grade <= 9;
+  });
+}
+
+function filteredReferenceOptions(field: CatalogField, form: FormState, rows: CatalogRow[] | undefined) {
+  const filters = field.optionFilters ?? [];
+  const allowedValueFilters = field.optionAllowedValues ?? [];
+  return (rows ?? []).filter((row) => {
+    const matchesDynamicFilters = filters.every((filter) => {
+      const expected = String(form[filter.formField] ?? "").trim();
+      if (!expected) return true;
+      const actual = row[filter.optionField];
+      if (filter.mode === "arrayIncludes") {
+        if (Array.isArray(actual)) return actual.map(String).includes(expected);
+        // Hồ sơ giáo viên cũ chưa có schoolLevels được xem là THCS để giữ tương thích dữ liệu hiện tại.
+        return filter.optionField === "schoolLevels" && expected === "secondary" && (actual === undefined || actual === null || actual === "");
+      }
+      if (filter.mode === "equalsOrBoth") {
+        const value = String(actual ?? "").trim();
+        return !value || value === "both" || value === expected;
+      }
+      if (filter.mode === "teachingGradeIncludes") {
+        const grade = Number(expected);
+        if (!Number.isInteger(grade) || grade < 1 || grade > 9) return true;
+        const assignments = Array.isArray(row.teachingAssignments) ? row.teachingAssignments : [];
+        // Hồ sơ cũ chưa có teachingAssignments vẫn được hiển thị để không làm mất GVCN hiện hữu.
+        if (assignments.length === 0) return true;
+        return assignments.some((assignment) => {
+          if (!assignment || typeof assignment !== "object") return false;
+          const gradeLevels = (assignment as Record<string, unknown>).gradeLevels;
+          return Array.isArray(gradeLevels) && gradeLevels.map(Number).includes(grade);
+        });
+      }
+      return String(actual ?? "").trim() === expected;
+    });
+    if (!matchesDynamicFilters) return false;
+
+    return allowedValueFilters.every((filter) => {
+      const value = String(row[filter.optionField] ?? "").trim();
+      if (!value && filter.allowMissing) return true;
+      return filter.values.includes(value);
+    });
+  });
 }
 
 export function AdminCatalogPage({ title, description, collectionName, fields }: CatalogAdminPageProps) {
@@ -188,6 +256,26 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
+    const schoolLevel = String(form.schoolLevel ?? "");
+    const grade = Number(form.grade ?? 0);
+    if ((schoolLevel === "primary" || schoolLevel === "secondary") && Number.isInteger(grade) && grade > 0) {
+      const validGrade = schoolLevel === "primary" ? grade >= 1 && grade <= 5 : grade >= 6 && grade <= 9;
+      if (!validGrade) {
+        setFormError(schoolLevel === "primary" ? "Tiểu học chỉ sử dụng khối 1–5." : "THCS chỉ sử dụng khối 6–9.");
+        return;
+      }
+    }
+    for (const field of fields) {
+      if (!field.optionsCollection || (!(field.optionFilters?.length) && !(field.optionAllowedValues?.length))) continue;
+      const selectedId = String(form[field.name] ?? "").trim();
+      if (!selectedId) continue;
+      const validOptions = filteredReferenceOptions(field, form, referenceOptions[field.name]);
+      if (!validOptions.some((option) => option.id === selectedId)) {
+        setFormError(`${field.label} không phù hợp với cấp học/khối hoặc vai trò đã chọn.`);
+        return;
+      }
+    }
+
     const code = String(form.code || "").trim();
     const docId = editingRow?.id || normalizeDocId(code);
     if (!docId) {
@@ -284,7 +372,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
                     <tr key={row.id}>
                       <td><p className="font-semibold">{row.code || row.id}</p><p className="text-xs text-muted-foreground">ID: {row.id}</p></td>
                       <td>{row.name || "—"}</td>
-                      {visibleFields.slice(2, 5).map((field) => { const reference = referenceOptions[field.name]?.find((option) => option.id === row[field.name]); return <td key={field.name}>{reference ? referenceLabel(reference, field.optionLabelFields) : displayValue(row[field.name])}</td>; })}
+                      {visibleFields.slice(2, 5).map((field) => { const reference = referenceOptions[field.name]?.find((option) => option.id === row[field.name]); return <td key={field.name}>{reference ? referenceLabel(reference, field.optionLabelFields) : staticOptionLabel(field, row[field.name])}</td>; })}
                       <td><Badge tone={statusTone(row)}>{row.isActive === false || row.status === "inactive" ? "Ngừng hoạt động" : "Đang hoạt động"}</Badge></td>
                       <td><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button></td>
                     </tr>
@@ -310,8 +398,8 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
                 {field.type === "select" || field.optionsCollection ? (
                   <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={field.required} value={String(form[field.name] ?? "")} onChange={(event) => setField(field.name, event.target.value)}>
                     <option value="">Chọn {field.label.toLocaleLowerCase("vi")}</option>
-                    {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    {referenceOptions[field.name]?.map((option) => <option key={option.id} value={option.id}>{referenceLabel(option, field.optionLabelFields)}</option>)}
+                    {staticOptionsForField(field, form).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    {filteredReferenceOptions(field, form, referenceOptions[field.name]).map((option) => <option key={option.id} value={option.id}>{referenceLabel(option, field.optionLabelFields)}</option>)}
                   </select>
                 ) : field.type === "checkbox" ? (
                   <label className="flex h-11 items-center gap-3 rounded-xl border border-border bg-background px-3 text-sm">

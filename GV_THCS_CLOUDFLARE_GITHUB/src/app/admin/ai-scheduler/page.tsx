@@ -31,7 +31,6 @@ import type {
 import { createOrUpdateSchedule, firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { currentWeekStartDateOnly } from "@/lib/date-only";
-import { classGrade, gradeScopeForSubject, teacherCanTeachClass } from "@/lib/teaching-assignments";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 
 type CatalogRow = DocumentData & { id: string };
@@ -73,6 +72,61 @@ function activeRows(rows: CatalogRow[]) {
   return rows
     .filter((row) => row.isActive !== false && row.status !== "inactive" && row.status !== "archived")
     .sort((a, b) => catalogName(a).localeCompare(catalogName(b), "vi"));
+}
+
+function numericGrade(value: unknown) {
+  const grade = Number(value);
+  return Number.isInteger(grade) && grade >= 1 && grade <= 9 ? grade : 0;
+}
+
+function schoolLevelForGrade(grade: number) {
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  return "";
+}
+
+function catalogSchoolLevel(row: CatalogRow | null | undefined) {
+  const explicit = textValue(row?.schoolLevel);
+  if (explicit === "primary" || explicit === "secondary") return explicit;
+  return schoolLevelForGrade(numericGrade(row?.grade ?? row?.gradeLevel));
+}
+
+function teacherSchoolLevels(teacher: CatalogRow | null | undefined) {
+  if (Array.isArray(teacher?.schoolLevels)) {
+    const levels = teacher.schoolLevels.map(String).filter((level) => level === "primary" || level === "secondary");
+    if (levels.length > 0) return levels;
+  }
+  return ["secondary"];
+}
+
+function subjectMatchesClass(subject: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!subject || !schoolClass) return true;
+  const subjectGrade = numericGrade(subject.grade ?? subject.gradeLevel);
+  const classGrade = numericGrade(schoolClass.grade ?? schoolClass.gradeLevel);
+  if (subjectGrade && classGrade && subjectGrade !== classGrade) return false;
+  const subjectLevel = catalogSchoolLevel(subject);
+  const classLevel = catalogSchoolLevel(schoolClass);
+  return !subjectLevel || !classLevel || subjectLevel === classLevel;
+}
+
+function teacherMatchesClass(teacher: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!teacher || !schoolClass) return true;
+  const classLevel = catalogSchoolLevel(schoolClass);
+  return !classLevel || teacherSchoolLevels(teacher).includes(classLevel);
+}
+
+function teacherCanTeachSubjectAtClass(teacher: CatalogRow | null | undefined, subject: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!teacher || !subject) return true;
+  const subjectIds = Array.isArray(teacher.subjectIds) ? teacher.subjectIds.map(String) : [];
+  if (subjectIds.length > 0 && !subjectIds.includes(subject.id)) return false;
+  const assignments = Array.isArray(teacher.teachingAssignments) ? teacher.teachingAssignments : [];
+  if (assignments.length === 0) return true;
+  const assignment = assignments.find((item) => item && typeof item === "object" && String((item as Record<string, unknown>).subjectId ?? "") === subject.id) as Record<string, unknown> | undefined;
+  if (!assignment) return false;
+  const classGrade = numericGrade(schoolClass?.grade ?? schoolClass?.gradeLevel);
+  if (!classGrade) return true;
+  const grades = Array.isArray(assignment.gradeLevels) ? assignment.gradeLevels.map(Number) : [];
+  return grades.includes(classGrade);
 }
 
 function periodNumber(row: CatalogRow) {
@@ -247,17 +301,30 @@ export default function AiSchedulerPage() {
     () => teachers.find((teacher) => teacher.id === requirementForm.teacherId) ?? null,
     [requirementForm.teacherId, teachers],
   );
+  const selectedSubject = useMemo(
+    () => subjects.find((subject) => subject.id === requirementForm.subjectId) ?? null,
+    [requirementForm.subjectId, subjects],
+  );
+  const selectedClass = useMemo(
+    () => classes.find((schoolClass) => schoolClass.id === requirementForm.classId) ?? null,
+    [classes, requirementForm.classId],
+  );
 
-  const availableSubjects = useMemo(() => {
-    if (!selectedTeacher) return subjects;
-    const assigned = Array.isArray(selectedTeacher.subjectIds) ? selectedTeacher.subjectIds.map(String) : [];
-    return assigned.length > 0 ? subjects.filter((subject) => assigned.includes(subject.id)) : subjects;
-  }, [selectedTeacher, subjects]);
+  const availableSubjects = useMemo(() => subjects.filter((subject) => subject.id === requirementForm.subjectId || (
+    subjectMatchesClass(subject, selectedClass)
+    && teacherCanTeachSubjectAtClass(selectedTeacher, subject, selectedClass)
+  )), [requirementForm.subjectId, selectedClass, selectedTeacher, subjects]);
 
-  const availableClasses = useMemo(() => {
-    if (!selectedTeacher || !requirementForm.subjectId) return classes;
-    return classes.filter((schoolClass) => teacherCanTeachClass(selectedTeacher, requirementForm.subjectId, schoolClass));
-  }, [classes, requirementForm.subjectId, selectedTeacher]);
+  const availableTeachers = useMemo(() => teachers.filter((teacher) => teacher.id === requirementForm.teacherId || (
+    teacherMatchesClass(teacher, selectedClass)
+    && teacherCanTeachSubjectAtClass(teacher, selectedSubject, selectedClass)
+  )), [requirementForm.teacherId, selectedClass, selectedSubject, teachers]);
+
+  const availableClasses = useMemo(() => classes.filter((schoolClass) => schoolClass.id === requirementForm.classId || (
+    subjectMatchesClass(selectedSubject, schoolClass)
+    && teacherMatchesClass(selectedTeacher, schoolClass)
+    && teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, schoolClass)
+  )), [classes, requirementForm.classId, selectedSubject, selectedTeacher]);
 
   const selectedSemester = useMemo(
     () => semesters.find((semester) => semester.id === semesterId) ?? null,
@@ -351,10 +418,16 @@ export default function AiSchedulerPage() {
       setProposalError("Môn đã chọn không nằm trong danh sách môn được phân công của giáo viên.");
       return;
     }
-    if (!teacherCanTeachClass(teacher, subject.id, schoolClass)) {
-      const grade = classGrade(schoolClass);
-      const allowedGrades = gradeScopeForSubject(teacher, subject.id);
-      setProposalError(`Giáo viên không được phân công dạy ${catalogName(subject)} cho khối ${grade ?? "của lớp này"}.${allowedGrades.length ? ` Khối được phép: ${allowedGrades.join(", ")}.` : ""}`);
+    if (!subjectMatchesClass(subject, schoolClass)) {
+      setProposalError("Môn học không phù hợp với cấp học/khối của lớp đã chọn.");
+      return;
+    }
+    if (!teacherMatchesClass(teacher, schoolClass)) {
+      setProposalError("Giáo viên chưa được phân công phụ trách cấp học của lớp đã chọn.");
+      return;
+    }
+    if (!teacherCanTeachSubjectAtClass(teacher, subject, schoolClass)) {
+      setProposalError("Giáo viên chưa được phân công dạy môn này ở khối của lớp đã chọn.");
       return;
     }
     const classCampus = textValue(schoolClass.campusId);
@@ -363,7 +436,13 @@ export default function AiSchedulerPage() {
       setProposalError("Lớp học và phòng học đang thuộc hai cơ sở khác nhau.");
       return;
     }
-    const departmentId = textValue(teacher.departmentId) || textValue(subject.departmentId);
+    const teacherDepartmentId = textValue(teacher.departmentId);
+    const subjectDepartmentId = textValue(subject.departmentId);
+    if (teacherDepartmentId && subjectDepartmentId && teacherDepartmentId !== subjectDepartmentId) {
+      setProposalError("Giáo viên và môn học không cùng tổ chuyên môn.");
+      return;
+    }
+    const departmentId = teacherDepartmentId || subjectDepartmentId;
     if (!departmentId) {
       setProposalError("Giáo viên/môn học chưa được gán bộ môn.");
       return;
@@ -752,12 +831,12 @@ export default function AiSchedulerPage() {
                   <Label>Giáo viên</Label>
                   <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.teacherId} onChange={(event) => setRequirementForm({ ...emptyRequirement, teacherId: event.target.value })}>
                     <option value="">Chọn GV</option>
-                    {teachers.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}{row.teacherType === "thinh_giang" ? " · TG" : ""}</option>)}
+                    {availableTeachers.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}{row.teacherType === "thinh_giang" ? " · TG" : ""}</option>)}
                   </select>
                 </div>
                 <div>
                   <Label>Môn</Label>
-                  <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.subjectId} onChange={(event) => setRequirementForm((current) => { const nextSubjectId = event.target.value; const currentClass = classes.find((row) => row.id === current.classId); return { ...current, subjectId: nextSubjectId, classId: selectedTeacher && currentClass && !teacherCanTeachClass(selectedTeacher, nextSubjectId, currentClass) ? "" : current.classId }; })}>
+                  <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={requirementForm.subjectId} onChange={(event) => setRequirementField("subjectId", event.target.value)}>
                     <option value="">Chọn môn</option>
                     {availableSubjects.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}</option>)}
                   </select>
@@ -768,7 +847,6 @@ export default function AiSchedulerPage() {
                     <option value="">Chọn lớp</option>
                     {availableClasses.map((row) => <option key={row.id} value={row.id}>{catalogName(row)}</option>)}
                   </select>
-                  {selectedTeacher && requirementForm.subjectId ? <p className="mt-1 text-xs text-muted-foreground">Chỉ hiển thị lớp thuộc khối giáo viên được phân công.</p> : null}
                 </div>
                 <div>
                   <Label>Phòng</Label>

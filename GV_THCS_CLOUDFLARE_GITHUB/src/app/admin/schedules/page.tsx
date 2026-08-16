@@ -20,7 +20,6 @@ import { createOrUpdateSchedule, firebaseErrorMessage, reviewTeacherAvailability
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { currentWeekStartDateOnly } from "@/lib/date-only";
-import { classGrade, gradeScopeForSubject, teacherCanTeachClass, teacherCanTeachSubject } from "@/lib/teaching-assignments";
 import { buildStudentTimetableWorkbook, downloadStudentTimetableWorkbook } from "@/lib/exports/student-timetable";
 
 const fallbackPeriodStartHour = 7;
@@ -135,6 +134,61 @@ function activeCatalogRows(rows: CatalogRow[]) {
   return rows
     .filter((row) => row.isActive !== false && row.status !== "inactive" && row.status !== "archived")
     .sort((first, second) => primaryCatalogName(first).localeCompare(primaryCatalogName(second), "vi"));
+}
+
+function numericGrade(value: unknown) {
+  const grade = Number(value);
+  return Number.isInteger(grade) && grade >= 1 && grade <= 9 ? grade : 0;
+}
+
+function schoolLevelForGrade(grade: number) {
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  return "";
+}
+
+function catalogSchoolLevel(row: CatalogRow | null | undefined) {
+  const explicit = textValue(row?.schoolLevel);
+  if (explicit === "primary" || explicit === "secondary") return explicit;
+  return schoolLevelForGrade(numericGrade(row?.grade ?? row?.gradeLevel));
+}
+
+function teacherSchoolLevels(teacher: CatalogRow | null | undefined) {
+  if (Array.isArray(teacher?.schoolLevels)) {
+    const levels = teacher.schoolLevels.map(String).filter((level) => level === "primary" || level === "secondary");
+    if (levels.length > 0) return levels;
+  }
+  return ["secondary"];
+}
+
+function subjectMatchesClass(subject: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!subject || !schoolClass) return true;
+  const subjectGrade = numericGrade(subject.grade ?? subject.gradeLevel);
+  const classGrade = numericGrade(schoolClass.grade ?? schoolClass.gradeLevel);
+  if (subjectGrade && classGrade && subjectGrade !== classGrade) return false;
+  const subjectLevel = catalogSchoolLevel(subject);
+  const classLevel = catalogSchoolLevel(schoolClass);
+  return !subjectLevel || !classLevel || subjectLevel === classLevel;
+}
+
+function teacherMatchesClass(teacher: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!teacher || !schoolClass) return true;
+  const classLevel = catalogSchoolLevel(schoolClass);
+  return !classLevel || teacherSchoolLevels(teacher).includes(classLevel);
+}
+
+function teacherCanTeachSubjectAtClass(teacher: CatalogRow | null | undefined, subject: CatalogRow | null | undefined, schoolClass: CatalogRow | null | undefined) {
+  if (!teacher || !subject) return true;
+  const subjectIds = Array.isArray(teacher.subjectIds) ? teacher.subjectIds.map(String) : [];
+  if (subjectIds.length > 0 && !subjectIds.includes(subject.id)) return false;
+  const assignments = Array.isArray(teacher.teachingAssignments) ? teacher.teachingAssignments : [];
+  if (assignments.length === 0) return true;
+  const assignment = assignments.find((item) => item && typeof item === "object" && String((item as Record<string, unknown>).subjectId ?? "") === subject.id) as Record<string, unknown> | undefined;
+  if (!assignment) return false;
+  const classGrade = numericGrade(schoolClass?.grade ?? schoolClass?.gradeLevel);
+  if (!classGrade) return true;
+  const grades = Array.isArray(assignment.gradeLevels) ? assignment.gradeLevels.map(Number) : [];
+  return grades.includes(classGrade);
 }
 
 function periodNumber(row: CatalogRow) {
@@ -353,37 +407,26 @@ export default function SchedulesPage() {
   const selectedClass = useMemo(() => selectedCatalogRow(classes, form.classId), [classes, form.classId]);
   const selectedSemester = useMemo(() => selectedCatalogRow(semesters, form.semesterId), [form.semesterId, semesters]);
 
-  const eligibleTeachers = useMemo(
-    () => teachers.filter((teacher) => {
-      if (form.subjectId && !teacherCanTeachSubject(teacher, form.subjectId)) return false;
-      if (form.subjectId && selectedClass && !teacherCanTeachClass(teacher, form.subjectId, selectedClass)) return false;
-      return true;
-    }),
-    [form.subjectId, selectedClass, teachers],
-  );
-  const eligibleSubjects = useMemo(
-    () => selectedTeacher ? subjects.filter((subject) => teacherCanTeachSubject(selectedTeacher, subject.id)) : subjects,
-    [selectedTeacher, subjects],
-  );
-  const eligibleClasses = useMemo(
-    () => selectedTeacher && form.subjectId
-      ? classes.filter((schoolClass) => teacherCanTeachClass(selectedTeacher, form.subjectId, schoolClass))
-      : classes,
-    [classes, form.subjectId, selectedTeacher],
-  );
+  const filteredTeachers = useMemo(() => teachers.filter((teacher) => teacher.id === form.teacherId || (
+    teacherMatchesClass(teacher, selectedClass)
+    && teacherCanTeachSubjectAtClass(teacher, selectedSubject, selectedClass)
+  )), [form.teacherId, selectedClass, selectedSubject, teachers]);
 
-  const teacherTeachingIssue = selectedTeacher && form.subjectId
-    ? !teacherCanTeachSubject(selectedTeacher, form.subjectId)
-      ? "Môn học đã chọn không nằm trong phân công của giáo viên."
-      : selectedClass && !teacherCanTeachClass(selectedTeacher, form.subjectId, selectedClass)
-        ? `Giáo viên không được phân công dạy ${catalogName(subjects, form.subjectId) || form.subjectId} cho khối ${classGrade(selectedClass) ?? "của lớp này"}.`
-        : ""
-    : "";
+  const filteredSubjects = useMemo(() => subjects.filter((subject) => subject.id === form.subjectId || (
+    subjectMatchesClass(subject, selectedClass)
+    && teacherCanTeachSubjectAtClass(selectedTeacher, subject, selectedClass)
+  )), [form.subjectId, selectedClass, selectedTeacher, subjects]);
+
+  const filteredClasses = useMemo(() => classes.filter((schoolClass) => schoolClass.id === form.classId || (
+    subjectMatchesClass(selectedSubject, schoolClass)
+    && teacherMatchesClass(selectedTeacher, schoolClass)
+    && teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, schoolClass)
+  )), [classes, form.classId, selectedSubject, selectedTeacher]);
 
   const catalogFields: { key: Exclude<CatalogFieldKey, "departmentId">; label: string; options: CatalogRow[] }[] = [
-    { key: "teacherId", label: "Giáo viên", options: eligibleTeachers },
-    { key: "subjectId", label: "Môn học", options: eligibleSubjects },
-    { key: "classId", label: "Lớp học", options: eligibleClasses },
+    { key: "teacherId", label: "Giáo viên", options: filteredTeachers },
+    { key: "subjectId", label: "Môn học", options: filteredSubjects },
+    { key: "classId", label: "Lớp học", options: filteredClasses },
     { key: "roomId", label: "Phòng học", options: rooms },
     { key: "campusId", label: "Cơ sở", options: campuses },
     { key: "semesterId", label: "Học kỳ", options: semesters },
@@ -480,23 +523,10 @@ export default function SchedulesPage() {
         const teacher = teachers.find((row) => row.id === value);
         next.departmentId = textValue(teacher?.departmentId);
         if (textValue(teacher?.campusId)) next.campusId = textValue(teacher?.campusId);
-        if (teacher && next.subjectId && !teacherCanTeachSubject(teacher, next.subjectId)) next.subjectId = "";
-        const currentClass = classes.find((row) => row.id === next.classId);
-        if (teacher && next.subjectId && currentClass && !teacherCanTeachClass(teacher, next.subjectId, currentClass)) next.classId = "";
       }
-      if (key === "subjectId") {
-        if (!next.teacherId && !next.departmentId) {
-          const subject = subjects.find((row) => row.id === value);
-          if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
-        }
-        const teacher = teachers.find((row) => row.id === next.teacherId);
-        const currentClass = classes.find((row) => row.id === next.classId);
-        if (teacher && currentClass && value && !teacherCanTeachClass(teacher, value, currentClass)) next.classId = "";
-      }
-      if (key === "classId") {
-        const teacher = teachers.find((row) => row.id === next.teacherId);
-        const schoolClass = classes.find((row) => row.id === value);
-        if (teacher && next.subjectId && schoolClass && !teacherCanTeachClass(teacher, next.subjectId, schoolClass)) next.teacherId = "";
+      if (key === "subjectId" && !next.teacherId && !next.departmentId) {
+        const subject = subjects.find((row) => row.id === value);
+        if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
       }
       if (key === "roomId") {
         const room = rooms.find((row) => row.id === value);
@@ -552,7 +582,9 @@ export default function SchedulesPage() {
       const scheduleDepartmentId = teacherDepartmentId || form.departmentId;
       if (!scheduleDepartmentId) throw new Error("Hồ sơ giáo viên chưa có bộ môn. Vui lòng cập nhật bộ môn trước khi tạo lịch.");
       if (subjectDepartmentWarning) throw new Error(subjectDepartmentWarning);
-      if (teacherTeachingIssue) throw new Error(teacherTeachingIssue);
+      if (!subjectMatchesClass(selectedSubject, selectedClass)) throw new Error("Môn học không phù hợp với cấp học/khối của lớp đã chọn.");
+      if (!teacherMatchesClass(selectedTeacher, selectedClass)) throw new Error("Giáo viên chưa được phân công phụ trách cấp học của lớp đã chọn.");
+      if (!teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, selectedClass)) throw new Error("Giáo viên chưa được phân công dạy môn này ở khối của lớp đã chọn.");
       const lastPeriod = Number(form.endPeriod);
       const startPeriod = Number(form.startPeriod);
       if (lastPeriod < startPeriod) throw new Error("Tiết cuối không được nhỏ hơn tiết bắt đầu.");
@@ -698,7 +730,7 @@ export default function SchedulesPage() {
             <div className="flex flex-col gap-2 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-5 w-5 text-primary" />Khung giờ rảnh của giáo viên thỉnh giảng</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Nhiều giáo viên có thể cùng được duyệt một khung giờ; chỉ khi tạo lịch dạy chính thức hệ thống mới kiểm tra trùng giáo viên, lớp và phòng.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Duyệt đăng ký trước, sau đó bấm đúng ô Thứ/Tiết để mở biểu mẫu xếp lịch. Duyệt hiện tại áp dụng cho toàn bộ các ô trong phiếu; khung giờ chỉ là điều kiện xếp lịch, chưa phải tiết được tính công.</p>
               </div>
               <Badge tone={sortedAvailabilityRows.some((row) => reviewStatusOf(row) === "pending") ? "warning" : "success"}>
                 {sortedAvailabilityRows.filter((row) => reviewStatusOf(row) === "pending").length} chờ duyệt
@@ -828,7 +860,7 @@ export default function SchedulesPage() {
           </div>
         </Modal>
 
-        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={timeSlots.length === 0 || Boolean(selectedAvailabilityIssue) || Boolean(teacherTeachingIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
+        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={timeSlots.length === 0 || Boolean(selectedAvailabilityIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
           <form id="schedule-form" className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
             {catalogFields.map(({ key, label, options }) => (
               <div key={key}>
@@ -844,11 +876,6 @@ export default function SchedulesPage() {
               <Label>Bộ môn của lịch</Label>
               <div className="flex min-h-11 items-center rounded-xl border border-border bg-muted px-3 py-2 text-sm font-semibold text-foreground">{departmentSummary}</div>
               {subjectDepartmentWarning ? <p className="mt-1 text-xs text-amber-700">{subjectDepartmentWarning}</p> : <p className="mt-1 text-xs text-muted-foreground">Bộ môn lấy theo hồ sơ giáo viên.</p>}
-              {selectedTeacher && form.subjectId ? (
-                <p className={`mt-1 text-xs ${teacherTeachingIssue ? "text-rose-700" : "text-emerald-700"}`}>
-                  {teacherTeachingIssue || (() => { const grades = gradeScopeForSubject(selectedTeacher, form.subjectId); return grades.length ? `Phạm vi được phân công: khối ${grades.join(", ")}.` : "Hồ sơ cũ chưa giới hạn khối; hệ thống tạm cho phép các khối của môn này."; })()}
-                </p>
-              ) : null}
             </div>
             <div><Label>Tuần bắt đầu</Label><Input required type="date" value={form.weekStart} onChange={(event) => setField("weekStart", event.target.value)} /></div>
             <div><Label>Thứ</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.dayOfWeek} onChange={(event) => setField("dayOfWeek", event.target.value)}>{[2,3,4,5,6,7].map((day) => <option key={day} value={day}>Thứ {day}</option>)}</select></div>

@@ -3,10 +3,14 @@ import { z } from "zod";
 export const roles = ["admin", "totruong", "giaovien"] as const;
 export const teacherTypes = ["co_huu", "thinh_giang"] as const;
 export const activityStatuses = ["active", "inactive"] as const;
+export const schoolLevels = ["primary", "secondary"] as const;
+export const teachingRoles = ["chu_nhiem", "bo_mon", "ca_hai"] as const;
 
 export type Role = (typeof roles)[number];
 export type TeacherType = (typeof teacherTypes)[number];
 export type ActivityStatus = (typeof activityStatuses)[number];
+export type SchoolLevel = (typeof schoolLevels)[number];
+export type TeachingRole = (typeof teachingRoles)[number];
 
 export interface AuditFields {
   createdAt?: unknown;
@@ -27,6 +31,12 @@ export interface AppUser extends AuditFields {
 
 export const roleSchema = z.enum(roles);
 export const teacherTypeSchema = z.enum(teacherTypes);
+export const schoolLevelSchema = z.enum(schoolLevels);
+export const teachingRoleSchema = z.enum(teachingRoles);
+export const teachingAssignmentSchema = z.object({
+  subjectId: z.string().trim().min(1),
+  gradeLevels: z.array(z.number().int().min(1).max(9)).min(1, "Chọn ít nhất một khối").max(9),
+});
 const optionalText = z.string().trim().max(500).optional().default("");
 
 export const teacherSchema = z.object({
@@ -38,10 +48,9 @@ export const teacherSchema = z.object({
   phone: z.string().trim().regex(/^[0-9+ ()-]{8,20}$/, "Số điện thoại không hợp lệ"),
   departmentId: z.string().trim().min(1, "Vui lòng chọn bộ môn"),
   subjectIds: z.array(z.string()).min(1, "Chọn ít nhất một môn"),
-  teachingAssignments: z.array(z.object({
-    subjectId: z.string().trim().min(1),
-    gradeLevels: z.array(z.number().int().min(1).max(12)).max(12).default([]),
-  })).max(50).optional().default([]),
+  schoolLevels: z.array(schoolLevelSchema).min(1, "Chọn ít nhất một cấp học").max(2).default(["secondary"]),
+  teachingRole: teachingRoleSchema.default("bo_mon"),
+  teachingAssignments: z.array(teachingAssignmentSchema).max(100).default([]),
   specialization: z.string().trim().min(2).max(200),
   degree: z.string().trim().min(2).max(100),
   startDate: z.string().date(),
@@ -58,6 +67,33 @@ export const teacherSchema = z.object({
   }
   if (value.teacherType === "thinh_giang" && !value.ratePerPeriod) {
     ctx.addIssue({ code: "custom", path: ["ratePerPeriod"], message: "Giáo viên thỉnh giảng cần đơn giá" });
+  }
+
+  const assignmentSubjectIds = new Set<string>();
+  for (const assignment of value.teachingAssignments) {
+    if (assignmentSubjectIds.has(assignment.subjectId)) {
+      ctx.addIssue({ code: "custom", path: ["teachingAssignments"], message: "Mỗi môn chỉ nên có một dòng phân công khối." });
+      continue;
+    }
+    assignmentSubjectIds.add(assignment.subjectId);
+    if (!value.subjectIds.includes(assignment.subjectId)) {
+      ctx.addIssue({ code: "custom", path: ["teachingAssignments"], message: "Phân công khối chứa môn chưa được chọn." });
+    }
+    for (const grade of assignment.gradeLevels) {
+      const level = grade <= 5 ? "primary" : "secondary";
+      if (!value.schoolLevels.includes(level)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["teachingAssignments"],
+          message: `Khối ${grade} không thuộc cấp học giáo viên đang phụ trách.`,
+        });
+      }
+    }
+  }
+  for (const subjectId of value.subjectIds) {
+    if (!assignmentSubjectIds.has(subjectId)) {
+      ctx.addIssue({ code: "custom", path: ["teachingAssignments"], message: "Mỗi môn đã chọn cần có ít nhất một khối giảng dạy." });
+    }
   }
 });
 
