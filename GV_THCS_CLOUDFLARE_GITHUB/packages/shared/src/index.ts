@@ -138,7 +138,7 @@ export const scheduleSchema = z.object({
   startPeriod: z.number().int().min(1).max(20),
   endPeriod: z.number().int().min(2).max(21),
   status: z.enum(["scheduled", "needs_attention", "cancelled"]).default("scheduled"),
-  confirmationDeadline: z.string().datetime().optional(),
+  confirmationDeadline: z.string().datetime().nullish(),
   cancellationReason: z.string().trim().max(500).optional().default(""),
 }).refine((v) => v.startPeriod < v.endPeriod, { path: ["endPeriod"], message: "Tiết kết thúc phải lớn hơn tiết bắt đầu" });
 export type ScheduleInput = z.infer<typeof scheduleSchema>;
