@@ -523,6 +523,9 @@ export default function SchedulesPage() {
         const teacher = teachers.find((row) => row.id === value);
         next.departmentId = textValue(teacher?.departmentId);
         if (textValue(teacher?.campusId)) next.campusId = textValue(teacher?.campusId);
+        // Hạn xác nhận chỉ thuộc nghiệp vụ giáo viên thỉnh giảng.
+        // Khi đổi sang giáo viên cơ hữu phải xóa giá trị cũ để không gửi nhầm lên backend.
+        if (teacher?.teacherType !== "thinh_giang") next.confirmationDeadline = "";
       }
       if (key === "subjectId" && !next.teacherId && !next.departmentId) {
         const subject = subjects.find((row) => row.id === value);
@@ -612,7 +615,9 @@ export default function SchedulesPage() {
         endPeriod: lastPeriod + 1,
         status: "scheduled",
         cancellationReason: "",
-        confirmationDeadline: form.confirmationDeadline ? new Date(form.confirmationDeadline).toISOString() : undefined,
+        ...(selectedTeacherIsAdjunct
+          ? { confirmationDeadline: new Date(form.confirmationDeadline).toISOString() }
+          : {}),
       };
       await createOrUpdateSchedule(payload);
       toast.success(editingSchedule ? "Đã cập nhật lịch dạy." : "Đã tạo lịch dạy.");
@@ -895,7 +900,13 @@ export default function SchedulesPage() {
               </select>
               <p className="mt-1 text-xs text-muted-foreground">Ví dụ học tiết 1 và 2: chọn bắt đầu 1, tiết cuối 2.</p>
             </div>
-            <div className="sm:col-span-2"><Label>Hạn xác nhận (chỉ cần cho giáo viên thỉnh giảng)</Label><Input type="datetime-local" value={form.confirmationDeadline} onChange={(event) => setField("confirmationDeadline", event.target.value)} /></div>
+            {selectedTeacherIsAdjunct ? (
+              <div className="sm:col-span-2">
+                <Label>Hạn xác nhận <span className="text-rose-600">*</span></Label>
+                <Input required type="datetime-local" value={form.confirmationDeadline} onChange={(event) => setField("confirmationDeadline", event.target.value)} />
+                <p className="mt-1 text-xs text-muted-foreground">Chỉ áp dụng cho giáo viên thỉnh giảng.</p>
+              </div>
+            ) : null}
             {selectedTeacherIsAdjunct ? (
               <div className={`sm:col-span-2 rounded-xl border px-4 py-3 text-sm ${selectedAvailabilityIssue ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
                 {selectedAvailabilityIssue || `Khung giờ hợp lệ. Giáo viên đã được duyệt cho Thứ ${form.dayOfWeek}, tiết ${form.startPeriod}${form.endPeriod !== form.startPeriod ? `–${form.endPeriod}` : ""}.`}
