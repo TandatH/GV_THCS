@@ -15,6 +15,7 @@ import {
   Clock3,
   DoorOpen,
   GraduationCap,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -78,6 +79,7 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/teacher/attendance", label: "Chấm công", icon: ClipboardCheck },
     { href: "/teacher/payroll", label: "Thu nhập", icon: WalletCards },
     { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
+    { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ],
 };
 

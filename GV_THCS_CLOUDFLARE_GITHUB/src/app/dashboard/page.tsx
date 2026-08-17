@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Database,
+  KeyRound,
   Star,
   UserCheck,
   UsersRound,
@@ -116,6 +117,7 @@ export default function DashboardPage() {
     return [
       { href: "/teacher/schedule", label: "Xem lịch dạy", icon: CalendarDays },
       { href: "/teacher/availability", label: "Khung giờ rảnh", icon: ClipboardCheck },
+      { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
     ];
   }, [role]);
 

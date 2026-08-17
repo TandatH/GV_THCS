@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import type { Role, SchoolLevel, TeacherInput, TeachingRole } from "@school/shared";
-import { CirclePlus, Copy, ImagePlus, PencilLine, Search, ShieldCheck, Upload, UsersRound } from "lucide-react";
+import { CirclePlus, Copy, ImagePlus, KeyRound, PencilLine, RotateCcw, Search, ShieldCheck, Upload, UsersRound } from "lucide-react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -14,6 +14,7 @@ import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { createTeacherAccount, firebaseErrorMessage, setUserRole } from "@/lib/firebase/callables";
+import { resetTeacherPassword } from "@/lib/firebase/password-callables";
 import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { todayDateOnly } from "@/lib/date-only";
@@ -160,6 +161,29 @@ function teachingRoleLabel(value: unknown) {
   return "Bộ môn";
 }
 
+function generateTemporaryPassword() {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const symbols = "!@#$%";
+  const all = `${upper}${lower}${digits}${symbols}`;
+  const pick = (source: string) => source[crypto.getRandomValues(new Uint32Array(1))[0] % source.length];
+  const chars = [pick(upper), pick(lower), pick(digits), pick(symbols)];
+  while (chars.length < 12) chars.push(pick(all));
+  for (let index = chars.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.getRandomValues(new Uint32Array(1))[0] % (index + 1);
+    [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
+  }
+  return chars.join("");
+}
+
+type CredentialResult = {
+  teacherId: string;
+  fullName: string;
+  email: string;
+  temporaryPassword: string;
+};
+
 function formFromTeacher(row: TeacherRow, subjects: CatalogRow[]): FormState {
   const contract = typeof row.contract === "object" && row.contract ? row.contract as Record<string, unknown> : {};
   const schoolLevels = normalizeSchoolLevels(row.schoolLevels);
@@ -234,6 +258,9 @@ export default function TeachersPage() {
   const [subjects, setSubjects] = useState<CatalogRow[]>([]);
   const [campuses, setCampuses] = useState<CatalogRow[]>([]);
   const [catalogError, setCatalogError] = useState("");
+  const [temporaryPasswords, setTemporaryPasswords] = useState<Record<string, string>>({});
+  const [resettingTeacherId, setResettingTeacherId] = useState("");
+  const [credentialResult, setCredentialResult] = useState<CredentialResult | null>(null);
 
   useEffect(() => {
     const teachersQuery = query(collection(firestore, "teachers"), orderBy("fullName"), limit(200));
@@ -357,7 +384,7 @@ export default function TeachersPage() {
 
   function openCreate() {
     setEditingTeacher(null);
-    setForm(initialForm);
+    setForm({ ...initialForm, password: generateTemporaryPassword() });
     setFormError("");
     setSuccessMessage("");
     setOpen(true);
@@ -425,11 +452,22 @@ export default function TeachersPage() {
         setSuccessMessage("Đã cập nhật hồ sơ giáo viên.");
         toast.success("Đã cập nhật hồ sơ giáo viên.");
       } else {
-        await createTeacherAccount({ teacher, password: form.password || undefined });
+        const result = await createTeacherAccount({ teacher, password: form.password || undefined });
+        const temporaryPassword = form.password || "";
+        if (temporaryPassword) {
+          setTemporaryPasswords((current) => ({ ...current, [result.teacherId]: temporaryPassword }));
+          setCredentialResult({
+            teacherId: result.teacherId,
+            fullName: teacher.fullName,
+            email: teacher.email,
+            temporaryPassword,
+          });
+        }
         setSuccessMessage("Đã tạo tài khoản và hồ sơ giáo viên thành công.");
         setForm(initialForm);
+        setOpen(false);
       }
-      setTimeout(() => setOpen(false), 700);
+      if (editingTeacher) setTimeout(() => setOpen(false), 700);
     } catch (submitError) {
       setFormError(editingTeacher ? firebaseDataErrorMessage(submitError) : firebaseErrorMessage(submitError));
     } finally {
@@ -462,6 +500,38 @@ export default function TeachersPage() {
       toast.success("Đã copy ID giáo viên.");
     } catch {
       toast.error("Không thể copy tự động. Bạn có thể bôi đen ID để copy thủ công.");
+    }
+  }
+
+  async function copyTemporaryPassword(password: string) {
+    try {
+      await navigator.clipboard.writeText(password);
+      toast.success("Đã copy mật khẩu tạm.");
+    } catch {
+      toast.error("Không thể copy tự động. Hãy copy thủ công.");
+    }
+  }
+
+  async function resetPasswordForTeacher(row: TeacherRow) {
+    const teacherName = textValue(row.fullName) || textValue(row.email) || row.id;
+    const confirmed = window.confirm(`Reset mật khẩu cho ${teacherName}? Giáo viên sẽ bị thu hồi phiên đăng nhập cũ và phải đổi mật khẩu tạm sau khi đăng nhập lại.`);
+    if (!confirmed) return;
+
+    setResettingTeacherId(row.id);
+    try {
+      const result = await resetTeacherPassword(row.id);
+      setTemporaryPasswords((current) => ({ ...current, [row.id]: result.temporaryPassword }));
+      setCredentialResult({
+        teacherId: row.id,
+        fullName: teacherName,
+        email: textValue(row.email),
+        temporaryPassword: result.temporaryPassword,
+      });
+      toast.success("Đã reset mật khẩu giáo viên.");
+    } catch (resetError) {
+      toast.error(firebaseErrorMessage(resetError));
+    } finally {
+      setResettingTeacherId("");
     }
   }
 
@@ -535,6 +605,10 @@ export default function TeachersPage() {
           {roleMessage ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{roleMessage}</div> : null}
         </Card>
 
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <span className="font-semibold">Mật khẩu:</span> Firebase Authentication không cho đọc lại mật khẩu hiện tại. Bảng bên dưới chỉ hiển thị <span className="font-semibold">mật khẩu tạm vừa tạo/reset trong phiên Admin này</span>. Sau khi giáo viên tự đổi mật khẩu, Admin không thể xem mật khẩu mới; khi cần, dùng nút <span className="font-semibold">Reset MK</span>.
+        </div>
+
         <Card className="overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full max-w-md">
@@ -561,8 +635,8 @@ export default function TeachersPage() {
             <EmptyState icon={<UsersRound className="h-6 w-6" />} title="Chưa có giáo viên" description="Thêm giáo viên đầu tiên hoặc thay đổi điều kiện tìm kiếm." action={<Button onClick={openCreate}>Thêm giáo viên</Button>} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="data-table min-w-[1320px]">
-                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Cấp học</th><th>Vai trò</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <table className="data-table min-w-[1540px]">
+                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Cấp học</th><th>Vai trò</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Mật khẩu tạm</th><th>Đổi MK</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const status = teacherStatus(row.status);
@@ -576,8 +650,12 @@ export default function TeachersPage() {
                         <td><Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>{row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}</Badge></td>
                         <td><p className="max-w-52 truncate">{row.specialization || "—"}</p><p className="text-xs text-muted-foreground">{row.degree || ""}</p></td>
                         <td>{row.teacherType === "co_huu" ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần` : formatCurrency(Number(row.ratePerPeriod || 0)) + "/tiết"}</td>
+                        <td>
+                          {temporaryPasswords[row.id] ? <div className="flex items-center gap-1"><code className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">{temporaryPasswords[row.id]}</code><Button size="sm" variant="ghost" onClick={() => copyTemporaryPassword(temporaryPasswords[row.id])} aria-label="Copy mật khẩu tạm"><Copy className="h-4 w-4" /></Button></div> : <span className="text-xs text-muted-foreground">Không thể đọc MK hiện tại</span>}
+                        </td>
+                        <td><Badge tone={row.mustChangePassword === true ? "warning" : "success"}>{row.mustChangePassword === true ? "Phải đổi MK" : "Đã đổi / bình thường"}</Badge></td>
                         <td><Badge tone={status.tone}>{status.label}</Badge></td>
-                        <td><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button><Button size="sm" variant="secondary" onClick={() => { setAvatarTarget(row); setAvatarFile(null); setAvatarError(""); }}><ImagePlus className="h-4 w-4" />Ảnh</Button></div></td>
+                        <td><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button><Button size="sm" variant="secondary" loading={resettingTeacherId === row.id} onClick={() => resetPasswordForTeacher(row)}><RotateCcw className="h-4 w-4" />Reset MK</Button><Button size="sm" variant="secondary" onClick={() => { setAvatarTarget(row); setAvatarFile(null); setAvatarError(""); }}><ImagePlus className="h-4 w-4" />Ảnh</Button></div></td>
                       </tr>
                     );
                   })}
@@ -634,13 +712,33 @@ export default function TeachersPage() {
             {form.teacherType === "co_huu" ? <div><Label>Số tiết chuẩn/tuần</Label><Input required min="1" type="number" value={form.standardPeriodsPerWeek} onChange={(e) => setField("standardPeriodsPerWeek", e.target.value)} /></div> : <div><Label>Đơn giá/tiết</Label><Input required min="1" type="number" value={form.ratePerPeriod} onChange={(e) => setField("ratePerPeriod", e.target.value)} /></div>}
             <div><Label>Trạng thái</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.status} onChange={(e) => setField("status", e.target.value as FormState["status"])}><option value="active">Đang hoạt động</option><option value="inactive">Ngừng hoạt động</option></select></div>
             <div><Label>URL hình giáo viên</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
-            {!editingTeacher ? <div><Label>Mật khẩu ban đầu (tùy chọn)</Label><Input minLength={8} type="password" value={form.password} onChange={(e) => setField("password", e.target.value)} /></div> : null}
+            {!editingTeacher ? <div><Label>Mật khẩu tạm ban đầu</Label><div className="flex gap-2"><Input minLength={8} type="text" value={form.password} onChange={(e) => setField("password", e.target.value)} /><Button type="button" variant="secondary" onClick={() => setField("password", generateTemporaryPassword())} aria-label="Tạo mật khẩu tạm mới"><KeyRound className="h-4 w-4" /></Button></div><p className="mt-1 text-xs text-muted-foreground">Giáo viên sẽ phải đổi mật khẩu này sau khi đăng nhập.</p></div> : null}
             <div><Label>Loại hợp đồng</Label><Input value={form.contractType} onChange={(e) => setField("contractType", e.target.value)} /></div>
             <div><Label>Số hợp đồng</Label><Input value={form.contractNumber} onChange={(e) => setField("contractNumber", e.target.value)} /></div>
             <div><Label>Ngày hết hạn</Label><Input type="date" value={form.contractExpiresAt} onChange={(e) => setField("contractExpiresAt", e.target.value)} /></div>
             {formError ? <div className="sm:col-span-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
             {successMessage ? <div className="sm:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div> : null}
           </form>
+        </Modal>
+
+        <Modal
+          open={Boolean(credentialResult)}
+          onOpenChange={(next) => { if (!next) setCredentialResult(null); }}
+          title="Mật khẩu tạm của giáo viên"
+          description="Chỉ gửi mật khẩu này trực tiếp cho giáo viên. Sau khi giáo viên tự đổi mật khẩu, Firebase không cho Admin đọc lại mật khẩu mới."
+          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setCredentialResult(null)}>Đóng</Button>{credentialResult ? <Button onClick={() => copyTemporaryPassword(credentialResult.temporaryPassword)}><Copy className="h-4 w-4" />Copy mật khẩu</Button> : null}</div>}
+        >
+          {credentialResult ? <div className="space-y-4">
+            <div className="rounded-xl border border-border p-4">
+              <p className="font-semibold">{credentialResult.fullName}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{credentialResult.email || credentialResult.teacherId}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Mật khẩu tạm</p>
+              <div className="mt-2 flex items-center gap-2"><code className="text-xl font-extrabold tracking-wide text-amber-950">{credentialResult.temporaryPassword}</code><Button size="sm" variant="secondary" onClick={() => copyTemporaryPassword(credentialResult.temporaryPassword)}><Copy className="h-4 w-4" /></Button></div>
+              <p className="mt-2 text-xs text-amber-800">Tài khoản đang ở trạng thái phải đổi mật khẩu.</p>
+            </div>
+          </div> : null}
         </Modal>
 
         <Modal
