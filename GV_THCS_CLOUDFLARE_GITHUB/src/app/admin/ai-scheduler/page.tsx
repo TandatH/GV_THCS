@@ -37,6 +37,7 @@ type CatalogRow = DocumentData & { id: string };
 type ScheduleRow = DocumentData & { id: string };
 type AvailabilityRow = DocumentData & { id: string };
 type ScheduleMode = "fill_missing" | "reoptimize_selected";
+type SchoolLevel = "primary" | "secondary";
 
 type RequirementForm = {
   teacherId: string;
@@ -133,6 +134,104 @@ function periodNumber(row: CatalogRow) {
   return Number(row.periodNumber ?? row.order ?? row.period ?? 0);
 }
 
+function timeSlotSchoolLevel(row: CatalogRow | null | undefined): SchoolLevel {
+  const explicit = textValue(row?.schoolLevel);
+  // timeSlots cũ không có schoolLevel được xem là THCS để không làm hỏng dữ liệu đang chạy.
+  return explicit === "primary" ? "primary" : "secondary";
+}
+
+function normalizedCatalogSchoolLevel(row: CatalogRow | null | undefined): SchoolLevel {
+  return catalogSchoolLevel(row) === "primary" ? "primary" : "secondary";
+}
+
+function minutesOfDay(value: unknown) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(textValue(value));
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function clockRangeForSchedule(row: ScheduleRow, allTimeSlots: CatalogRow[], classes: CatalogRow[]) {
+  const schoolClass = classes.find((item) => item.id === textValue(row.classId));
+  const level = textValue(row.schoolLevel) === "primary" ? "primary" : textValue(row.schoolLevel) === "secondary" ? "secondary" : normalizedCatalogSchoolLevel(schoolClass);
+  const startPeriod = Number(row.startPeriod);
+  const lastPeriod = Math.max(startPeriod, Number(row.endPeriod) - 1);
+  const startSlot = allTimeSlots.find((slot) => timeSlotSchoolLevel(slot) === level && periodNumber(slot) === startPeriod);
+  const endSlot = allTimeSlots.find((slot) => timeSlotSchoolLevel(slot) === level && periodNumber(slot) === lastPeriod);
+  const start = minutesOfDay(startSlot?.startTime);
+  const end = minutesOfDay(endSlot?.endTime);
+  return start !== null && end !== null && end > start ? { start, end } : null;
+}
+
+function rangesOverlap(first: { start: number; end: number }, second: { start: number; end: number }) {
+  return first.start < second.end && second.start < first.end;
+}
+
+function existingSchedulesForSolver(
+  rows: ScheduleRow[],
+  targetLevel: SchoolLevel,
+  allTimeSlots: CatalogRow[],
+  classes: CatalogRow[],
+) {
+  const targetSlots = allTimeSlots
+    .filter((slot) => timeSlotSchoolLevel(slot) === targetLevel && periodNumber(slot) > 0)
+    .sort((a, b) => periodNumber(a) - periodNumber(b));
+
+  return rows.flatMap((row) => {
+    const base = {
+      teacherId: scheduleTeacherId(row),
+      classId: textValue(row.classId),
+      roomId: textValue(row.roomId),
+      dayOfWeek: Number(row.dayOfWeek),
+    };
+    const sourceRange = clockRangeForSchedule(row, allTimeSlots, classes);
+    if (!sourceRange) {
+      const startPeriod = Number(row.startPeriod);
+      const endPeriod = Number(row.endPeriod);
+      return Number.isInteger(startPeriod) && Number.isInteger(endPeriod) && endPeriod > startPeriod
+        ? [{ ...base, startPeriod, endPeriod }]
+        : [];
+    }
+
+    const occupiedPeriods = targetSlots.filter((slot) => {
+      const start = minutesOfDay(slot.startTime);
+      const end = minutesOfDay(slot.endTime);
+      return start !== null && end !== null && end > start && rangesOverlap(sourceRange, { start, end });
+    });
+
+    return occupiedPeriods.map((slot) => {
+      const period = periodNumber(slot);
+      return { ...base, startPeriod: period, endPeriod: period + 1 };
+    });
+  });
+}
+
+function availabilitySlotsForLevel(row: AvailabilityRow, level: SchoolLevel, allTimeSlots: CatalogRow[]) {
+  const values = Array.isArray(row.approvedSlots) && row.approvedSlots.length > 0
+    ? row.approvedSlots.map(String)
+    : Array.isArray(row.slots) ? row.slots.map(String) : [];
+  return values.flatMap((slot) => {
+    const scoped = /^(primary|secondary):([2-7]):([^:]+)$/.exec(slot);
+    if (scoped) {
+      if (scoped[1] !== level) return [];
+      const day = Number(scoped[2]);
+      const token = scoped[3];
+      const byId = allTimeSlots.find((row) => row.id === token && timeSlotSchoolLevel(row) === level && row.isActive !== false);
+      if (byId) return [`${day}:${periodNumber(byId)}`];
+      if (/^\d+$/.test(token)) {
+        const period = Number(token);
+        const byPeriod = allTimeSlots.find((row) => timeSlotSchoolLevel(row) === level && periodNumber(row) === period && row.isActive !== false);
+        return byPeriod ? [`${day}:${period}`] : [];
+      }
+      return [];
+    }
+    // Slot cũ 5:2 chỉ thuộc THCS.
+    return level === "secondary" && /^[2-7]:[1-9][0-9]?$/.test(slot) ? [slot] : [];
+  });
+}
+
 function randomId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -224,6 +323,7 @@ export default function AiSchedulerPage() {
   const [semesterId, setSemesterId] = useState("");
   const [weekStart, setWeekStart] = useState(currentWeekStartDateOnly());
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("fill_missing");
+  const [aiSchoolLevel, setAiSchoolLevel] = useState<SchoolLevel>("secondary");
   const [requirementForm, setRequirementForm] = useState<RequirementForm>(emptyRequirement);
   const [requirements, setRequirements] = useState<AiScheduleRequirement[]>([]);
 
@@ -297,6 +397,23 @@ export default function AiSchedulerPage() {
     if (!semesterId && semesters.length > 0) setSemesterId(semesters[0].id);
   }, [semesterId, semesters]);
 
+  const levelTimeSlots = useMemo(
+    () => timeSlots.filter((slot) => timeSlotSchoolLevel(slot) === aiSchoolLevel),
+    [aiSchoolLevel, timeSlots],
+  );
+  const levelTeachers = useMemo(
+    () => teachers.filter((teacher) => teacherSchoolLevels(teacher).includes(aiSchoolLevel)),
+    [aiSchoolLevel, teachers],
+  );
+  const levelSubjects = useMemo(
+    () => subjects.filter((subject) => normalizedCatalogSchoolLevel(subject) === aiSchoolLevel),
+    [aiSchoolLevel, subjects],
+  );
+  const levelClasses = useMemo(
+    () => classes.filter((schoolClass) => normalizedCatalogSchoolLevel(schoolClass) === aiSchoolLevel),
+    [aiSchoolLevel, classes],
+  );
+
   const selectedTeacher = useMemo(
     () => teachers.find((teacher) => teacher.id === requirementForm.teacherId) ?? null,
     [requirementForm.teacherId, teachers],
@@ -310,21 +427,21 @@ export default function AiSchedulerPage() {
     [classes, requirementForm.classId],
   );
 
-  const availableSubjects = useMemo(() => subjects.filter((subject) => subject.id === requirementForm.subjectId || (
+  const availableSubjects = useMemo(() => levelSubjects.filter((subject) => subject.id === requirementForm.subjectId || (
     subjectMatchesClass(subject, selectedClass)
     && teacherCanTeachSubjectAtClass(selectedTeacher, subject, selectedClass)
-  )), [requirementForm.subjectId, selectedClass, selectedTeacher, subjects]);
+  )), [levelSubjects, requirementForm.subjectId, selectedClass, selectedTeacher]);
 
-  const availableTeachers = useMemo(() => teachers.filter((teacher) => teacher.id === requirementForm.teacherId || (
+  const availableTeachers = useMemo(() => levelTeachers.filter((teacher) => teacher.id === requirementForm.teacherId || (
     teacherMatchesClass(teacher, selectedClass)
     && teacherCanTeachSubjectAtClass(teacher, selectedSubject, selectedClass)
-  )), [requirementForm.teacherId, selectedClass, selectedSubject, teachers]);
+  )), [levelTeachers, requirementForm.teacherId, selectedClass, selectedSubject]);
 
-  const availableClasses = useMemo(() => classes.filter((schoolClass) => schoolClass.id === requirementForm.classId || (
+  const availableClasses = useMemo(() => levelClasses.filter((schoolClass) => schoolClass.id === requirementForm.classId || (
     subjectMatchesClass(selectedSubject, schoolClass)
     && teacherMatchesClass(selectedTeacher, schoolClass)
     && teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, schoolClass)
-  )), [classes, requirementForm.classId, selectedSubject, selectedTeacher]);
+  )), [levelClasses, requirementForm.classId, selectedSubject, selectedTeacher]);
 
   const selectedSemester = useMemo(
     () => semesters.find((semester) => semester.id === semesterId) ?? null,
@@ -407,6 +524,10 @@ export default function AiSchedulerPage() {
 
     if (!teacher || !subject || !schoolClass || !room) {
       setProposalError("Vui lòng chọn đủ giáo viên, môn học, lớp và phòng học.");
+      return;
+    }
+    if (normalizedCatalogSchoolLevel(schoolClass) !== aiSchoolLevel || normalizedCatalogSchoolLevel(subject) !== aiSchoolLevel || !teacherSchoolLevels(teacher).includes(aiSchoolLevel)) {
+      setProposalError(`Phân công không thuộc cấp học ${aiSchoolLevel === "primary" ? "Tiểu học" : "THCS"} đang được chọn để xếp.`);
       return;
     }
     if (!Number.isInteger(periodsPerWeek) || periodsPerWeek < 1 || periodsPerWeek > 20) {
@@ -506,9 +627,9 @@ export default function AiSchedulerPage() {
       setProposalError("Các phân công đã đủ số tiết/tuần theo lịch hiện có, không còn tiết thiếu để xếp.");
       return;
     }
-    const periods = timeSlots.map(periodNumber).filter((value) => value > 0);
+    const periods = levelTimeSlots.map(periodNumber).filter((value) => value > 0);
     if (periods.length === 0) {
-      setProposalError("Chưa có danh sách tiết học đang hoạt động.");
+      setProposalError(`Chưa cấu hình tiết học dành cho ${aiSchoolLevel === "primary" ? "Tiểu học" : "THCS"}.`);
       return;
     }
     const schoolYearId = textValue(selectedSemester.schoolYearId);
@@ -524,21 +645,15 @@ export default function AiSchedulerPage() {
       weekStart,
       periods,
       requirements: effectiveRequirements,
-      existingSchedules: lockedExistingSchedules.map((row) => ({
-        teacherId: textValue(row.actualTeacherId) || textValue(row.teacherId),
-        classId: textValue(row.classId),
-        roomId: textValue(row.roomId),
-        dayOfWeek: Number(row.dayOfWeek),
-        startPeriod: Number(row.startPeriod),
-        endPeriod: Number(row.endPeriod),
-      })),
+      // Solver chỉ chạy trên lưới tiết của một cấp học. Lịch hiện có ở cấp còn lại
+      // được quy đổi sang các tiết của lưới đích theo giờ thực tế để vẫn khóa
+      // đúng giáo viên/phòng khi một người dạy cả Tiểu học và THCS.
+      existingSchedules: existingSchedulesForSolver(lockedExistingSchedules, aiSchoolLevel, timeSlots, classes),
       availability: availability
         .filter((row) => teacherIds.has(textValue(row.teacherId)) && textValue(row.semesterId) === semesterId && textValue(row.reviewStatus) === "approved")
         .map((row) => ({
           teacherId: textValue(row.teacherId),
-          approvedSlots: Array.isArray(row.approvedSlots)
-            ? row.approvedSlots.map(String)
-            : Array.isArray(row.slots) ? row.slots.map(String) : [],
+          approvedSlots: availabilitySlotsForLevel(row, aiSchoolLevel, timeSlots),
         })),
       teachers: teachers
         .filter((row) => teacherIds.has(row.id))
@@ -780,8 +895,8 @@ export default function AiSchedulerPage() {
               <div className="flex items-start gap-3">
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><BrainCircuit className="h-6 w-6" /></div>
                 <div>
-                  <h2 className="font-bold">1. Chọn tuần và chế độ xếp</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Chọn cách AI xử lý lịch hiện có trước khi khai báo tổng số tiết/tuần của từng phân công.</p>
+                  <h2 className="font-bold">1. Chọn cấp học, tuần và chế độ xếp</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Mỗi lần CP-SAT chỉ xếp một cấp học để dùng đúng bộ tiết Tiểu học hoặc THCS. Sau đó chọn cách AI xử lý lịch hiện có.</p>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -802,7 +917,26 @@ export default function AiSchedulerPage() {
                   <span className="mt-1 block text-xs text-muted-foreground">AI được di chuyển lịch cũ của đúng các phân công bạn thêm ở bước 2. Các lịch khác vẫn khóa và không bị đụng tới.</span>
                 </button>
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div>
+                  <Label>Cấp học cần xếp</Label>
+                  <select
+                    className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                    value={aiSchoolLevel}
+                    onChange={(event) => {
+                      const nextLevel = event.target.value === "primary" ? "primary" : "secondary";
+                      setAiSchoolLevel(nextLevel);
+                      setRequirementForm(emptyRequirement);
+                      setRequirements([]);
+                      setProposal(null);
+                      setProposalError("");
+                      setAppliedCount(0);
+                    }}
+                  >
+                    <option value="primary">Tiểu học</option>
+                    <option value="secondary">THCS</option>
+                  </select>
+                </div>
                 <div>
                   <Label>Học kỳ</Label>
                   <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={semesterId} onChange={(event) => { setSemesterId(event.target.value); setProposal(null); }}>
@@ -813,6 +947,7 @@ export default function AiSchedulerPage() {
                 <div><Label>Tuần bắt đầu</Label><Input type="date" value={weekStart} onChange={(event) => { setWeekStart(event.target.value); setProposal(null); }} /></div>
               </div>
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <p className="mb-1"><strong>{aiSchoolLevel === "primary" ? "Tiểu học" : "THCS"}</strong> đang có <strong>{levelTimeSlots.length}</strong> tiết được cấu hình. CP-SAT chỉ dùng bộ tiết này.</p>
                 {scheduleMode === "fill_missing" ? (
                   <><strong>{weekExistingSchedules.length}</strong> lịch hiện có trong tuần đang được khóa. AI chỉ bổ sung số tiết còn thiếu.</>
                 ) : (
@@ -824,7 +959,7 @@ export default function AiSchedulerPage() {
             <Card className="overflow-hidden">
               <div className="border-b border-border p-5">
                 <h2 className="font-bold">2. Khai báo nhu cầu tiết cần xếp</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mỗi dòng là một phân công: giáo viên – môn – lớp – phòng – <strong>tổng số tiết cần có trong tuần</strong>. Bạn không cần tự chọn Thứ/Tiết.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Mỗi dòng là một phân công thuộc đúng cấp học đang chọn: giáo viên – môn – lớp – phòng – <strong>tổng số tiết cần có trong tuần</strong>. Bạn không cần tự chọn Thứ/Tiết.</p>
               </div>
               <div className="grid gap-4 p-5 md:grid-cols-5">
                 <div>

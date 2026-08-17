@@ -65,6 +65,28 @@ function periodNumber(row: Row) {
   return Number(row.periodNumber ?? row.order ?? row.period ?? 0);
 }
 
+function numericGrade(value: unknown) {
+  const grade = Number(value);
+  return Number.isInteger(grade) && grade >= 1 && grade <= 9 ? grade : 0;
+}
+
+function schoolLevelForGrade(grade: number) {
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  return "";
+}
+
+function rowSchoolLevel(row: Row | undefined | null) {
+  const explicit = text(row?.schoolLevel);
+  if (explicit === "primary" || explicit === "secondary") return explicit;
+  return schoolLevelForGrade(numericGrade(row?.grade ?? row?.gradeLevel));
+}
+
+function timeSlotSchoolLevel(row: Row) {
+  const explicit = text(row.schoolLevel);
+  return explicit === "primary" || explicit === "secondary" ? explicit : "secondary";
+}
+
 function periodLabel(row: Row, fallback: number) {
   const name = text(row.name) || text(row.displayName) || `Tiết ${fallback}`;
   const start = text(row.startTime);
@@ -117,19 +139,6 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
   const classIds = [...new Set(activeSchedules.map((schedule) => text(schedule.classId)).filter(Boolean))]
     .sort((first, second) => catalogName(input.classes, first).localeCompare(catalogName(input.classes, second), "vi"));
 
-  const configuredPeriods = input.timeSlots
-    .filter((slot) => slot.isActive !== false && periodNumber(slot) > 0)
-    .sort((first, second) => periodNumber(first) - periodNumber(second));
-
-  const scheduleMaxPeriod = activeSchedules.reduce(
-    (max, schedule) => Math.max(max, Number(schedule.endPeriod || 1) - 1),
-    0,
-  );
-  const configuredMaxPeriod = configuredPeriods.reduce((max, slot) => Math.max(max, periodNumber(slot)), 0);
-  const maxPeriod = Math.max(scheduleMaxPeriod, configuredMaxPeriod, 1);
-  const periods = Array.from({ length: maxPeriod }, (_, index) => index + 1);
-
-  const periodRows = new Map(configuredPeriods.map((slot) => [periodNumber(slot), slot]));
   const usedSheetNames = new Set<string>();
   const classNames: string[] = [];
 
@@ -140,6 +149,19 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
     classNames.push(className);
     const sheetName = safeSheetName(className, usedSheetNames);
     const classSchedules = activeSchedules.filter((schedule) => text(schedule.classId) === classId);
+    const classRow = input.classes.find((item) => item.id === classId);
+    const classLevel = text(classSchedules[0]?.schoolLevel) || rowSchoolLevel(classRow) || "secondary";
+    const configuredPeriods = input.timeSlots
+      .filter((slot) => slot.isActive !== false && periodNumber(slot) > 0 && timeSlotSchoolLevel(slot) === classLevel)
+      .sort((first, second) => periodNumber(first) - periodNumber(second));
+    const scheduleMaxPeriod = classSchedules.reduce(
+      (max, schedule) => Math.max(max, Number(schedule.endPeriod || 1) - 1),
+      0,
+    );
+    const configuredMaxPeriod = configuredPeriods.reduce((max, slot) => Math.max(max, periodNumber(slot)), 0);
+    const maxPeriod = Math.max(scheduleMaxPeriod, configuredMaxPeriod, 1);
+    const periods = Array.from({ length: maxPeriod }, (_, index) => index + 1);
+    const periodRows = new Map(configuredPeriods.map((slot) => [periodNumber(slot), slot]));
 
     const headerCells = [cell("Tiết", "Header")];
     for (let day = 2; day <= 7; day += 1) {

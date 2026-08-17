@@ -153,6 +153,17 @@ function catalogSchoolLevel(row: CatalogRow | null | undefined) {
   return schoolLevelForGrade(numericGrade(row?.grade ?? row?.gradeLevel));
 }
 
+function timeSlotSchoolLevel(row: CatalogRow | null | undefined) {
+  const explicit = textValue(row?.schoolLevel);
+  // Dữ liệu timeSlots cũ chưa có schoolLevel được xem là THCS để tương thích ngược.
+  return explicit === "primary" || explicit === "secondary" ? explicit : "secondary";
+}
+
+function timeSlotsForLevel(rows: CatalogRow[], level: string) {
+  if (level !== "primary" && level !== "secondary") return [] as CatalogRow[];
+  return rows.filter((row) => timeSlotSchoolLevel(row) === level);
+}
+
 function teacherSchoolLevels(teacher: CatalogRow | null | undefined) {
   if (Array.isArray(teacher?.schoolLevels)) {
     const levels = teacher.schoolLevels.map(String).filter((level) => level === "primary" || level === "secondary");
@@ -201,10 +212,12 @@ function activeTimeSlotRows(rows: CatalogRow[]) {
     .sort((first, second) => periodNumber(first) - periodNumber(second));
 }
 
-function timeAtBoundary(row: ScheduleRow, slots: CatalogRow[], boundary: "start" | "end") {
+function timeAtBoundary(row: ScheduleRow, slots: CatalogRow[], classes: CatalogRow[], boundary: "start" | "end") {
   const date = dateForSchedule(row);
   const period = boundary === "start" ? Number(row.startPeriod || 1) : Math.max(1, Number(row.endPeriod || 2) - 1);
-  const slot = slots.find((item) => periodNumber(item) === period);
+  const schoolClass = classes.find((item) => item.id === textValue(row.classId));
+  const level = textValue(row.schoolLevel) || catalogSchoolLevel(schoolClass) || "secondary";
+  const slot = slots.find((item) => timeSlotSchoolLevel(item) === level && periodNumber(item) === period);
   const configured = textValue(boundary === "start" ? slot?.startTime : slot?.endTime);
   const match = /^(\d{1,2}):(\d{2})/.exec(configured);
   if (match) {
@@ -221,28 +234,62 @@ function periodDisplay(row: ScheduleRow) {
   return start === last ? `Tiết ${start}` : `Tiết ${start}–${last}`;
 }
 
-function parseAvailabilitySlot(slot: unknown) {
-  const match = /^(\d+):(\d+)$/.exec(String(slot));
-  if (!match) return null;
-  return { dayOfWeek: Number(match[1]), period: Number(match[2]) };
+function resolveAvailabilitySlot(slot: unknown, timeSlots: CatalogRow[]) {
+  const value = String(slot ?? "");
+  const scoped = /^(primary|secondary):([2-7]):([^:]+)$/.exec(value);
+  if (scoped) {
+    const schoolLevel = scoped[1] as "primary" | "secondary";
+    const dayOfWeek = Number(scoped[2]);
+    const token = scoped[3];
+    const byId = timeSlots.find((row) => row.id === token && timeSlotSchoolLevel(row) === schoolLevel);
+    if (byId) return { schoolLevel, dayOfWeek, period: periodNumber(byId), timeSlot: byId };
+    if (/^\d+$/.test(token)) {
+      const byPeriod = timeSlots.find((row) => timeSlotSchoolLevel(row) === schoolLevel && periodNumber(row) === Number(token));
+      if (byPeriod) return { schoolLevel, dayOfWeek, period: periodNumber(byPeriod), timeSlot: byPeriod };
+    }
+    return null;
+  }
+  const legacy = /^([2-7]):([1-9][0-9]?)$/.exec(value);
+  if (!legacy) return null;
+  const dayOfWeek = Number(legacy[1]);
+  const period = Number(legacy[2]);
+  const timeSlot = timeSlots.find((row) => timeSlotSchoolLevel(row) === "secondary" && periodNumber(row) === period) ?? null;
+  return { schoolLevel: "secondary" as const, dayOfWeek, period, timeSlot };
 }
 
-function availabilitySlotLabel(slot: unknown) {
-  const parsed = parseAvailabilitySlot(slot);
-  return parsed ? `Thứ ${parsed.dayOfWeek} · Tiết ${parsed.period}` : String(slot);
+function availabilitySlotLabel(slot: unknown, timeSlots: CatalogRow[] = []) {
+  const parsed = resolveAvailabilitySlot(slot, timeSlots);
+  if (!parsed) return String(slot);
+  const level = parsed.schoolLevel === "primary" ? "Tiểu học" : "THCS";
+  const start = textValue(parsed.timeSlot?.startTime);
+  const end = textValue(parsed.timeSlot?.endTime);
+  const clock = start && end ? ` · ${start}–${end}` : "";
+  return `${level} · Thứ ${parsed.dayOfWeek} · Tiết ${parsed.period}${clock}`;
 }
 
 function approvedAvailabilitySlots(row: AvailabilityRow | null) {
   if (!row) return [] as string[];
-  if (Array.isArray(row.approvedSlots)) return row.approvedSlots.map(String);
+  if (Array.isArray(row.approvedSlots) && row.approvedSlots.length > 0) return row.approvedSlots.map(String);
   return Array.isArray(row.slots) ? row.slots.map(String) : [];
 }
 
-function availabilityCoversSelection(row: AvailabilityRow | null, dayOfWeek: number, startPeriod: number, lastPeriod: number) {
+function availabilityCoversSelection(
+  row: AvailabilityRow | null,
+  schoolLevel: string,
+  dayOfWeek: number,
+  startPeriod: number,
+  lastPeriod: number,
+  timeSlots: CatalogRow[],
+) {
+  if (schoolLevel !== "primary" && schoolLevel !== "secondary") return false;
   const approvedSlots = approvedAvailabilitySlots(row);
   if (approvedSlots.length === 0) return false;
   for (let period = startPeriod; period <= lastPeriod; period += 1) {
-    if (!approvedSlots.includes(`${dayOfWeek}:${period}`)) return false;
+    const configured = timeSlots.find((slot) => timeSlotSchoolLevel(slot) === schoolLevel && periodNumber(slot) === period && slot.isActive !== false);
+    if (!configured) return false;
+    const scoped = `${schoolLevel}:${dayOfWeek}:${configured.id}`;
+    const legacy = `${dayOfWeek}:${period}`;
+    if (!approvedSlots.includes(scoped) && !(schoolLevel === "secondary" && approvedSlots.includes(legacy))) return false;
   }
   return true;
 }
@@ -388,8 +435,8 @@ export default function SchedulesPage() {
       .map((row) => ({
         id: row.id,
         title: `${row.subjectName || catalogName(subjects, row.subjectId) || row.subjectId || "Môn học"} · ${row.className || catalogName(classes, row.classId) || row.classId || "Lớp"}`,
-        start: timeAtBoundary(row, timeSlots, "start"),
-        end: timeAtBoundary(row, timeSlots, "end"),
+        start: timeAtBoundary(row, timeSlots, classes, "start"),
+        end: timeAtBoundary(row, timeSlots, classes, "end"),
         backgroundColor: textValue(row.originalTeacherId) && row.originalTeacherId !== (row.actualTeacherId || row.teacherId) ? "#f59e0b" : row.teacherType === "thinh_giang" ? "#7c3aed" : "#2563eb",
         borderColor: "transparent",
         extendedProps: { row },
@@ -405,6 +452,11 @@ export default function SchedulesPage() {
   const selectedSubject = useMemo(() => selectedCatalogRow(subjects, form.subjectId), [form.subjectId, subjects]);
   const subjectDepartmentId = textValue(selectedSubject?.departmentId);
   const selectedClass = useMemo(() => selectedCatalogRow(classes, form.classId), [classes, form.classId]);
+  const selectedClassLevel = catalogSchoolLevel(selectedClass);
+  const selectedTimeSlots = useMemo(
+    () => timeSlotsForLevel(timeSlots, selectedClassLevel),
+    [selectedClassLevel, timeSlots],
+  );
   const selectedSemester = useMemo(() => selectedCatalogRow(semesters, form.semesterId), [form.semesterId, semesters]);
 
   const filteredTeachers = useMemo(() => teachers.filter((teacher) => teacher.id === form.teacherId || (
@@ -443,9 +495,11 @@ export default function SchedulesPage() {
   const selectedAvailabilityReviewStatus = selectedAvailability ? reviewStatusOf(selectedAvailability) : "not_submitted";
   const selectedAvailabilityCovers = !selectedTeacherIsAdjunct || availabilityCoversSelection(
     selectedAvailability,
+    selectedClassLevel,
     Number(form.dayOfWeek),
     Number(form.startPeriod),
     Number(form.endPeriod),
+    timeSlots,
   );
   const selectedAvailabilityIssue = selectedTeacherIsAdjunct
     ? !selectedAvailability
@@ -501,9 +555,8 @@ export default function SchedulesPage() {
   }
 
   function openCreate() {
-    const firstPeriod = String(periodNumber(timeSlots[0]) || 1);
     setEditingSchedule(null);
-    setForm({ ...initialForm, startPeriod: firstPeriod, endPeriod: firstPeriod });
+    setForm(initialForm);
     setFormError("");
     setOpen(true);
   }
@@ -531,6 +584,14 @@ export default function SchedulesPage() {
         const subject = subjects.find((row) => row.id === value);
         if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
       }
+      if (key === "classId") {
+        const schoolClass = classes.find((row) => row.id === value);
+        const level = catalogSchoolLevel(schoolClass);
+        const levelSlots = timeSlotsForLevel(timeSlots, level);
+        const firstPeriod = String(periodNumber(levelSlots[0]) || 1);
+        next.startPeriod = firstPeriod;
+        next.endPeriod = firstPeriod;
+      }
       if (key === "roomId") {
         const room = rooms.find((row) => row.id === value);
         if (textValue(room?.campusId)) next.campusId = textValue(room?.campusId);
@@ -540,7 +601,7 @@ export default function SchedulesPage() {
   }
 
   function openCreateFromAvailability(row: AvailabilityRow, slot: unknown) {
-    const parsed = parseAvailabilitySlot(slot);
+    const parsed = resolveAvailabilitySlot(slot, timeSlots);
     if (!parsed) return;
     const teacher = teachers.find((item) => item.id === row.teacherId);
     const firstPeriod = String(parsed.period);
@@ -588,9 +649,17 @@ export default function SchedulesPage() {
       if (!subjectMatchesClass(selectedSubject, selectedClass)) throw new Error("Môn học không phù hợp với cấp học/khối của lớp đã chọn.");
       if (!teacherMatchesClass(selectedTeacher, selectedClass)) throw new Error("Giáo viên chưa được phân công phụ trách cấp học của lớp đã chọn.");
       if (!teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, selectedClass)) throw new Error("Giáo viên chưa được phân công dạy môn này ở khối của lớp đã chọn.");
+      if (!selectedClassLevel) throw new Error("Lớp chưa được cấu hình cấp học/khối hợp lệ.");
+      if (selectedTimeSlots.length === 0) throw new Error(selectedClassLevel === "primary"
+        ? "Chưa cấu hình tiết học dành cho Tiểu học."
+        : "Chưa cấu hình tiết học dành cho THCS.");
       const lastPeriod = Number(form.endPeriod);
       const startPeriod = Number(form.startPeriod);
       if (lastPeriod < startPeriod) throw new Error("Tiết cuối không được nhỏ hơn tiết bắt đầu.");
+      const configuredPeriods = new Set(selectedTimeSlots.map(periodNumber));
+      for (let period = startPeriod; period <= lastPeriod; period += 1) {
+        if (!configuredPeriods.has(period)) throw new Error(`Tiết ${period} chưa được cấu hình cho ${selectedClassLevel === "primary" ? "Tiểu học" : "THCS"}.`);
+      }
       const schoolYearId = textValue(selectedSemester?.schoolYearId);
       if (!schoolYearId) throw new Error("Học kỳ chưa được liên kết với năm học. Vui lòng cập nhật học kỳ trước.");
       if (selectedTeacherIsAdjunct) {
@@ -728,6 +797,11 @@ export default function SchedulesPage() {
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         {catalogError ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{catalogError}</div> : null}
         {timeSlots.length === 0 ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Chưa có tiết học đang hoạt động. Hãy cấu hình mục “Tiết học” trước khi tạo lịch.</div> : null}
+        {timeSlots.length > 0 && (!timeSlots.some((slot) => timeSlotSchoolLevel(slot) === "primary") || !timeSlots.some((slot) => timeSlotSchoolLevel(slot) === "secondary")) ? (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            Khuyến nghị cấu hình đủ hai bộ tiết riêng: <strong>Tiểu học</strong> và <strong>THCS</strong>. Tiết cũ chưa có trường cấp học được hiểu là THCS.
+          </div>
+        ) : null}
         {availabilityError ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{availabilityError}</div> : null}
 
         {role === "admin" ? (
@@ -767,10 +841,10 @@ export default function SchedulesPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         {slots.map((slot) => reviewStatus === "approved" ? (
                           <button key={String(slot)} type="button" onClick={() => openCreateFromAvailability(availability, slot)} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100">
-                            {availabilitySlotLabel(slot)} · Xếp lịch
+                            {availabilitySlotLabel(slot, timeSlots)} · Xếp lịch
                           </button>
                         ) : (
-                          <span key={String(slot)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">{availabilitySlotLabel(slot)}</span>
+                          <span key={String(slot)} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">{availabilitySlotLabel(slot, timeSlots)}</span>
                         ))}
                       </div>
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -865,7 +939,7 @@ export default function SchedulesPage() {
           </div>
         </Modal>
 
-        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={timeSlots.length === 0 || Boolean(selectedAvailabilityIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
+        <Modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }} title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"} description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Đóng</Button><Button form="schedule-form" loading={submitting} type="submit" disabled={(Boolean(form.classId) && selectedTimeSlots.length === 0) || Boolean(selectedAvailabilityIssue)}>{editingSchedule ? "Lưu thay đổi" : "Kiểm tra và lưu"}</Button></div>}>
           <form id="schedule-form" className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
             {catalogFields.map(({ key, label, options }) => (
               <div key={key}>
@@ -890,15 +964,16 @@ export default function SchedulesPage() {
                 const nextStart = Number(event.target.value);
                 setForm((current) => ({ ...current, startPeriod: event.target.value, endPeriod: String(Math.max(nextStart, Number(current.endPeriod))) }));
               }}>
-                {timeSlots.map((slot) => <option key={slot.id} value={periodNumber(slot)}>{primaryCatalogName(slot)} · {slot.startTime || "?"}–{slot.endTime || "?"}</option>)}
+                {selectedTimeSlots.length === 0 ? <option value="">Chọn lớp để tải đúng bộ tiết</option> : null}
+                {selectedTimeSlots.map((slot) => <option key={slot.id} value={periodNumber(slot)}>{primaryCatalogName(slot)} · {slot.startTime || "?"}–{slot.endTime || "?"}</option>)}
               </select>
             </div>
             <div>
               <Label>Tiết cuối cùng</Label>
               <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.endPeriod} onChange={(event) => setField("endPeriod", event.target.value)}>
-                {timeSlots.filter((slot) => periodNumber(slot) >= Number(form.startPeriod)).map((slot) => <option key={slot.id} value={periodNumber(slot)}>{primaryCatalogName(slot)} · kết thúc {slot.endTime || "?"}</option>)}
+                {selectedTimeSlots.filter((slot) => periodNumber(slot) >= Number(form.startPeriod)).map((slot) => <option key={slot.id} value={periodNumber(slot)}>{primaryCatalogName(slot)} · kết thúc {slot.endTime || "?"}</option>)}
               </select>
-              <p className="mt-1 text-xs text-muted-foreground">Ví dụ học tiết 1 và 2: chọn bắt đầu 1, tiết cuối 2.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{selectedClassLevel ? `Đang dùng bộ tiết ${selectedClassLevel === "primary" ? "Tiểu học" : "THCS"}. ` : "Chọn lớp để xác định bộ tiết. "}Ví dụ học tiết 1 và 2: chọn bắt đầu 1, tiết cuối 2.</p>
             </div>
             {selectedTeacherIsAdjunct ? (
               <div className="sm:col-span-2">
@@ -910,7 +985,7 @@ export default function SchedulesPage() {
             {selectedTeacherIsAdjunct ? (
               <div className={`sm:col-span-2 rounded-xl border px-4 py-3 text-sm ${selectedAvailabilityIssue ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
                 {selectedAvailabilityIssue || `Khung giờ hợp lệ. Giáo viên đã được duyệt cho Thứ ${form.dayOfWeek}, tiết ${form.startPeriod}${form.endPeriod !== form.startPeriod ? `–${form.endPeriod}` : ""}.`}
-                {selectedAvailability && Array.isArray(selectedAvailability.slots) ? <p className="mt-1 text-xs">Các ô đã duyệt: {selectedAvailability.slots.map(availabilitySlotLabel).join(", ")}</p> : null}
+                {selectedAvailability && Array.isArray(selectedAvailability.slots) ? <p className="mt-1 text-xs">Các ô đã duyệt: {selectedAvailability.slots.map((slot: unknown) => availabilitySlotLabel(slot, timeSlots)).join(", ")}</p> : null}
               </div>
             ) : null}
             {formError ? <div className="sm:col-span-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
