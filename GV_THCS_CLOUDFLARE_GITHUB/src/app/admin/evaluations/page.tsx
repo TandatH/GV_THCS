@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarPlus, CirclePlus, Radar as RadarIcon, Search } from "lucide-react";
+import { BarChart3, CalendarPlus, CirclePlus, FileCheck2, Radar as RadarIcon, RotateCcw, Search, Trash2 } from "lucide-react";
 import { addDoc, collection, doc, getDoc, limit, onSnapshot, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -23,7 +23,9 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
+import { deleteEvaluationPeriod, setEvaluationPeriodStatus } from "@/lib/firebase/evaluation-admin-callables";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { formatDate } from "@/lib/utils";
 
@@ -34,8 +36,7 @@ type EvaluationRow = DocumentData & { id: string };
 const criteriaNames = ["Chuyên môn", "Kỷ luật", "Hợp tác"];
 const periodStatuses = [
   { value: "draft", label: "Nháp" },
-  { value: "open", label: "Đang mở" },
-  { value: "closed", label: "Đã đóng" },
+  { value: "published", label: "Chính thức" },
 ] as const;
 
 function statusLabel(status: unknown) {
@@ -51,6 +52,20 @@ function statusLabel(status: unknown) {
 function statusTone(status: unknown) {
   if (["open", "published"].includes(String(status))) return "success" as const;
   if (["closed"].includes(String(status))) return "neutral" as const;
+  return "warning" as const;
+}
+
+function periodStatusLabel(status: unknown) {
+  if (status === "published") return "Chính thức";
+  if (status === "draft") return "Nháp";
+  if (status === "open") return "Đang mở (cũ)";
+  if (status === "closed") return "Đã đóng (cũ)";
+  return statusLabel(status);
+}
+
+function periodStatusTone(status: unknown) {
+  if (status === "published") return "success" as const;
+  if (status === "closed") return "neutral" as const;
   return "warning" as const;
 }
 
@@ -77,6 +92,7 @@ export default function AdminEvaluationsPage() {
   const [periodModalOpen, setPeriodModalOpen] = useState(false);
   const [evaluationModalOpen, setEvaluationModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [busyPeriodId, setBusyPeriodId] = useState("");
   const [formError, setFormError] = useState("");
   const [periodForm, setPeriodForm] = useState({ name: "", startDate: "", endDate: "", status: "draft" });
   const [evaluationForm, setEvaluationForm] = useState({ periodId: "", teacherId: "", notes: "", status: "draft", scores: ["8", "8", "8"] });
@@ -173,6 +189,46 @@ export default function AdminEvaluationsPage() {
     }
   }
 
+  async function handlePeriodStatus(period: PeriodRow) {
+    if (role !== "admin") return;
+    const nextStatus: "draft" | "published" = period.status === "published" ? "draft" : "published";
+    const nextLabel = nextStatus === "published" ? "Chính thức" : "Nháp";
+    const name = String(period.name || period.id);
+    if (!window.confirm(`Đổi kỳ “${name}” sang trạng thái ${nextLabel}?`)) return;
+
+    setBusyPeriodId(period.id);
+    try {
+      await setEvaluationPeriodStatus(period.id, nextStatus);
+      toast.success(`Đã chuyển kỳ đánh giá sang ${nextLabel}.`);
+    } catch (statusError) {
+      toast.error(firebaseErrorMessage(statusError));
+    } finally {
+      setBusyPeriodId("");
+    }
+  }
+
+  async function handleDeletePeriod(period: PeriodRow) {
+    if (role !== "admin") return;
+    const resultCount = evaluations.filter((evaluation) => evaluation.periodId === period.id).length;
+    const name = String(period.name || period.id);
+    const confirmation = window.prompt(
+      `Xóa vĩnh viễn kỳ “${name}”?\n${resultCount > 0 ? `Kỳ này đang có ${resultCount} kết quả; các kết quả đó cũng sẽ bị xóa.` : "Kỳ này chưa có kết quả."}\nNhập XOA KY DANH GIA để xác nhận.`,
+      "",
+    );
+    if (confirmation !== "XOA KY DANH GIA") return;
+
+    setBusyPeriodId(period.id);
+    try {
+      const result = await deleteEvaluationPeriod(period.id);
+      if (periodFilter === period.id) setPeriodFilter("all");
+      toast.success(`Đã xóa kỳ đánh giá và ${result.deletedEvaluationCount} kết quả liên quan.`);
+    } catch (deleteError) {
+      toast.error(firebaseErrorMessage(deleteError));
+    } finally {
+      setBusyPeriodId("");
+    }
+  }
+
   async function submitEvaluation(nextStatus: "draft" | "published") {
     if (!user) return;
     const teacher = teacherById.get(evaluationForm.teacherId);
@@ -215,7 +271,7 @@ export default function AdminEvaluationsPage() {
         <PageHeader
           eyebrow={role === "totruong" ? "Đánh giá trong tổ" : "Đánh giá giáo viên"}
           title={role === "totruong" ? "Đánh giá giáo viên trong tổ" : "Quản lý kỳ và kết quả đánh giá"}
-          description="Tạo kỳ đánh giá, nhập điểm theo tiêu chí, lưu nháp và công bố kết quả cho giáo viên."
+          description="Tạo kỳ đánh giá, chuyển kỳ từ Nháp sang Chính thức, nhập điểm theo tiêu chí và công bố kết quả cho giáo viên."
           actions={
             <div className="flex flex-wrap gap-2">
               {role === "admin" ? <Button variant="secondary" onClick={() => setPeriodModalOpen(true)}><CalendarPlus className="h-4 w-4" />Tạo kỳ đánh giá</Button> : null}
@@ -235,7 +291,7 @@ export default function AdminEvaluationsPage() {
           <Card className="overflow-hidden">
             <div className="border-b border-border px-5 py-4 sm:px-6">
               <h2 className="text-lg font-bold">Kỳ đánh giá</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Quản lý trạng thái nháp, đang mở và đã đóng.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Admin có thể chuyển kỳ giữa Nháp và Chính thức hoặc xóa kỳ khi cần.</p>
             </div>
             {loading ? (
               <div className="space-y-3 p-5">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16" />)}</div>
@@ -244,15 +300,28 @@ export default function AdminEvaluationsPage() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="data-table min-w-[780px]">
-                  <thead><tr><th>Tên kỳ</th><th>Ngày bắt đầu</th><th>Ngày kết thúc</th><th>Trạng thái</th><th>Số kết quả</th></tr></thead>
+                  <thead><tr><th>Tên kỳ</th><th>Ngày bắt đầu</th><th>Ngày kết thúc</th><th>Trạng thái</th><th>Số kết quả</th>{role === "admin" ? <th>Thao tác</th> : null}</tr></thead>
                   <tbody>
                     {periods.map((period) => (
                       <tr key={period.id}>
                         <td><p className="font-semibold">{period.name || period.id}</p><p className="text-xs text-muted-foreground">ID: {period.id}</p></td>
                         <td>{formatDate(period.startDate)}</td>
                         <td>{formatDate(period.endDate)}</td>
-                        <td><Badge tone={statusTone(period.status)}>{statusLabel(period.status)}</Badge></td>
+                        <td><Badge tone={periodStatusTone(period.status)}>{periodStatusLabel(period.status)}</Badge></td>
                         <td>{evaluations.filter((evaluation) => evaluation.periodId === period.id).length}</td>
+                        {role === "admin" ? (
+                          <td>
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" variant="secondary" loading={busyPeriodId === period.id} onClick={() => void handlePeriodStatus(period)}>
+                                {period.status === "published" ? <RotateCcw className="h-4 w-4" /> : <FileCheck2 className="h-4 w-4" />}
+                                {period.status === "published" ? "Về nháp" : "Chính thức"}
+                              </Button>
+                              <Button size="sm" variant="danger" disabled={busyPeriodId === period.id} onClick={() => void handleDeletePeriod(period)}>
+                                <Trash2 className="h-4 w-4" /> Xóa kỳ
+                              </Button>
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>

@@ -1,6 +1,6 @@
 "use client";
 
-import { CirclePlus, PencilLine, RefreshCcw, Search, Settings2 } from "lucide-react";
+import { CirclePlus, PencilLine, RefreshCcw, Search, Settings2, Trash2 } from "lucide-react";
 import {
   collection,
   doc,
@@ -18,6 +18,8 @@ import { toast } from "sonner";
 
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { deleteCatalogItem, type CatalogCollectionName } from "@/lib/firebase/catalog-admin-callables";
+import { firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { formatDate } from "@/lib/utils";
@@ -188,6 +190,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
   const [editingRow, setEditingRow] = useState<CatalogRow | null>(null);
   const [form, setForm] = useState<FormState>(() => initialState(fields));
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   const [formError, setFormError] = useState("");
   const [referenceOptions, setReferenceOptions] = useState<Record<string, CatalogRow[]>>({});
   const [referenceError, setReferenceError] = useState("");
@@ -247,6 +250,25 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
     setForm(initialState(fields, row));
     setFormError("");
     setOpen(true);
+  }
+
+  async function handleDelete(row: CatalogRow) {
+    const label = String(row.name || row.code || row.id);
+    const confirmation = window.prompt(
+      `Xóa vĩnh viễn “${label}”?\nNếu dữ liệu đang được lớp/TKB/GV sử dụng, backend sẽ chặn.\nNhập XOA để xác nhận.`,
+      "",
+    );
+    if (confirmation !== "XOA") return;
+
+    setDeletingId(row.id);
+    try {
+      await deleteCatalogItem(collectionName as CatalogCollectionName, row.id);
+      toast.success("Đã xóa dữ liệu.");
+    } catch (deleteError) {
+      toast.error(firebaseErrorMessage(deleteError));
+    } finally {
+      setDeletingId("");
+    }
   }
 
   function setField(name: string, value: string | boolean) {
@@ -374,7 +396,12 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
                       <td>{row.name || "—"}</td>
                       {visibleFields.slice(2, 5).map((field) => { const reference = referenceOptions[field.name]?.find((option) => option.id === row[field.name]); return <td key={field.name}>{reference ? referenceLabel(reference, field.optionLabelFields) : staticOptionLabel(field, row[field.name])}</td>; })}
                       <td><Badge tone={statusTone(row)}>{row.isActive === false || row.status === "inactive" ? "Ngừng hoạt động" : "Đang hoạt động"}</Badge></td>
-                      <td><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button></td>
+                      <td>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button>
+                          <Button size="sm" variant="danger" loading={deletingId === row.id} onClick={() => void handleDelete(row)}><Trash2 className="h-4 w-4" />Xóa</Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

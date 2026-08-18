@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import type { Role, SchoolLevel, TeacherInput, TeachingRole } from "@school/shared";
-import { CirclePlus, Copy, ImagePlus, KeyRound, PencilLine, RotateCcw, Search, ShieldCheck, Upload, UsersRound } from "lucide-react";
+import { CirclePlus, Copy, ImagePlus, KeyRound, PencilLine, RotateCcw, Search, ShieldCheck, Trash2, Upload, UsersRound } from "lucide-react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -15,6 +15,7 @@ import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { createTeacherAccount, firebaseErrorMessage, setUserRole } from "@/lib/firebase/callables";
 import { resetTeacherPassword } from "@/lib/firebase/password-callables";
+import { deleteTeacherAccount } from "@/lib/firebase/teacher-admin-callables";
 import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { todayDateOnly } from "@/lib/date-only";
@@ -260,6 +261,7 @@ export default function TeachersPage() {
   const [catalogError, setCatalogError] = useState("");
   const [temporaryPasswords, setTemporaryPasswords] = useState<Record<string, string>>({});
   const [resettingTeacherId, setResettingTeacherId] = useState("");
+  const [deletingTeacherId, setDeletingTeacherId] = useState("");
   const [credentialResult, setCredentialResult] = useState<CredentialResult | null>(null);
 
   useEffect(() => {
@@ -512,6 +514,26 @@ export default function TeachersPage() {
     }
   }
 
+  async function deleteTeacher(row: TeacherRow) {
+    const name = textValue(row.fullName) || textValue(row.email) || row.id;
+    const confirmation = window.prompt(
+      `Xóa vĩnh viễn giáo viên “${name}”?\nNếu giáo viên còn lớp chủ nhiệm, TKB, đánh giá, chấm công, lương... backend sẽ chặn.\nNhập XOA GIAO VIEN để xác nhận.`,
+      "",
+    );
+    if (confirmation !== "XOA GIAO VIEN") return;
+
+    setDeletingTeacherId(row.id);
+    try {
+      await deleteTeacherAccount(row.id);
+      setTemporaryPasswords((current) => { const next = { ...current }; delete next[row.id]; return next; });
+      toast.success("Đã xóa giáo viên và tài khoản đăng nhập liên quan.");
+    } catch (deleteError) {
+      toast.error(firebaseErrorMessage(deleteError));
+    } finally {
+      setDeletingTeacherId("");
+    }
+  }
+
   async function resetPasswordForTeacher(row: TeacherRow) {
     const teacherName = textValue(row.fullName) || textValue(row.email) || row.id;
     const confirmed = window.confirm(`Reset mật khẩu cho ${teacherName}? Giáo viên sẽ bị thu hồi phiên đăng nhập cũ và phải đổi mật khẩu tạm sau khi đăng nhập lại.`);
@@ -655,7 +677,7 @@ export default function TeachersPage() {
                         </td>
                         <td><Badge tone={row.mustChangePassword === true ? "warning" : "success"}>{row.mustChangePassword === true ? "Phải đổi MK" : "Đã đổi / bình thường"}</Badge></td>
                         <td><Badge tone={status.tone}>{status.label}</Badge></td>
-                        <td><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button><Button size="sm" variant="secondary" loading={resettingTeacherId === row.id} onClick={() => resetPasswordForTeacher(row)}><RotateCcw className="h-4 w-4" />Reset MK</Button><Button size="sm" variant="secondary" onClick={() => { setAvatarTarget(row); setAvatarFile(null); setAvatarError(""); }}><ImagePlus className="h-4 w-4" />Ảnh</Button></div></td>
+                        <td><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button><Button size="sm" variant="danger" loading={deletingTeacherId === row.id} onClick={() => void deleteTeacher(row)}><Trash2 className="h-4 w-4" />Xóa</Button><Button size="sm" variant="secondary" loading={resettingTeacherId === row.id} onClick={() => resetPasswordForTeacher(row)}><RotateCcw className="h-4 w-4" />Reset MK</Button><Button size="sm" variant="secondary" onClick={() => { setAvatarTarget(row); setAvatarFile(null); setAvatarError(""); }}><ImagePlus className="h-4 w-4" />Ảnh</Button></div></td>
                       </tr>
                     );
                   })}

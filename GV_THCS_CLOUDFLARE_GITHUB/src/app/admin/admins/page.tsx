@@ -77,6 +77,9 @@ export default function AdminAccountsPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [credential, setCredential] = useState<Credential | null>(null);
+  const [changePasswordTarget, setChangePasswordTarget] = useState<AdminRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -156,6 +159,44 @@ export default function AdminAccountsPage() {
       toast.error(firebaseErrorMessage(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openChangePassword(row: AdminRow) {
+    setChangePasswordTarget(row);
+    const generated = generateTemporaryPassword();
+    setNewPassword(generated);
+    setConfirmPassword(generated);
+  }
+
+  async function submitChangePassword(event: FormEvent) {
+    event.preventDefault();
+    if (!changePasswordTarget) return;
+    if (newPassword.length < 8) {
+      toast.error("Mật khẩu mới phải có ít nhất 8 ký tự.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Hai lần nhập mật khẩu chưa khớp.");
+      return;
+    }
+
+    const name = text(changePasswordTarget.displayName || changePasswordTarget.fullName || changePasswordTarget.email) || "quản trị viên";
+    setBusyUid(changePasswordTarget.id);
+    try {
+      const result = await resetAdminPassword(changePasswordTarget.id, newPassword);
+      setChangePasswordTarget(null);
+      setCredential({
+        title: "Đã đổi mật khẩu Admin",
+        fullName: name,
+        email: text(changePasswordTarget.email),
+        temporaryPassword: result.temporaryPassword,
+      });
+      toast.success("Đã đổi mật khẩu quản trị viên.");
+    } catch (error) {
+      toast.error(firebaseErrorMessage(error));
+    } finally {
+      setBusyUid("");
     }
   }
 
@@ -320,8 +361,11 @@ export default function AdminAccountsPage() {
                         <td className="px-5 py-4 text-muted-foreground">{formatDate(row.passwordResetAt)}</td>
                         <td className="px-5 py-4">
                           <div className="flex justify-end gap-2">
+                            <Button variant="secondary" size="sm" disabled={busy} onClick={() => openChangePassword(row)}>
+                              <KeyRound className="h-4 w-4" /> Đổi MK
+                            </Button>
                             <Button variant="secondary" size="sm" disabled={busy} onClick={() => void handleReset(row)}>
-                              <KeyRound className="h-4 w-4" /> Reset MK
+                              <RefreshCw className="h-4 w-4" /> Reset MK
                             </Button>
                             <Button
                               variant="secondary"
@@ -388,6 +432,41 @@ export default function AdminAccountsPage() {
                 </Button>
               </div>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">Mật khẩu không được lưu dạng rõ trong Firestore. Sau khi đóng hộp kết quả, hệ thống không thể đọc lại mật khẩu này.</p>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
+          open={changePasswordTarget !== null}
+          onOpenChange={(open) => { if (!open) setChangePasswordTarget(null); }}
+          title="Đổi mật khẩu quản trị viên"
+          description={changePasswordTarget ? `Đặt mật khẩu mới cho ${text(changePasswordTarget.displayName || changePasswordTarget.fullName || changePasswordTarget.email) || changePasswordTarget.id}.` : "Đặt mật khẩu mới."}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setChangePasswordTarget(null)}>Hủy</Button>
+              <Button form="change-admin-password-form" type="submit" loading={Boolean(changePasswordTarget && busyUid === changePasswordTarget.id)}>Đổi mật khẩu</Button>
+            </div>
+          }
+        >
+          <form id="change-admin-password-form" className="space-y-4" onSubmit={submitChangePassword}>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <Label htmlFor="new-admin-password">Mật khẩu mới</Label>
+                <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline" onClick={() => { const value = generateTemporaryPassword(); setNewPassword(value); setConfirmPassword(value); }}>
+                  <RefreshCw className="h-3.5 w-3.5" /> Tạo mật khẩu mạnh
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <Input id="new-admin-password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" />
+                <Button type="button" variant="secondary" onClick={() => void copy(newPassword)} disabled={!newPassword}><Copy className="h-4 w-4" /></Button>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="confirm-admin-password">Nhập lại mật khẩu mới</Label>
+              <Input id="confirm-admin-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
+              Thao tác này đổi trực tiếp mật khẩu Firebase Authentication và thu hồi refresh token cũ của tài khoản được chọn.
             </div>
           </form>
         </Modal>
