@@ -871,6 +871,7 @@ export default function SchedulesPage() {
                   plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
                   initialView="timeGridWeek"
                   firstDay={1}
+                  hiddenDays={[0, 6]}
                   allDaySlot={false}
                   slotMinTime={calendarStart.length === 5 ? `${calendarStart}:00` : calendarStart}
                   slotMaxTime={calendarEnd.length === 5 ? `${calendarEnd}:00` : calendarEnd}
@@ -957,7 +958,7 @@ export default function SchedulesPage() {
               {subjectDepartmentWarning ? <p className="mt-1 text-xs text-amber-700">{subjectDepartmentWarning}</p> : <p className="mt-1 text-xs text-muted-foreground">Bộ môn lấy theo hồ sơ giáo viên.</p>}
             </div>
             <div><Label>Tuần bắt đầu</Label><Input required type="date" value={form.weekStart} onChange={(event) => setField("weekStart", event.target.value)} /></div>
-            <div><Label>Thứ</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.dayOfWeek} onChange={(event) => setField("dayOfWeek", event.target.value)}>{[2,3,4,5,6,7].map((day) => <option key={day} value={day}>Thứ {day}</option>)}</select></div>
+            <div><Label>Thứ</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.dayOfWeek} onChange={(event) => setField("dayOfWeek", event.target.value)}>{[2,3,4,5,6].map((day) => <option key={day} value={day}>Thứ {day}</option>)}</select></div>
             <div>
               <Label>Tiết bắt đầu</Label>
               <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.startPeriod} onChange={(event) => {
