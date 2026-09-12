@@ -1,7 +1,7 @@
 "use client";
 
 import { addDays, format, parseISO } from "date-fns";
-import { CalendarDays, CheckCircle2, Clock3, RefreshCcw, Search, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, GraduationCap, MapPin, RefreshCcw, Search, User, XCircle } from "lucide-react";
 import {
   collection,
   limit,
@@ -23,10 +23,154 @@ import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { addDaysDateOnly, currentWeekStartDateOnly, normalizeWeekStartDateOnly } from "@/lib/date-only";
+import { cn } from "@/lib/utils";
 
 type Row = DocumentData & { id: string };
 
 const weekdays = [2, 3, 4, 5, 6] as const;
+
+type SubjectTheme = {
+  bg: string;
+  border: string;
+  text: string;
+  badgeBg: string;
+  accent: string;
+};
+
+const SUBJECT_COLOR_PRESETS: Record<string, SubjectTheme> = {
+  toan: {
+    bg: "bg-gradient-to-br from-blue-50/90 to-indigo-50/60 hover:from-blue-100/90 hover:to-indigo-100/70",
+    border: "border-blue-200 hover:border-blue-400",
+    text: "text-blue-950",
+    badgeBg: "bg-blue-100/80 text-blue-800",
+    accent: "border-l-4 border-l-blue-600",
+  },
+  van: {
+    bg: "bg-gradient-to-br from-emerald-50/90 to-teal-50/60 hover:from-emerald-100/90 hover:to-teal-100/70",
+    border: "border-emerald-200 hover:border-emerald-400",
+    text: "text-emerald-950",
+    badgeBg: "bg-emerald-100/80 text-emerald-800",
+    accent: "border-l-4 border-l-emerald-600",
+  },
+  tiengviet: {
+    bg: "bg-gradient-to-br from-teal-50/90 to-emerald-50/60 hover:from-teal-100/90 hover:to-emerald-100/70",
+    border: "border-teal-200 hover:border-teal-400",
+    text: "text-teal-950",
+    badgeBg: "bg-teal-100/80 text-teal-800",
+    accent: "border-l-4 border-l-teal-600",
+  },
+  tienganh: {
+    bg: "bg-gradient-to-br from-violet-50/90 to-purple-50/60 hover:from-violet-100/90 hover:to-purple-100/70",
+    border: "border-violet-200 hover:border-violet-400",
+    text: "text-violet-950",
+    badgeBg: "bg-violet-100/80 text-violet-800",
+    accent: "border-l-4 border-l-violet-600",
+  },
+  khoahoc: {
+    bg: "bg-gradient-to-br from-amber-50/90 to-orange-50/60 hover:from-amber-100/90 hover:to-orange-100/70",
+    border: "border-amber-200 hover:border-amber-400",
+    text: "text-amber-950",
+    badgeBg: "bg-amber-100/80 text-amber-800",
+    accent: "border-l-4 border-l-amber-600",
+  },
+  lichsu: {
+    bg: "bg-gradient-to-br from-rose-50/90 to-red-50/60 hover:from-rose-100/90 hover:to-red-100/70",
+    border: "border-rose-200 hover:border-rose-400",
+    text: "text-rose-950",
+    badgeBg: "bg-rose-100/80 text-rose-800",
+    accent: "border-l-4 border-l-rose-600",
+  },
+  tinhoc: {
+    bg: "bg-gradient-to-br from-cyan-50/90 to-sky-50/60 hover:from-cyan-100/90 hover:to-sky-100/70",
+    border: "border-cyan-200 hover:border-cyan-400",
+    text: "text-cyan-950",
+    badgeBg: "bg-cyan-100/80 text-cyan-800",
+    accent: "border-l-4 border-l-cyan-600",
+  },
+  mythuat: {
+    bg: "bg-gradient-to-br from-fuchsia-50/90 to-pink-50/60 hover:from-fuchsia-100/90 hover:to-pink-100/70",
+    border: "border-fuchsia-200 hover:border-fuchsia-400",
+    text: "text-fuchsia-950",
+    badgeBg: "bg-fuchsia-100/80 text-fuchsia-800",
+    accent: "border-l-4 border-l-fuchsia-600",
+  },
+  theduc: {
+    bg: "bg-gradient-to-br from-lime-50/90 to-green-50/60 hover:from-lime-100/90 hover:to-green-100/70",
+    border: "border-lime-200 hover:border-lime-400",
+    text: "text-lime-950",
+    badgeBg: "bg-lime-100/80 text-lime-800",
+    accent: "border-l-4 border-l-lime-600",
+  },
+  gdcd: {
+    bg: "bg-gradient-to-br from-yellow-50/90 to-amber-50/60 hover:from-yellow-100/90 hover:to-amber-100/70",
+    border: "border-yellow-200 hover:border-yellow-400",
+    text: "text-yellow-950",
+    badgeBg: "bg-yellow-100/80 text-yellow-800",
+    accent: "border-l-4 border-l-yellow-600",
+  },
+};
+
+const DYNAMIC_PALETTES: SubjectTheme[] = [
+  {
+    bg: "bg-gradient-to-br from-sky-50/90 to-blue-50/60 hover:from-sky-100/90 hover:to-blue-100/70",
+    border: "border-sky-200 hover:border-sky-400",
+    text: "text-sky-950",
+    badgeBg: "bg-sky-100/80 text-sky-800",
+    accent: "border-l-4 border-l-sky-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-purple-50/90 to-indigo-50/60 hover:from-purple-100/90 hover:to-indigo-100/70",
+    border: "border-purple-200 hover:border-purple-400",
+    text: "text-purple-950",
+    badgeBg: "bg-purple-100/80 text-purple-800",
+    accent: "border-l-4 border-l-purple-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-pink-50/90 to-rose-50/60 hover:from-pink-100/90 hover:to-rose-100/70",
+    border: "border-pink-200 hover:border-pink-400",
+    text: "text-pink-950",
+    badgeBg: "bg-pink-100/80 text-pink-800",
+    accent: "border-l-4 border-l-pink-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-amber-50/90 to-yellow-50/60 hover:from-amber-100/90 hover:to-yellow-100/70",
+    border: "border-amber-200 hover:border-amber-400",
+    text: "text-amber-950",
+    badgeBg: "bg-amber-100/80 text-amber-800",
+    accent: "border-l-4 border-l-amber-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-teal-50/90 to-cyan-50/60 hover:from-teal-100/90 hover:to-cyan-100/70",
+    border: "border-teal-200 hover:border-teal-400",
+    text: "text-teal-950",
+    badgeBg: "bg-teal-100/80 text-teal-800",
+    accent: "border-l-4 border-l-teal-500",
+  },
+];
+
+function getSubjectTheme(subjectName: string, subjectId: string): SubjectTheme {
+  const norm = (subjectName || subjectId || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/[^a-z0-9]/g, "");
+
+  if (norm.includes("toan")) return SUBJECT_COLOR_PRESETS.toan;
+  if (norm.includes("tiengviet")) return SUBJECT_COLOR_PRESETS.tiengviet;
+  if (norm.includes("van") || norm.includes("nguvan")) return SUBJECT_COLOR_PRESETS.van;
+  if (norm.includes("anh") || norm.includes("tienganh") || norm.includes("english")) return SUBJECT_COLOR_PRESETS.tienganh;
+  if (norm.includes("khoahoc") || norm.includes("khtn") || norm.includes("ly") || norm.includes("vatly") || norm.includes("hoa") || norm.includes("hoahoc") || norm.includes("sinh") || norm.includes("sinhhoc")) return SUBJECT_COLOR_PRESETS.khoahoc;
+  if (norm.includes("su") || norm.includes("lichsu") || norm.includes("dia") || norm.includes("dialy") || norm.includes("khxh")) return SUBJECT_COLOR_PRESETS.lichsu;
+  if (norm.includes("tin") || norm.includes("tinhoc") || norm.includes("congnghe")) return SUBJECT_COLOR_PRESETS.tinhoc;
+  if (norm.includes("nhac") || norm.includes("amnhac") || norm.includes("my") || norm.includes("mythuat") || norm.includes("nghethuat")) return SUBJECT_COLOR_PRESETS.mythuat;
+  if (norm.includes("theduc") || norm.includes("gdtc") || norm.includes("thechat")) return SUBJECT_COLOR_PRESETS.theduc;
+  if (norm.includes("gdcd") || norm.includes("daoduc") || norm.includes("trainghiem") || norm.includes("hdtn")) return SUBJECT_COLOR_PRESETS.gdcd;
+
+  let hash = 0;
+  const str = subjectName || subjectId || "subject";
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % DYNAMIC_PALETTES.length;
+  return DYNAMIC_PALETTES[index];
+}
 
 function currentMonday() {
   return currentWeekStartDateOnly();
@@ -229,20 +373,35 @@ export default function TeacherSchedulePage() {
     const campus = schedule.campusName || catalogName(campuses, schedule.campusId) || schedule.campusId || "Cơ sở";
     const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== teacherId;
     const canRespond = schedule.confirmationStatus === "cho_xac_nhan" && (schedule.actualTeacherId === teacherId || schedule.teacherId === teacherId);
+    const theme = getSubjectTheme(subject, schedule.subjectId);
 
     return (
-      <div key={schedule.id} className="rounded-xl border border-border bg-card p-3 text-sm shadow-sm">
+      <div
+        key={schedule.id}
+        className={cn(
+          "rounded-xl border p-3 text-sm shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+          theme.bg,
+          theme.border,
+          theme.accent,
+        )}
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="font-bold text-foreground">{periodText(schedule)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{scheduleStatusLabel(schedule.status)}</p>
+            <p className={cn("font-bold text-sm", theme.text)}>{periodText(schedule)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{scheduleStatusLabel(schedule.status)}</p>
           </div>
           <Badge tone={confirmationTone(schedule.confirmationStatus)}>{confirmationLabel(schedule.confirmationStatus)}</Badge>
         </div>
-        <div className="mt-3 space-y-1.5">
-          <p className="font-semibold leading-5">{subject}</p>
-          <p className="text-muted-foreground">{className}</p>
-          <p className="text-muted-foreground">{room} · {campus}</p>
+        <div className="mt-2.5 space-y-1">
+          <p className={cn("font-extrabold text-base tracking-tight", theme.text)}>{subject}</p>
+          <div className="flex items-center gap-1 text-xs font-semibold text-slate-700">
+            <GraduationCap className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+            <span>{className}</span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            <MapPin className="h-3 w-3 shrink-0" />
+            <span>{room} · {campus}</span>
+          </div>
           {isSubstitute ? <Badge tone="info">Dạy thay</Badge> : null}
         </div>
         {canRespond ? (
@@ -261,7 +420,7 @@ export default function TeacherSchedulePage() {
         <PageHeader
           eyebrow="Thời khóa biểu"
           title="Lịch dạy của tôi"
-          description="Lịch dạy theo tuần, chỉ hiển thị lớp, môn học, phòng, tiết và trạng thái xác nhận cần xử lý."
+          description="Lịch dạy theo tuần, hiển thị trực quan với màu sắc riêng cho từng môn học, lớp, phòng, tiết và trạng thái xác nhận."
           actions={<Button variant="secondary" onClick={() => setSelectedWeek(currentMonday())}><RefreshCcw className="h-4 w-4" />Tuần hiện tại</Button>}
         />
 
