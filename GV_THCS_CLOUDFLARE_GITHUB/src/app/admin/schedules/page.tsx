@@ -9,19 +9,23 @@ import { addDays, addMinutes, format, isValid, parseISO } from "date-fns";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowRight,
   Building2,
   Calendar,
   CalendarClock,
   CalendarPlus,
+  CalendarSync,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Coffee,
+  Copy,
+  CopyCheck,
   FileSpreadsheet,
   GraduationCap,
   Info,
   LayoutGrid,
+  Loader2,
   MapPin,
   PencilLine,
   Plus,
@@ -615,6 +619,14 @@ export default function SchedulesPage() {
   const [exportOnlyReady, setExportOnlyReady] = useState(true);
   const [exportError, setExportError] = useState("");
   const [exporting, setExporting] = useState(false);
+
+  // Replicate / Apply Timetable to Next Weeks states
+  const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [applyScope, setApplyScope] = useState<"all" | "class" | "teacher">("all");
+  const [applyWeeksCount, setApplyWeeksCount] = useState<number>(1);
+  const [applying, setApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [applyError, setApplyError] = useState("");
 
   // Sync manager department for totruong
   useEffect(() => {
@@ -1233,6 +1245,98 @@ export default function SchedulesPage() {
     }
   }
 
+  // Handle Replicate / Apply Timetable to Next Weeks
+  async function handleApplyToNextWeeks() {
+    setApplying(true);
+    setApplyError("");
+    try {
+      // Filter candidate schedules to copy based on applyScope
+      const candidateSchedules = rows.filter((row) => {
+        if (row.status === "cancelled") return false;
+        if (textValue(row.weekStart) !== selectedWeek) return false;
+        if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
+        if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
+        if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
+        return true;
+      });
+
+      if (candidateSchedules.length === 0) {
+        throw new Error("Không có tiết học nào trong tuần nguồn để áp dụng.");
+      }
+
+      // Generate target weeks
+      const targetWeeks: string[] = [];
+      for (let w = 1; w <= applyWeeksCount; w++) {
+        targetWeeks.push(addDaysDateOnly(selectedWeek, w * 7));
+      }
+
+      let totalCopied = 0;
+      let totalSkipped = 0;
+      const totalTasks = candidateSchedules.length * targetWeeks.length;
+      let currentTask = 0;
+
+      for (const targetW of targetWeeks) {
+        // Filter existing schedules in target week to skip duplicates
+        const existingInTarget = rows.filter((r) => r.status !== "cancelled" && textValue(r.weekStart) === targetW);
+
+        for (const schedule of candidateSchedules) {
+          currentTask++;
+          const subjName = catalogName(subjects, schedule.subjectId) || schedule.subjectId || "Môn";
+          setApplyProgress({
+            current: currentTask,
+            total: totalTasks,
+            message: `Đang sao chép (${currentTask}/${totalTasks}): ${subjName} (Thứ ${schedule.dayOfWeek})...`,
+          });
+
+          // Check if same class + day + startPeriod already exists in target week
+          const isAlreadyPresent = existingInTarget.some((r) =>
+            r.classId === schedule.classId &&
+            Number(r.dayOfWeek) === Number(schedule.dayOfWeek) &&
+            Number(r.startPeriod) === Number(schedule.startPeriod),
+          );
+
+          if (isAlreadyPresent) {
+            totalSkipped++;
+            continue;
+          }
+
+          const payload: ScheduleInput = {
+            teacherId: textValue(schedule.actualTeacherId) || textValue(schedule.teacherId),
+            subjectId: textValue(schedule.subjectId),
+            classId: textValue(schedule.classId),
+            roomId: textValue(schedule.roomId),
+            campusId: textValue(schedule.campusId),
+            departmentId: textValue(schedule.departmentId),
+            semesterId: textValue(schedule.semesterId),
+            schoolYearId: textValue(schedule.schoolYearId),
+            weekStart: targetW,
+            dayOfWeek: Number(schedule.dayOfWeek),
+            startPeriod: Number(schedule.startPeriod),
+            endPeriod: Number(schedule.endPeriod),
+            status: "scheduled",
+            cancellationReason: "",
+            ...(schedule.teacherType === "thinh_giang"
+              ? { confirmationDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }
+              : {}),
+          };
+
+          await createOrUpdateSchedule(payload);
+          totalCopied++;
+        }
+      }
+
+      toast.success(`Đã áp dụng thành công ${totalCopied} tiết học sang ${targetWeeks.length} tuần tiếp theo!${totalSkipped > 0 ? ` (Bỏ qua ${totalSkipped} tiết đã có sẵn)` : ""}`);
+      setApplyModalOpen(false);
+      // Automatically switch to the newly scheduled next week
+      setSelectedWeek(targetWeeks[0]);
+    } catch (err) {
+      setApplyError(firebaseErrorMessage(err));
+    } finally {
+      setApplying(false);
+      setApplyProgress(null);
+    }
+  }
+
   // Week navigation actions
   function handlePrevWeek() {
     setSelectedWeek((current) => addDaysDateOnly(current, -7));
@@ -1254,15 +1358,37 @@ export default function SchedulesPage() {
     });
   }
 
+  const applyCandidateCount = useMemo(() => {
+    return rows.filter((row) => {
+      if (row.status === "cancelled") return false;
+      if (textValue(row.weekStart) !== selectedWeek) return false;
+      if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
+      if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
+      if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
+      return true;
+    }).length;
+  }, [applyScope, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
+
   return (
     <RoleGuard allowedRoles={["admin", "totruong"]}>
       <Shell>
         <PageHeader
           eyebrow={role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
           title={role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
-          description="Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, giờ ra chơi và xếp lịch 1-chạm."
+          description="Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."
           actions={(
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setApplyError("");
+                  setApplyModalOpen(true);
+                }}
+                className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
+              >
+                <CalendarSync className="h-4 w-4 text-indigo-600" />
+                Áp dụng cho tuần sau
+              </Button>
               {role === "admin" ? (
                 <>
                   <Button variant="secondary" asChild>
@@ -1778,7 +1904,7 @@ export default function SchedulesPage() {
                           </span>
                         </td>
                       </tr>
-                      {morningPeriods.map((slot, index) => {
+                      {morningPeriods.map((slot) => {
                         const p = periodNumber(slot);
                         return (
                           <tr key={`morning-${p}`} className="divide-x divide-border hover:bg-muted/10 transition">
@@ -2208,6 +2334,160 @@ export default function SchedulesPage() {
             ) : null}
           </>
         )}
+
+        {/* Modal: Áp dụng Thời khóa biểu cho các tuần tiếp theo */}
+        <Modal
+          open={applyModalOpen}
+          onOpenChange={(next) => {
+            if (!applying) {
+              setApplyModalOpen(next);
+              if (!next) setApplyError("");
+            }
+          }}
+          title="Áp dụng thời khóa biểu cho tuần tiếp theo"
+          description="Sao chép toàn bộ hoặc một phần thời khóa biểu của tuần hiện tại sang các tuần tiếp theo nếu kế hoạch giảng dạy không thay đổi."
+          footer={(
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" disabled={applying} onClick={() => setApplyModalOpen(false)}>Hủy</Button>
+              <Button loading={applying} onClick={handleApplyToNextWeeks} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                <CopyCheck className="h-4 w-4" />
+                {applying ? "Đang áp dụng..." : "Xác nhận áp dụng"}
+              </Button>
+            </div>
+          )}
+        >
+          <div className="space-y-4">
+            {/* Source Week Box */}
+            <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tuần nguồn sao chép</span>
+                  <p className="text-sm font-bold text-foreground mt-0.5">{formatWeekRange(selectedWeek)}</p>
+                </div>
+                <Badge tone="info">{applyCandidateCount} tiết học sẵn sàng</Badge>
+              </div>
+            </div>
+
+            {/* Scope selection */}
+            <div>
+              <Label>Phạm vi áp dụng</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setApplyScope("all")}
+                  className={cn(
+                    "flex flex-col items-start p-3 rounded-xl border text-left transition",
+                    applyScope === "all" ? "border-primary bg-primary/5 text-primary font-bold shadow-xs" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Toàn bộ trường</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5">Tất cả các lớp và giáo viên</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setApplyScope("class")}
+                  disabled={!selectedClassId}
+                  className={cn(
+                    "flex flex-col items-start p-3 rounded-xl border text-left transition disabled:opacity-50",
+                    applyScope === "class" ? "border-primary bg-primary/5 text-primary font-bold shadow-xs" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Lớp đang chọn</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5 truncate w-full">
+                    {selectedClassId ? (catalogName(classes, selectedClassId) || "Lớp đã chọn") : "Chưa chọn lớp"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setApplyScope("teacher")}
+                  disabled={!selectedTeacherId}
+                  className={cn(
+                    "flex flex-col items-start p-3 rounded-xl border text-left transition disabled:opacity-50",
+                    applyScope === "teacher" ? "border-primary bg-primary/5 text-primary font-bold shadow-xs" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Giáo viên đang chọn</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5 truncate w-full">
+                    {selectedTeacherId ? (catalogName(teachers, selectedTeacherId) || "GV đã chọn") : "Chưa chọn GV"}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Target Weeks count */}
+            <div>
+              <Label>Số tuần tiếp theo cần áp dụng</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                {[
+                  { count: 1, label: "1 tuần tiếp theo", desc: "Tuần kế tiếp" },
+                  { count: 2, label: "2 tuần tiếp theo", desc: "2 tuần tới" },
+                  { count: 4, label: "4 tuần tiếp theo", desc: "1 tháng tới" },
+                ].map((item) => (
+                  <button
+                    key={item.count}
+                    type="button"
+                    onClick={() => setApplyWeeksCount(item.count)}
+                    className={cn(
+                      "flex flex-col items-center justify-center p-3 rounded-xl border text-center transition",
+                      applyWeeksCount === item.count ? "border-indigo-600 bg-indigo-50 text-indigo-900 font-bold ring-1 ring-indigo-600" : "border-border hover:bg-muted text-foreground",
+                    )}
+                  >
+                    <span className="text-xs font-bold">{item.label}</span>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Target weeks preview */}
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 text-xs text-indigo-950 space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-indigo-900">
+                <ArrowRight className="h-4 w-4" />
+                Các tuần đích sẽ được tạo lịch:
+              </div>
+              <ul className="list-disc list-inside space-y-0.5 pl-1 text-[11px] text-indigo-800">
+                {Array.from({ length: applyWeeksCount }).map((_, idx) => {
+                  const targetMonday = addDaysDateOnly(selectedWeek, (idx + 1) * 7);
+                  return (
+                    <li key={targetMonday} className="font-medium">
+                      Tuần {idx + 1}: <strong>{formatWeekRange(targetMonday)}</strong>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-[10px] text-indigo-700 mt-1">
+                * Hệ thống sẽ tự động bỏ qua các tiết học đã tồn tại ở tuần đích để tránh trùng lặp.
+              </p>
+            </div>
+
+            {/* Live Progress Bar during execution */}
+            {applying && applyProgress ? (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 space-y-2">
+                <div className="flex items-center justify-between font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                    {applyProgress.message}
+                  </span>
+                  <span>{Math.round((applyProgress.current / applyProgress.total) * 100)}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-blue-200">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-150"
+                    style={{ width: `${(applyProgress.current / applyProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {applyError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {applyError}
+              </div>
+            ) : null}
+          </div>
+        </Modal>
 
         {/* Export Timetable Modal */}
         <Modal
