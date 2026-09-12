@@ -74,6 +74,197 @@ type FormState = {
 
 type CatalogFieldKey = "teacherId" | "subjectId" | "classId" | "roomId" | "campusId" | "departmentId" | "semesterId";
 
+// Modern distinct color theme per subject
+type SubjectTheme = {
+  bg: string;
+  border: string;
+  text: string;
+  badgeBg: string;
+  accent: string;
+  dot: string;
+};
+
+const SUBJECT_COLOR_PRESETS: Record<string, SubjectTheme> = {
+  toan: {
+    bg: "bg-gradient-to-br from-blue-50/90 to-indigo-50/60 hover:from-blue-100/90 hover:to-indigo-100/70",
+    border: "border-blue-200 hover:border-blue-400",
+    text: "text-blue-950",
+    badgeBg: "bg-blue-100/80 text-blue-800",
+    accent: "border-l-4 border-l-blue-600",
+    dot: "bg-blue-600",
+  },
+  van: {
+    bg: "bg-gradient-to-br from-emerald-50/90 to-teal-50/60 hover:from-emerald-100/90 hover:to-teal-100/70",
+    border: "border-emerald-200 hover:border-emerald-400",
+    text: "text-emerald-950",
+    badgeBg: "bg-emerald-100/80 text-emerald-800",
+    accent: "border-l-4 border-l-emerald-600",
+    dot: "bg-emerald-600",
+  },
+  tiengviet: {
+    bg: "bg-gradient-to-br from-teal-50/90 to-emerald-50/60 hover:from-teal-100/90 hover:to-emerald-100/70",
+    border: "border-teal-200 hover:border-teal-400",
+    text: "text-teal-950",
+    badgeBg: "bg-teal-100/80 text-teal-800",
+    accent: "border-l-4 border-l-teal-600",
+    dot: "bg-teal-600",
+  },
+  tienganh: {
+    bg: "bg-gradient-to-br from-violet-50/90 to-purple-50/60 hover:from-violet-100/90 hover:to-purple-100/70",
+    border: "border-violet-200 hover:border-violet-400",
+    text: "text-violet-950",
+    badgeBg: "bg-violet-100/80 text-violet-800",
+    accent: "border-l-4 border-l-violet-600",
+    dot: "bg-violet-600",
+  },
+  khoahoc: {
+    bg: "bg-gradient-to-br from-amber-50/90 to-orange-50/60 hover:from-amber-100/90 hover:to-orange-100/70",
+    border: "border-amber-200 hover:border-amber-400",
+    text: "text-amber-950",
+    badgeBg: "bg-amber-100/80 text-amber-800",
+    accent: "border-l-4 border-l-amber-600",
+    dot: "bg-amber-600",
+  },
+  lichsu: {
+    bg: "bg-gradient-to-br from-rose-50/90 to-red-50/60 hover:from-rose-100/90 hover:to-red-100/70",
+    border: "border-rose-200 hover:border-rose-400",
+    text: "text-rose-950",
+    badgeBg: "bg-rose-100/80 text-rose-800",
+    accent: "border-l-4 border-l-rose-600",
+    dot: "bg-rose-600",
+  },
+  tinhoc: {
+    bg: "bg-gradient-to-br from-cyan-50/90 to-sky-50/60 hover:from-cyan-100/90 hover:to-sky-100/70",
+    border: "border-cyan-200 hover:border-cyan-400",
+    text: "text-cyan-950",
+    badgeBg: "bg-cyan-100/80 text-cyan-800",
+    accent: "border-l-4 border-l-cyan-600",
+    dot: "bg-cyan-600",
+  },
+  mythuat: {
+    bg: "bg-gradient-to-br from-fuchsia-50/90 to-pink-50/60 hover:from-fuchsia-100/90 hover:to-pink-100/70",
+    border: "border-fuchsia-200 hover:border-fuchsia-400",
+    text: "text-fuchsia-950",
+    badgeBg: "bg-fuchsia-100/80 text-fuchsia-800",
+    accent: "border-l-4 border-l-fuchsia-600",
+    dot: "bg-fuchsia-600",
+  },
+  theduc: {
+    bg: "bg-gradient-to-br from-lime-50/90 to-green-50/60 hover:from-lime-100/90 hover:to-green-100/70",
+    border: "border-lime-200 hover:border-lime-400",
+    text: "text-lime-950",
+    badgeBg: "bg-lime-100/80 text-lime-800",
+    accent: "border-l-4 border-l-lime-600",
+    dot: "bg-lime-600",
+  },
+  gdcd: {
+    bg: "bg-gradient-to-br from-yellow-50/90 to-amber-50/60 hover:from-yellow-100/90 hover:to-amber-100/70",
+    border: "border-yellow-200 hover:border-yellow-400",
+    text: "text-yellow-950",
+    badgeBg: "bg-yellow-100/80 text-yellow-800",
+    accent: "border-l-4 border-l-yellow-600",
+    dot: "bg-yellow-600",
+  },
+};
+
+const DYNAMIC_PALETTES: SubjectTheme[] = [
+  {
+    bg: "bg-gradient-to-br from-sky-50/90 to-blue-50/60 hover:from-sky-100/90 hover:to-blue-100/70",
+    border: "border-sky-200 hover:border-sky-400",
+    text: "text-sky-950",
+    badgeBg: "bg-sky-100/80 text-sky-800",
+    accent: "border-l-4 border-l-sky-500",
+    dot: "bg-sky-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-purple-50/90 to-indigo-50/60 hover:from-purple-100/90 hover:to-indigo-100/70",
+    border: "border-purple-200 hover:border-purple-400",
+    text: "text-purple-950",
+    badgeBg: "bg-purple-100/80 text-purple-800",
+    accent: "border-l-4 border-l-purple-500",
+    dot: "bg-purple-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-pink-50/90 to-rose-50/60 hover:from-pink-100/90 hover:to-rose-100/70",
+    border: "border-pink-200 hover:border-pink-400",
+    text: "text-pink-950",
+    badgeBg: "bg-pink-100/80 text-pink-800",
+    accent: "border-l-4 border-l-pink-500",
+    dot: "bg-pink-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-amber-50/90 to-yellow-50/60 hover:from-amber-100/90 hover:to-yellow-100/70",
+    border: "border-amber-200 hover:border-amber-400",
+    text: "text-amber-950",
+    badgeBg: "bg-amber-100/80 text-amber-800",
+    accent: "border-l-4 border-l-amber-500",
+    dot: "bg-amber-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-teal-50/90 to-cyan-50/60 hover:from-teal-100/90 hover:to-cyan-100/70",
+    border: "border-teal-200 hover:border-teal-400",
+    text: "text-teal-950",
+    badgeBg: "bg-teal-100/80 text-teal-800",
+    accent: "border-l-4 border-l-teal-500",
+    dot: "bg-teal-500",
+  },
+  {
+    bg: "bg-gradient-to-br from-indigo-50/90 to-blue-50/60 hover:from-indigo-100/90 hover:to-blue-100/70",
+    border: "border-indigo-200 hover:border-indigo-400",
+    text: "text-indigo-950",
+    badgeBg: "bg-indigo-100/80 text-indigo-800",
+    accent: "border-l-4 border-l-indigo-500",
+    dot: "bg-indigo-500",
+  },
+];
+
+function getSubjectTheme(subjectName: string, subjectId: string): SubjectTheme {
+  const norm = (subjectName || subjectId || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/[^a-z0-9]/g, "");
+
+  if (norm.includes("toan")) return SUBJECT_COLOR_PRESETS.toan;
+  if (norm.includes("tiengviet")) return SUBJECT_COLOR_PRESETS.tiengviet;
+  if (norm.includes("van") || norm.includes("nguvan")) return SUBJECT_COLOR_PRESETS.van;
+  if (norm.includes("anh") || norm.includes("tienganh") || norm.includes("english")) return SUBJECT_COLOR_PRESETS.tienganh;
+  if (norm.includes("khoahoc") || norm.includes("khtn") || norm.includes("ly") || norm.includes("vatly") || norm.includes("hoa") || norm.includes("hoahoc") || norm.includes("sinh") || norm.includes("sinhhoc")) return SUBJECT_COLOR_PRESETS.khoahoc;
+  if (norm.includes("su") || norm.includes("lichsu") || norm.includes("dia") || norm.includes("dialy") || norm.includes("khxh")) return SUBJECT_COLOR_PRESETS.lichsu;
+  if (norm.includes("tin") || norm.includes("tinhoc") || norm.includes("congnghe")) return SUBJECT_COLOR_PRESETS.tinhoc;
+  if (norm.includes("nhac") || norm.includes("amnhac") || norm.includes("my") || norm.includes("mythuat") || norm.includes("nghethuat")) return SUBJECT_COLOR_PRESETS.mythuat;
+  if (norm.includes("theduc") || norm.includes("gdtc") || norm.includes("thechat")) return SUBJECT_COLOR_PRESETS.theduc;
+  if (norm.includes("gdcd") || norm.includes("daoduc") || norm.includes("trainghiem") || norm.includes("hdtn")) return SUBJECT_COLOR_PRESETS.gdcd;
+
+  let hash = 0;
+  const str = subjectName || subjectId || "subject";
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % DYNAMIC_PALETTES.length;
+  return DYNAMIC_PALETTES[index];
+}
+
+function getSubjectHexColor(subjectName: string, subjectId: string): string {
+  const norm = (subjectName || subjectId || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/[^a-z0-9]/g, "");
+  if (norm.includes("toan")) return "#2563eb"; // Blue
+  if (norm.includes("tiengviet")) return "#0d9488"; // Teal
+  if (norm.includes("van") || norm.includes("nguvan")) return "#059669"; // Emerald
+  if (norm.includes("anh") || norm.includes("tienganh") || norm.includes("english")) return "#7c3aed"; // Violet
+  if (norm.includes("khoahoc") || norm.includes("khtn") || norm.includes("ly") || norm.includes("hoa") || norm.includes("sinh")) return "#d97706"; // Amber
+  if (norm.includes("su") || norm.includes("lichsu") || norm.includes("dia") || norm.includes("dialy")) return "#e11d48"; // Rose
+  if (norm.includes("tin") || norm.includes("tinhoc") || norm.includes("congnghe")) return "#0891b2"; // Cyan
+  if (norm.includes("nhac") || norm.includes("amnhac") || norm.includes("mythuat")) return "#c026d3"; // Fuchsia
+  if (norm.includes("theduc") || norm.includes("gdtc")) return "#65a30d"; // Lime
+  if (norm.includes("gdcd") || norm.includes("daoduc") || norm.includes("trainghiem")) return "#ca8a04"; // Yellow
+
+  const hexes = ["#0284c7", "#9333ea", "#db2777", "#ea580c", "#0f766e", "#4f46e5"];
+  let hash = 0;
+  const str = subjectName || subjectId || "subject";
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hexes[Math.abs(hash) % hexes.length];
+}
+
 function currentMonday() {
   return currentWeekStartDateOnly();
 }
@@ -608,21 +799,21 @@ export default function SchedulesPage() {
     })) as CatalogRow[];
   }, [levelTimeSlots]);
 
-  // FullCalendar events
+  // FullCalendar events with distinct subject colors
   const calendarEvents = useMemo(() => {
-    return currentWeekSchedules.map((row) => ({
-      id: row.id,
-      title: `${row.subjectName || catalogName(subjects, row.subjectId) || row.subjectId || "Môn học"} · ${row.className || catalogName(classes, row.classId) || row.classId || "Lớp"}`,
-      start: timeAtBoundary(row, timeSlots, classes, "start"),
-      end: timeAtBoundary(row, timeSlots, classes, "end"),
-      backgroundColor: textValue(row.originalTeacherId) && row.originalTeacherId !== (row.actualTeacherId || row.teacherId)
-        ? "#f59e0b"
-        : row.teacherType === "thinh_giang"
-          ? "#7c3aed"
-          : "#2563eb",
-      borderColor: "transparent",
-      extendedProps: { row },
-    }));
+    return currentWeekSchedules.map((row) => {
+      const subjectTitle = row.subjectName || catalogName(subjects, row.subjectId) || row.subjectId || "Môn học";
+      const hex = getSubjectHexColor(subjectTitle, row.subjectId);
+      return {
+        id: row.id,
+        title: `${subjectTitle} · ${row.className || catalogName(classes, row.classId) || row.classId || "Lớp"}`,
+        start: timeAtBoundary(row, timeSlots, classes, "start"),
+        end: timeAtBoundary(row, timeSlots, classes, "end"),
+        backgroundColor: hex,
+        borderColor: "transparent",
+        extendedProps: { row },
+      };
+    });
   }, [classes, currentWeekSchedules, subjects, timeSlots]);
 
   const calendarStart = textValue(timeSlots[0]?.startTime) || "06:30:00";
@@ -985,7 +1176,7 @@ export default function SchedulesPage() {
         <PageHeader
           eyebrow={role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
           title={role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
-          description="Sắp xếp và quản lý thời khóa biểu trực quan, khoa học. Hỗ trợ lọc theo Lớp, Giáo viên, Phòng học và chế độ Ma trận Tiết học không bị đè chữ."
+          description="Sắp xếp và quản lý thời khóa biểu trực quan, khoa học. Mỗi môn học sở hữu mã màu nhận diện hiện đại, dễ nhìn, không bị đè chữ."
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               {role === "admin" ? (
@@ -1003,23 +1194,33 @@ export default function SchedulesPage() {
           )}
         />
 
-        {/* Legend bar */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-blue-700 font-medium">
-              <span className="h-2 w-2 rounded-full bg-blue-600" />
-              Cơ hữu
+        {/* Modern Subject Color Palette Quick Legend */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            <span className="text-muted-foreground font-semibold">Màu nhận diện môn:</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-blue-800 font-semibold border border-blue-200">
+              <span className="h-2 w-2 rounded-full bg-blue-600" /> Toán
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-violet-700 font-medium">
-              <span className="h-2 w-2 rounded-full bg-violet-600" />
-              Thỉnh giảng
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-1 text-teal-800 font-semibold border border-teal-200">
+              <span className="h-2 w-2 rounded-full bg-teal-600" /> Tiếng Việt / Văn
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700 font-medium">
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              Dạy thay
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-violet-800 font-semibold border border-violet-200">
+              <span className="h-2 w-2 rounded-full bg-violet-600" /> Tiếng Anh
             </span>
-            <span className="text-muted-foreground hidden md:inline">
-              (Lịch học từ Thứ 2 đến Thứ 6)
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-amber-800 font-semibold border border-amber-200">
+              <span className="h-2 w-2 rounded-full bg-amber-600" /> Khoa học / Tự nhiên
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-rose-800 font-semibold border border-rose-200">
+              <span className="h-2 w-2 rounded-full bg-rose-600" /> Sử / Địa / Xã hội
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-50 px-2.5 py-1 text-cyan-800 font-semibold border border-cyan-200">
+              <span className="h-2 w-2 rounded-full bg-cyan-600" /> Tin học / Công nghệ
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-50 px-2.5 py-1 text-fuchsia-800 font-semibold border border-fuchsia-200">
+              <span className="h-2 w-2 rounded-full bg-fuchsia-600" /> Nghệ thuật / Âm nhạc
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-lime-50 px-2.5 py-1 text-lime-800 font-semibold border border-lime-200">
+              <span className="h-2 w-2 rounded-full bg-lime-600" /> Thể dục / GDTC
             </span>
           </div>
           {role === "admin" && adjunctAvailabilityRows.length > 0 ? (
@@ -1152,7 +1353,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("matrix")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "matrix" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "matrix" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" />
@@ -1163,7 +1364,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("teacher_grid")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "teacher_grid" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "teacher_grid" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Table2 className="h-3.5 w-3.5" />
@@ -1174,7 +1375,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("calendar")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "calendar" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "calendar" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Calendar className="h-3.5 w-3.5" />
@@ -1378,7 +1579,7 @@ export default function SchedulesPage() {
                         {WEEKDAYS.map((day) => {
                           const { dayName, dateStr } = formatDayHeader(selectedWeek, day);
                           return (
-                            <th key={day} className="min-w-[180px] p-3 text-center border-r border-border last:border-r-0">
+                            <th key={day} className="min-w-[185px] p-3 text-center border-r border-border last:border-r-0">
                               <div className="text-sm font-bold text-foreground">{dayName}</div>
                               <div className="text-xs text-muted-foreground font-normal">{dateStr}</div>
                             </th>
@@ -1388,17 +1589,17 @@ export default function SchedulesPage() {
                     </thead>
                     <tbody className="divide-y divide-border text-sm">
                       {/* BUỔI SÁNG HEADER */}
-                      <tr className="bg-blue-50/40 font-semibold text-xs text-blue-900">
-                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide">
-                          ☀️ Buổi sáng (Tiết 1 — 5)
+                      <tr className="bg-blue-50/50 font-bold text-xs text-blue-900">
+                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide flex items-center gap-1.5">
+                          <span>☀️ Buổi sáng (Tiết 1 — 5)</span>
                         </td>
                       </tr>
                       {morningPeriods.map((slot) => {
                         const p = periodNumber(slot);
                         return (
-                          <tr key={`morning-${p}`} className="divide-x divide-border hover:bg-muted/20 transition">
+                          <tr key={`morning-${p}`} className="divide-x divide-border hover:bg-muted/10 transition">
                             <td className="p-2.5 text-center bg-muted/20 align-middle">
-                              <div className="font-semibold text-foreground text-xs">{primaryCatalogName(slot)}</div>
+                              <div className="font-bold text-foreground text-xs">{primaryCatalogName(slot)}</div>
                               <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
                                 {slot.startTime || "?"} – {slot.endTime || "?"}
                               </div>
@@ -1416,53 +1617,66 @@ export default function SchedulesPage() {
                                         const roomName = catalogName(rooms, schedule.roomId) || schedule.roomCode || schedule.roomId || "Phòng";
                                         const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== (schedule.actualTeacherId || schedule.teacherId);
                                         const isAdjunct = schedule.teacherType === "thinh_giang";
+                                        const theme = getSubjectTheme(subjectName, schedule.subjectId);
 
                                         return (
                                           <div
                                             key={schedule.id}
                                             onClick={() => setDetail(schedule)}
                                             className={cn(
-                                              "group relative cursor-pointer rounded-xl border p-2.5 shadow-xs transition hover:shadow-md",
-                                              isSubstitute
-                                                ? "border-amber-300 bg-amber-50/80 text-amber-900"
-                                                : isAdjunct
-                                                  ? "border-violet-300 bg-violet-50/80 text-violet-900"
-                                                  : "border-blue-200 bg-blue-50/80 text-blue-950",
+                                              "group relative cursor-pointer rounded-xl border p-2.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                                              theme.bg,
+                                              theme.border,
+                                              theme.accent,
                                             )}
                                           >
                                             <div className="flex items-start justify-between gap-1">
-                                              <span className="font-bold text-xs tracking-tight">{subjectName}</span>
-                                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-background/80 shadow-2xs">
+                                              <span className={cn("font-bold text-xs tracking-tight", theme.text)}>
+                                                {subjectName}
+                                              </span>
+                                              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
                                                 {periodDisplay(schedule)}
                                               </span>
                                             </div>
 
-                                            <div className="mt-1 flex flex-col gap-0.5 text-[11px] opacity-90">
+                                            <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] opacity-95">
                                               {viewScope !== "class" ? (
-                                                <div className="flex items-center gap-1 font-medium">
-                                                  <GraduationCap className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <div className="flex items-center gap-1 font-semibold text-slate-800">
+                                                  <GraduationCap className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                                   <span>{className}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "teacher" ? (
-                                                <div className="flex items-center gap-1 font-medium truncate">
-                                                  <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <div className="flex items-center gap-1 font-medium text-slate-700 truncate">
+                                                  <User className="h-3 w-3 text-slate-400 shrink-0" />
                                                   <span className="truncate">{teacherName}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "room" && roomName ? (
-                                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
                                                   <MapPin className="h-3 w-3 shrink-0" />
                                                   <span>{roomName}</span>
                                                 </div>
                                               ) : null}
                                             </div>
 
-                                            {schedule.status === "needs_attention" ? (
-                                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
-                                                <AlertCircle className="h-3 w-3" /> Cần chú ý
-                                              </div>
-                                            ) : null}
+                                            {/* Tag indicator for special schedules */}
+                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                              {isSubstitute ? (
+                                                <span className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-bold text-amber-800 border border-amber-300">
+                                                  Dạy thay
+                                                </span>
+                                              ) : isAdjunct ? (
+                                                <span className="inline-flex items-center rounded bg-violet-100 px-1.5 py-0.2 text-[9px] font-bold text-violet-800 border border-violet-300">
+                                                  Thỉnh giảng
+                                                </span>
+                                              ) : null}
+                                              {schedule.status === "needs_attention" ? (
+                                                <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.2 text-[9px] font-bold text-rose-800 border border-rose-300">
+                                                  <AlertCircle className="h-2.5 w-2.5" /> Chú ý
+                                                </span>
+                                              ) : null}
+                                            </div>
                                           </div>
                                         );
                                       })}
@@ -1475,7 +1689,7 @@ export default function SchedulesPage() {
                                         startPeriod: String(p),
                                         endPeriod: String(p),
                                       })}
-                                      className="group flex h-full min-h-[5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/40 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
+                                      className="group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/35 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
                                       title="Bấm để xếp lịch vào tiết này"
                                     >
                                       <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
@@ -1490,17 +1704,17 @@ export default function SchedulesPage() {
                       })}
 
                       {/* BUỔI CHIỀU HEADER */}
-                      <tr className="bg-amber-50/40 font-semibold text-xs text-amber-900">
-                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide">
-                          🌤️ Buổi chiều (Tiết 6 — 10)
+                      <tr className="bg-amber-50/50 font-bold text-xs text-amber-900">
+                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide flex items-center gap-1.5">
+                          <span>🌤️ Buổi chiều (Tiết 6 — 10)</span>
                         </td>
                       </tr>
                       {afternoonPeriods.map((slot) => {
                         const p = periodNumber(slot);
                         return (
-                          <tr key={`afternoon-${p}`} className="divide-x divide-border hover:bg-muted/20 transition">
+                          <tr key={`afternoon-${p}`} className="divide-x divide-border hover:bg-muted/10 transition">
                             <td className="p-2.5 text-center bg-muted/20 align-middle">
-                              <div className="font-semibold text-foreground text-xs">{primaryCatalogName(slot)}</div>
+                              <div className="font-bold text-foreground text-xs">{primaryCatalogName(slot)}</div>
                               <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
                                 {slot.startTime || "?"} – {slot.endTime || "?"}
                               </div>
@@ -1518,53 +1732,66 @@ export default function SchedulesPage() {
                                         const roomName = catalogName(rooms, schedule.roomId) || schedule.roomCode || schedule.roomId || "Phòng";
                                         const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== (schedule.actualTeacherId || schedule.teacherId);
                                         const isAdjunct = schedule.teacherType === "thinh_giang";
+                                        const theme = getSubjectTheme(subjectName, schedule.subjectId);
 
                                         return (
                                           <div
                                             key={schedule.id}
                                             onClick={() => setDetail(schedule)}
                                             className={cn(
-                                              "group relative cursor-pointer rounded-xl border p-2.5 shadow-xs transition hover:shadow-md",
-                                              isSubstitute
-                                                ? "border-amber-300 bg-amber-50/80 text-amber-900"
-                                                : isAdjunct
-                                                  ? "border-violet-300 bg-violet-50/80 text-violet-900"
-                                                  : "border-blue-200 bg-blue-50/80 text-blue-950",
+                                              "group relative cursor-pointer rounded-xl border p-2.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                                              theme.bg,
+                                              theme.border,
+                                              theme.accent,
                                             )}
                                           >
                                             <div className="flex items-start justify-between gap-1">
-                                              <span className="font-bold text-xs tracking-tight">{subjectName}</span>
-                                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-background/80 shadow-2xs">
+                                              <span className={cn("font-bold text-xs tracking-tight", theme.text)}>
+                                                {subjectName}
+                                              </span>
+                                              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
                                                 {periodDisplay(schedule)}
                                               </span>
                                             </div>
 
-                                            <div className="mt-1 flex flex-col gap-0.5 text-[11px] opacity-90">
+                                            <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] opacity-95">
                                               {viewScope !== "class" ? (
-                                                <div className="flex items-center gap-1 font-medium">
-                                                  <GraduationCap className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <div className="flex items-center gap-1 font-semibold text-slate-800">
+                                                  <GraduationCap className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                                   <span>{className}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "teacher" ? (
-                                                <div className="flex items-center gap-1 font-medium truncate">
-                                                  <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                                                <div className="flex items-center gap-1 font-medium text-slate-700 truncate">
+                                                  <User className="h-3 w-3 text-slate-400 shrink-0" />
                                                   <span className="truncate">{teacherName}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "room" && roomName ? (
-                                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
                                                   <MapPin className="h-3 w-3 shrink-0" />
                                                   <span>{roomName}</span>
                                                 </div>
                                               ) : null}
                                             </div>
 
-                                            {schedule.status === "needs_attention" ? (
-                                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
-                                                <AlertCircle className="h-3 w-3" /> Cần chú ý
-                                              </div>
-                                            ) : null}
+                                            {/* Tag indicator for special schedules */}
+                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                              {isSubstitute ? (
+                                                <span className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-bold text-amber-800 border border-amber-300">
+                                                  Dạy thay
+                                                </span>
+                                              ) : isAdjunct ? (
+                                                <span className="inline-flex items-center rounded bg-violet-100 px-1.5 py-0.2 text-[9px] font-bold text-violet-800 border border-violet-300">
+                                                  Thỉnh giảng
+                                                </span>
+                                              ) : null}
+                                              {schedule.status === "needs_attention" ? (
+                                                <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.2 text-[9px] font-bold text-rose-800 border border-rose-300">
+                                                  <AlertCircle className="h-2.5 w-2.5" /> Chú ý
+                                                </span>
+                                              ) : null}
+                                            </div>
                                           </div>
                                         );
                                       })}
@@ -1577,7 +1804,7 @@ export default function SchedulesPage() {
                                         startPeriod: String(p),
                                         endPeriod: String(p),
                                       })}
-                                      className="group flex h-full min-h-[5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/40 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
+                                      className="group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/35 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
                                       title="Bấm để xếp lịch vào tiết này"
                                     >
                                       <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
@@ -1633,9 +1860,9 @@ export default function SchedulesPage() {
                           }, 0);
 
                           return (
-                            <tr key={teacher.id} className="hover:bg-muted/20 transition">
+                            <tr key={teacher.id} className="hover:bg-muted/10 transition">
                               <td className="p-3 border-r border-border align-top">
-                                <div className="font-semibold text-foreground text-sm">{primaryCatalogName(teacher)}</div>
+                                <div className="font-bold text-foreground text-sm">{primaryCatalogName(teacher)}</div>
                                 <div className="text-xs text-muted-foreground mt-0.5">
                                   {catalogName(departments, teacher.departmentId) || teacher.departmentId || "Chưa có bộ môn"}
                                 </div>
@@ -1659,19 +1886,25 @@ export default function SchedulesPage() {
                                           const subjectName = catalogName(subjects, schedule.subjectId) || schedule.subjectId;
                                           const className = catalogName(classes, schedule.classId) || schedule.classId;
                                           const roomName = catalogName(rooms, schedule.roomId) || schedule.roomId;
+                                          const theme = getSubjectTheme(subjectName, schedule.subjectId);
 
                                           return (
                                             <div
                                               key={schedule.id}
                                               onClick={() => setDetail(schedule)}
-                                              className="cursor-pointer rounded-lg border border-border bg-card p-2 shadow-xs transition hover:border-primary hover:bg-muted/30"
+                                              className={cn(
+                                                "cursor-pointer rounded-lg border p-2 shadow-2xs transition hover:shadow-xs",
+                                                theme.bg,
+                                                theme.border,
+                                                theme.accent,
+                                              )}
                                             >
                                               <div className="flex items-center justify-between gap-1">
-                                                <span className="font-bold text-primary">{periodDisplay(schedule)}</span>
-                                                <span className="font-medium text-foreground">{subjectName}</span>
+                                                <span className="font-bold text-xs">{periodDisplay(schedule)}</span>
+                                                <span className={cn("font-bold text-xs", theme.text)}>{subjectName}</span>
                                               </div>
-                                              <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                                                <span>Lớp {className}</span>
+                                              <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600">
+                                                <span className="font-semibold">Lớp {className}</span>
                                                 {roomName ? <span>{roomName}</span> : null}
                                               </div>
                                             </div>
@@ -1697,8 +1930,8 @@ export default function SchedulesPage() {
 
                               <td className="p-3 text-center align-middle font-bold text-sm">
                                 <span className={cn(
-                                  "inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs",
-                                  totalPeriods > 0 ? "bg-primary/10 text-primary font-bold" : "text-muted-foreground",
+                                  "inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-bold",
+                                  totalPeriods > 0 ? "bg-primary/10 text-primary" : "text-muted-foreground",
                                 )}>
                                   {totalPeriods} tiết
                                 </span>
