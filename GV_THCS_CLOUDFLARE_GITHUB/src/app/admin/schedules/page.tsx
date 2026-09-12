@@ -8,6 +8,7 @@ import type { ScheduleInput } from "@school/shared";
 import { addDays, addMinutes, format, isValid, parseISO } from "date-fns";
 import {
   AlertCircle,
+  AlertTriangle,
   Building2,
   Calendar,
   CalendarClock,
@@ -15,6 +16,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  Coffee,
   FileSpreadsheet,
   GraduationCap,
   Info,
@@ -29,6 +32,7 @@ import {
   Trash2,
   User,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { collection, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -82,139 +86,156 @@ type SubjectTheme = {
   badgeBg: string;
   accent: string;
   dot: string;
+  tagBg: string;
 };
 
 const SUBJECT_COLOR_PRESETS: Record<string, SubjectTheme> = {
   toan: {
-    bg: "bg-gradient-to-br from-blue-50/90 to-indigo-50/60 hover:from-blue-100/90 hover:to-indigo-100/70",
+    bg: "bg-gradient-to-br from-blue-50/95 to-indigo-50/70 hover:from-blue-100/90 hover:to-indigo-100/80",
     border: "border-blue-200 hover:border-blue-400",
     text: "text-blue-950",
-    badgeBg: "bg-blue-100/80 text-blue-800",
+    badgeBg: "bg-blue-100 text-blue-800",
     accent: "border-l-4 border-l-blue-600",
     dot: "bg-blue-600",
+    tagBg: "bg-blue-600/10 text-blue-800",
   },
   van: {
-    bg: "bg-gradient-to-br from-emerald-50/90 to-teal-50/60 hover:from-emerald-100/90 hover:to-teal-100/70",
+    bg: "bg-gradient-to-br from-emerald-50/95 to-teal-50/70 hover:from-emerald-100/90 hover:to-teal-100/80",
     border: "border-emerald-200 hover:border-emerald-400",
     text: "text-emerald-950",
-    badgeBg: "bg-emerald-100/80 text-emerald-800",
+    badgeBg: "bg-emerald-100 text-emerald-800",
     accent: "border-l-4 border-l-emerald-600",
     dot: "bg-emerald-600",
+    tagBg: "bg-emerald-600/10 text-emerald-800",
   },
   tiengviet: {
-    bg: "bg-gradient-to-br from-teal-50/90 to-emerald-50/60 hover:from-teal-100/90 hover:to-emerald-100/70",
+    bg: "bg-gradient-to-br from-teal-50/95 to-emerald-50/70 hover:from-teal-100/90 hover:to-emerald-100/80",
     border: "border-teal-200 hover:border-teal-400",
     text: "text-teal-950",
-    badgeBg: "bg-teal-100/80 text-teal-800",
+    badgeBg: "bg-teal-100 text-teal-800",
     accent: "border-l-4 border-l-teal-600",
     dot: "bg-teal-600",
+    tagBg: "bg-teal-600/10 text-teal-800",
   },
   tienganh: {
-    bg: "bg-gradient-to-br from-violet-50/90 to-purple-50/60 hover:from-violet-100/90 hover:to-purple-100/70",
+    bg: "bg-gradient-to-br from-violet-50/95 to-purple-50/70 hover:from-violet-100/90 hover:to-purple-100/80",
     border: "border-violet-200 hover:border-violet-400",
     text: "text-violet-950",
-    badgeBg: "bg-violet-100/80 text-violet-800",
+    badgeBg: "bg-violet-100 text-violet-800",
     accent: "border-l-4 border-l-violet-600",
     dot: "bg-violet-600",
+    tagBg: "bg-violet-600/10 text-violet-800",
   },
   khoahoc: {
-    bg: "bg-gradient-to-br from-amber-50/90 to-orange-50/60 hover:from-amber-100/90 hover:to-orange-100/70",
+    bg: "bg-gradient-to-br from-amber-50/95 to-orange-50/70 hover:from-amber-100/90 hover:to-orange-100/80",
     border: "border-amber-200 hover:border-amber-400",
     text: "text-amber-950",
-    badgeBg: "bg-amber-100/80 text-amber-800",
+    badgeBg: "bg-amber-100 text-amber-800",
     accent: "border-l-4 border-l-amber-600",
     dot: "bg-amber-600",
+    tagBg: "bg-amber-600/10 text-amber-800",
   },
   lichsu: {
-    bg: "bg-gradient-to-br from-rose-50/90 to-red-50/60 hover:from-rose-100/90 hover:to-red-100/70",
+    bg: "bg-gradient-to-br from-rose-50/95 to-red-50/70 hover:from-rose-100/90 hover:to-red-100/80",
     border: "border-rose-200 hover:border-rose-400",
     text: "text-rose-950",
-    badgeBg: "bg-rose-100/80 text-rose-800",
+    badgeBg: "bg-rose-100 text-rose-800",
     accent: "border-l-4 border-l-rose-600",
     dot: "bg-rose-600",
+    tagBg: "bg-rose-600/10 text-rose-800",
   },
   tinhoc: {
-    bg: "bg-gradient-to-br from-cyan-50/90 to-sky-50/60 hover:from-cyan-100/90 hover:to-sky-100/70",
+    bg: "bg-gradient-to-br from-cyan-50/95 to-sky-50/70 hover:from-cyan-100/90 hover:to-sky-100/80",
     border: "border-cyan-200 hover:border-cyan-400",
     text: "text-cyan-950",
-    badgeBg: "bg-cyan-100/80 text-cyan-800",
+    badgeBg: "bg-cyan-100 text-cyan-800",
     accent: "border-l-4 border-l-cyan-600",
     dot: "bg-cyan-600",
+    tagBg: "bg-cyan-600/10 text-cyan-800",
   },
   mythuat: {
-    bg: "bg-gradient-to-br from-fuchsia-50/90 to-pink-50/60 hover:from-fuchsia-100/90 hover:to-pink-100/70",
+    bg: "bg-gradient-to-br from-fuchsia-50/95 to-pink-50/70 hover:from-fuchsia-100/90 hover:to-pink-100/80",
     border: "border-fuchsia-200 hover:border-fuchsia-400",
     text: "text-fuchsia-950",
-    badgeBg: "bg-fuchsia-100/80 text-fuchsia-800",
+    badgeBg: "bg-fuchsia-100 text-fuchsia-800",
     accent: "border-l-4 border-l-fuchsia-600",
     dot: "bg-fuchsia-600",
+    tagBg: "bg-fuchsia-600/10 text-fuchsia-800",
   },
   theduc: {
-    bg: "bg-gradient-to-br from-lime-50/90 to-green-50/60 hover:from-lime-100/90 hover:to-green-100/70",
+    bg: "bg-gradient-to-br from-lime-50/95 to-green-50/70 hover:from-lime-100/90 hover:to-green-100/80",
     border: "border-lime-200 hover:border-lime-400",
     text: "text-lime-950",
-    badgeBg: "bg-lime-100/80 text-lime-800",
+    badgeBg: "bg-lime-100 text-lime-800",
     accent: "border-l-4 border-l-lime-600",
     dot: "bg-lime-600",
+    tagBg: "bg-lime-600/10 text-lime-800",
   },
   gdcd: {
-    bg: "bg-gradient-to-br from-yellow-50/90 to-amber-50/60 hover:from-yellow-100/90 hover:to-amber-100/70",
+    bg: "bg-gradient-to-br from-yellow-50/95 to-amber-50/70 hover:from-yellow-100/90 hover:to-amber-100/80",
     border: "border-yellow-200 hover:border-yellow-400",
     text: "text-yellow-950",
-    badgeBg: "bg-yellow-100/80 text-yellow-800",
+    badgeBg: "bg-yellow-100 text-yellow-800",
     accent: "border-l-4 border-l-yellow-600",
     dot: "bg-yellow-600",
+    tagBg: "bg-yellow-600/10 text-yellow-800",
   },
 };
 
 const DYNAMIC_PALETTES: SubjectTheme[] = [
   {
-    bg: "bg-gradient-to-br from-sky-50/90 to-blue-50/60 hover:from-sky-100/90 hover:to-blue-100/70",
+    bg: "bg-gradient-to-br from-sky-50/95 to-blue-50/70 hover:from-sky-100/90 hover:to-blue-100/80",
     border: "border-sky-200 hover:border-sky-400",
     text: "text-sky-950",
-    badgeBg: "bg-sky-100/80 text-sky-800",
+    badgeBg: "bg-sky-100 text-sky-800",
     accent: "border-l-4 border-l-sky-500",
     dot: "bg-sky-500",
+    tagBg: "bg-sky-600/10 text-sky-800",
   },
   {
-    bg: "bg-gradient-to-br from-purple-50/90 to-indigo-50/60 hover:from-purple-100/90 hover:to-indigo-100/70",
+    bg: "bg-gradient-to-br from-purple-50/95 to-indigo-50/70 hover:from-purple-100/90 hover:to-indigo-100/80",
     border: "border-purple-200 hover:border-purple-400",
     text: "text-purple-950",
-    badgeBg: "bg-purple-100/80 text-purple-800",
+    badgeBg: "bg-purple-100 text-purple-800",
     accent: "border-l-4 border-l-purple-500",
     dot: "bg-purple-500",
+    tagBg: "bg-purple-600/10 text-purple-800",
   },
   {
-    bg: "bg-gradient-to-br from-pink-50/90 to-rose-50/60 hover:from-pink-100/90 hover:to-rose-100/70",
+    bg: "bg-gradient-to-br from-pink-50/95 to-rose-50/70 hover:from-pink-100/90 hover:to-rose-100/80",
     border: "border-pink-200 hover:border-pink-400",
     text: "text-pink-950",
-    badgeBg: "bg-pink-100/80 text-pink-800",
+    badgeBg: "bg-pink-100 text-pink-800",
     accent: "border-l-4 border-l-pink-500",
     dot: "bg-pink-500",
+    tagBg: "bg-pink-600/10 text-pink-800",
   },
   {
-    bg: "bg-gradient-to-br from-amber-50/90 to-yellow-50/60 hover:from-amber-100/90 hover:to-yellow-100/70",
+    bg: "bg-gradient-to-br from-amber-50/95 to-yellow-50/70 hover:from-amber-100/90 hover:to-yellow-100/80",
     border: "border-amber-200 hover:border-amber-400",
     text: "text-amber-950",
-    badgeBg: "bg-amber-100/80 text-amber-800",
+    badgeBg: "bg-amber-100 text-amber-800",
     accent: "border-l-4 border-l-amber-500",
     dot: "bg-amber-500",
+    tagBg: "bg-amber-600/10 text-amber-800",
   },
   {
-    bg: "bg-gradient-to-br from-teal-50/90 to-cyan-50/60 hover:from-teal-100/90 hover:to-cyan-100/70",
+    bg: "bg-gradient-to-br from-teal-50/95 to-cyan-50/70 hover:from-teal-100/90 hover:to-cyan-100/80",
     border: "border-teal-200 hover:border-teal-400",
     text: "text-teal-950",
-    badgeBg: "bg-teal-100/80 text-teal-800",
+    badgeBg: "bg-teal-100 text-teal-800",
     accent: "border-l-4 border-l-teal-500",
     dot: "bg-teal-500",
+    tagBg: "bg-teal-600/10 text-teal-800",
   },
   {
-    bg: "bg-gradient-to-br from-indigo-50/90 to-blue-50/60 hover:from-indigo-100/90 hover:to-blue-100/70",
+    bg: "bg-gradient-to-br from-indigo-50/95 to-blue-50/70 hover:from-indigo-100/90 hover:to-blue-100/80",
     border: "border-indigo-200 hover:border-indigo-400",
     text: "text-indigo-950",
-    badgeBg: "bg-indigo-100/80 text-indigo-800",
+    badgeBg: "bg-indigo-100 text-indigo-800",
     accent: "border-l-4 border-l-indigo-500",
     dot: "bg-indigo-500",
+    tagBg: "bg-indigo-600/10 text-indigo-800",
   },
 ];
 
@@ -244,16 +265,16 @@ function getSubjectTheme(subjectName: string, subjectId: string): SubjectTheme {
 
 function getSubjectHexColor(subjectName: string, subjectId: string): string {
   const norm = (subjectName || subjectId || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/[^a-z0-9]/g, "");
-  if (norm.includes("toan")) return "#2563eb"; // Blue
-  if (norm.includes("tiengviet")) return "#0d9488"; // Teal
-  if (norm.includes("van") || norm.includes("nguvan")) return "#059669"; // Emerald
-  if (norm.includes("anh") || norm.includes("tienganh") || norm.includes("english")) return "#7c3aed"; // Violet
-  if (norm.includes("khoahoc") || norm.includes("khtn") || norm.includes("ly") || norm.includes("hoa") || norm.includes("sinh")) return "#d97706"; // Amber
-  if (norm.includes("su") || norm.includes("lichsu") || norm.includes("dia") || norm.includes("dialy")) return "#e11d48"; // Rose
-  if (norm.includes("tin") || norm.includes("tinhoc") || norm.includes("congnghe")) return "#0891b2"; // Cyan
-  if (norm.includes("nhac") || norm.includes("amnhac") || norm.includes("mythuat")) return "#c026d3"; // Fuchsia
-  if (norm.includes("theduc") || norm.includes("gdtc")) return "#65a30d"; // Lime
-  if (norm.includes("gdcd") || norm.includes("daoduc") || norm.includes("trainghiem")) return "#ca8a04"; // Yellow
+  if (norm.includes("toan")) return "#2563eb";
+  if (norm.includes("tiengviet")) return "#0d9488";
+  if (norm.includes("van") || norm.includes("nguvan")) return "#059669";
+  if (norm.includes("anh") || norm.includes("tienganh") || norm.includes("english")) return "#7c3aed";
+  if (norm.includes("khoahoc") || norm.includes("khtn") || norm.includes("ly") || norm.includes("hoa") || norm.includes("sinh")) return "#d97706";
+  if (norm.includes("su") || norm.includes("lichsu") || norm.includes("dia") || norm.includes("dialy")) return "#e11d48";
+  if (norm.includes("tin") || norm.includes("tinhoc") || norm.includes("congnghe")) return "#0891b2";
+  if (norm.includes("nhac") || norm.includes("amnhac") || norm.includes("mythuat")) return "#c026d3";
+  if (norm.includes("theduc") || norm.includes("gdtc")) return "#65a30d";
+  if (norm.includes("gdcd") || norm.includes("daoduc") || norm.includes("trainghiem")) return "#ca8a04";
 
   const hexes = ["#0284c7", "#9333ea", "#db2777", "#ea580c", "#0f766e", "#4f46e5"];
   let hash = 0;
@@ -775,29 +796,92 @@ export default function SchedulesPage() {
     return timeSlots;
   }, [activeLevelForSlots, timeSlots]);
 
+  // Standard Vietnam school periods (Sáng 1-5, Chiều 6-10)
   const morningPeriods = useMemo(() => {
     const configured = levelTimeSlots.filter((slot) => periodNumber(slot) <= 5);
     if (configured.length > 0) return configured;
-    return [1, 2, 3, 4, 5].map((p) => ({
-      id: `fallback-${p}`,
-      periodNumber: p,
-      name: `Tiết ${p}`,
-      startTime: `0${6 + p}:00`,
-      endTime: `0${6 + p}:45`,
-    })) as CatalogRow[];
+    return [
+      { id: "slot-1", periodNumber: 1, name: "Tiết 1", startTime: "07:00", endTime: "07:45" },
+      { id: "slot-2", periodNumber: 2, name: "Tiết 2", startTime: "07:50", endTime: "08:35" },
+      { id: "slot-3", periodNumber: 3, name: "Tiết 3", startTime: "08:55", endTime: "09:40" },
+      { id: "slot-4", periodNumber: 4, name: "Tiết 4", startTime: "09:45", endTime: "10:30" },
+      { id: "slot-5", periodNumber: 5, name: "Tiết 5", startTime: "10:35", endTime: "11:20" },
+    ] as CatalogRow[];
   }, [levelTimeSlots]);
 
   const afternoonPeriods = useMemo(() => {
     const configured = levelTimeSlots.filter((slot) => periodNumber(slot) > 5 && periodNumber(slot) <= 10);
     if (configured.length > 0) return configured;
-    return [6, 7, 8, 9, 10].map((p) => ({
-      id: `fallback-${p}`,
-      periodNumber: p,
-      name: `Tiết ${p}`,
-      startTime: `${7 + p}:00`,
-      endTime: `${7 + p}:45`,
-    })) as CatalogRow[];
+    return [
+      { id: "slot-6", periodNumber: 6, name: "Tiết 6", startTime: "13:00", endTime: "13:45" },
+      { id: "slot-7", periodNumber: 7, name: "Tiết 7", startTime: "13:50", endTime: "14:35" },
+      { id: "slot-8", periodNumber: 8, name: "Tiết 8", startTime: "14:50", endTime: "15:35" },
+      { id: "slot-9", periodNumber: 9, name: "Tiết 9", startTime: "15:40", endTime: "16:25" },
+      { id: "slot-10", periodNumber: 10, name: "Tiết 10", startTime: "16:30", endTime: "17:15" },
+    ] as CatalogRow[];
   }, [levelTimeSlots]);
+
+  // Statistics for the selected entity (Class / Teacher / Room)
+  const currentEntityStats = useMemo(() => {
+    const totalPeriodsCount = currentWeekSchedules.reduce((acc, curr) => {
+      const start = Number(curr.startPeriod || 0);
+      const end = Number(curr.endPeriod || start + 1);
+      return acc + Math.max(1, end - start);
+    }, 0);
+
+    const morningCount = currentWeekSchedules.reduce((acc, curr) => {
+      const start = Number(curr.startPeriod || 0);
+      const end = Number(curr.endPeriod || start + 1);
+      let count = 0;
+      for (let p = start; p < end; p++) {
+        if (p <= 5) count++;
+      }
+      return acc + count;
+    }, 0);
+
+    const afternoonCount = totalPeriodsCount - morningCount;
+
+    // Check for period conflicts in the currently filtered view
+    const conflictMap = new Map<string, number>();
+    let hasConflict = false;
+    currentWeekSchedules.forEach((curr) => {
+      const day = Number(curr.dayOfWeek || 0);
+      const start = Number(curr.startPeriod || 0);
+      const end = Number(curr.endPeriod || start + 1);
+      for (let p = start; p < end; p++) {
+        const key = `${day}-${p}`;
+        const prev = conflictMap.get(key) || 0;
+        conflictMap.set(key, prev + 1);
+        if (prev >= 1) hasConflict = true;
+      }
+    });
+
+    const activeDaysCount = new Set(currentWeekSchedules.map((r) => Number(r.dayOfWeek))).size;
+
+    return {
+      totalPeriods: totalPeriodsCount,
+      morningPeriods: morningCount,
+      afternoonPeriods: afternoonCount,
+      activeDays: activeDaysCount,
+      hasConflict,
+    };
+  }, [currentWeekSchedules]);
+
+  // Teacher availability slots for quick visual scheduling
+  const selectedTeacherAvailabilitySlots = useMemo(() => {
+    if (viewScope !== "teacher" || !selectedTeacherId) return new Set<string>();
+    const avail = availabilityRows.find((row) => row.teacherId === selectedTeacherId);
+    if (!avail) return new Set<string>();
+    const approved = approvedAvailabilitySlots(avail);
+    const set = new Set<string>();
+    approved.forEach((slotStr) => {
+      const parsed = resolveAvailabilitySlot(slotStr, timeSlots);
+      if (parsed) {
+        set.add(`${parsed.dayOfWeek}-${parsed.period}`);
+      }
+    });
+    return set;
+  }, [availabilityRows, selectedTeacherId, timeSlots, viewScope]);
 
   // FullCalendar events with distinct subject colors
   const calendarEvents = useMemo(() => {
@@ -1176,7 +1260,7 @@ export default function SchedulesPage() {
         <PageHeader
           eyebrow={role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
           title={role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
-          description="Sắp xếp và quản lý thời khóa biểu trực quan, khoa học. Mỗi môn học sở hữu mã màu nhận diện hiện đại, dễ nhìn, không bị đè chữ."
+          description="Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, giờ ra chơi và xếp lịch 1-chạm."
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               {role === "admin" ? (
@@ -1316,7 +1400,7 @@ export default function SchedulesPage() {
         ) : null}
 
         {/* Smart Control & Filter Bar */}
-        <Card className="mb-5 p-4 sm:p-5 shadow-sm">
+        <Card className="mb-4 p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col gap-4">
             {/* Top row: Week Navigator & Layout Mode */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
@@ -1353,7 +1437,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("matrix")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "matrix" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "matrix" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" />
@@ -1364,7 +1448,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("teacher_grid")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "teacher_grid" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "teacher_grid" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Table2 className="h-3.5 w-3.5" />
@@ -1375,7 +1459,7 @@ export default function SchedulesPage() {
                   onClick={() => setLayoutMode("calendar")}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition",
-                    layoutMode === "calendar" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground",
+                    layoutMode === "calendar" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Calendar className="h-3.5 w-3.5" />
@@ -1388,12 +1472,12 @@ export default function SchedulesPage() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               {/* Scope buttons */}
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground mr-1">Chế độ xem:</span>
+                <span className="text-xs font-medium text-muted-foreground mr-1">Đối tượng xếp lịch:</span>
                 <button
                   type="button"
                   onClick={() => setViewScope("class")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition",
+                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition",
                     viewScope === "class" ? "bg-primary text-primary-foreground shadow-xs" : "border border-border bg-card text-foreground hover:bg-muted",
                   )}
                 >
@@ -1404,7 +1488,7 @@ export default function SchedulesPage() {
                   type="button"
                   onClick={() => setViewScope("teacher")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition",
+                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition",
                     viewScope === "teacher" ? "bg-primary text-primary-foreground shadow-xs" : "border border-border bg-card text-foreground hover:bg-muted",
                   )}
                 >
@@ -1415,7 +1499,7 @@ export default function SchedulesPage() {
                   type="button"
                   onClick={() => setViewScope("room")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition",
+                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition",
                     viewScope === "room" ? "bg-primary text-primary-foreground shadow-xs" : "border border-border bg-card text-foreground hover:bg-muted",
                   )}
                 >
@@ -1426,7 +1510,7 @@ export default function SchedulesPage() {
                   type="button"
                   onClick={() => setViewScope("all")}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition",
+                    "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition",
                     viewScope === "all" ? "bg-primary text-primary-foreground shadow-xs" : "border border-border bg-card text-foreground hover:bg-muted",
                   )}
                 >
@@ -1440,7 +1524,7 @@ export default function SchedulesPage() {
                 {viewScope === "class" ? (
                   <div className="w-full">
                     <select
-                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-medium text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
+                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
                       value={selectedClassId}
                       onChange={(e) => setSelectedClassId(e.target.value)}
                     >
@@ -1457,7 +1541,7 @@ export default function SchedulesPage() {
                 {viewScope === "teacher" ? (
                   <div className="w-full">
                     <select
-                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-medium text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
+                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
                       value={selectedTeacherId}
                       onChange={(e) => setSelectedTeacherId(e.target.value)}
                     >
@@ -1474,7 +1558,7 @@ export default function SchedulesPage() {
                 {viewScope === "room" ? (
                   <div className="w-full">
                     <select
-                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-medium text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
+                      className="h-10 w-full rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20"
                       value={selectedRoomId}
                       onChange={(e) => setSelectedRoomId(e.target.value)}
                     >
@@ -1489,6 +1573,49 @@ export default function SchedulesPage() {
                 ) : null}
               </div>
             </div>
+
+            {/* Quick Entity Fast-Switch Pills Bar (1-Click Switch for Schedulers) */}
+            {viewScope === "class" && filteredCatalogClasses.length > 0 ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-thin">
+                <span className="text-[11px] font-bold text-muted-foreground whitespace-nowrap mr-1">Chuyển nhanh lớp:</span>
+                {filteredCatalogClasses.map((cls) => (
+                  <button
+                    key={cls.id}
+                    type="button"
+                    onClick={() => setSelectedClassId(cls.id)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition",
+                      selectedClassId === cls.id
+                        ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                        : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {primaryCatalogName(cls)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {viewScope === "teacher" && filteredCatalogTeachers.length > 0 ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-thin">
+                <span className="text-[11px] font-bold text-muted-foreground whitespace-nowrap mr-1">Chuyển nhanh GV:</span>
+                {filteredCatalogTeachers.slice(0, 15).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTeacherId(t.id)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition",
+                      selectedTeacherId === t.id
+                        ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                        : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {primaryCatalogName(t)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             {/* Bottom row: Secondary filters (Level, Department, Search) */}
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
@@ -1553,13 +1680,55 @@ export default function SchedulesPage() {
                   Xóa lọc
                 </Button>
               ) : null}
-
-              <div className="ml-auto text-xs text-muted-foreground font-medium">
-                Tìm thấy <strong>{currentWeekSchedules.length}</strong> tiết dạy
-              </div>
             </div>
           </div>
         </Card>
+
+        {/* Scientific Scheduler HUD: Metric Bar for the Active Entity */}
+        {layoutMode === "matrix" && (viewScope === "class" || viewScope === "teacher") ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
+                {viewScope === "class" ? <GraduationCap className="h-5 w-5" /> : <User className="h-5 w-5" />}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">
+                  {viewScope === "class"
+                    ? `Thời khóa biểu Lớp: ${catalogName(classes, selectedClassId) || "Đang chọn..."}`
+                    : `Lịch dạy Giáo viên: ${catalogName(teachers, selectedTeacherId) || "Đang chọn..."}`}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {viewScope === "class"
+                    ? `Cấp: ${selectedClassLevel === "primary" ? "Tiểu học" : "THCS"}`
+                    : `Bộ môn: ${catalogName(departments, teachers.find((t) => t.id === selectedTeacherId)?.departmentId) || "—"}`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <div className="rounded-xl border border-border bg-card px-3 py-1.5 shadow-2xs">
+                <span className="text-muted-foreground">Tổng tiết tuần: </span>
+                <span className="font-extrabold text-foreground text-sm">{currentEntityStats.totalPeriods} tiết</span>
+              </div>
+              <div className="rounded-xl border border-border bg-card px-3 py-1.5 shadow-2xs">
+                <span className="text-blue-700 font-medium">Sáng: <strong>{currentEntityStats.morningPeriods}</strong></span>
+                <span className="text-muted-foreground mx-1.5">|</span>
+                <span className="text-amber-700 font-medium">Chiều: <strong>{currentEntityStats.afternoonPeriods}</strong></span>
+              </div>
+              {currentEntityStats.hasConflict ? (
+                <div className="flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700">
+                  <AlertTriangle className="h-4 w-4 text-rose-600 animate-pulse" />
+                  Cảnh báo trùng tiết!
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  Lịch hợp lệ
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {/* MAIN TIMETABLE DISPLAY */}
         {loading ? (
@@ -1568,20 +1737,33 @@ export default function SchedulesPage() {
           </Card>
         ) : (
           <>
-            {/* 1. TIMETABLE MATRIX VIEW (Ma trận Tiết x Thứ 2-6) */}
+            {/* 1. SCIENTIFIC TIMETABLE MATRIX VIEW (Ma trận Tiết x Thứ 2-6) */}
             {layoutMode === "matrix" ? (
               <Card className="overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-left">
                     <thead>
-                      <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground font-semibold">
-                        <th className="w-28 p-3 text-center border-r border-border">Buổi / Tiết</th>
+                      <tr className="border-b border-border bg-muted/60 text-xs text-muted-foreground font-semibold">
+                        <th className="w-32 p-3 text-center border-r border-border">Buổi / Tiết học</th>
                         {WEEKDAYS.map((day) => {
                           const { dayName, dateStr } = formatDayHeader(selectedWeek, day);
+                          const dayPeriodsCount = currentWeekSchedules.filter((r) => Number(r.dayOfWeek) === day).reduce((acc, curr) => {
+                            const start = Number(curr.startPeriod || 0);
+                            const end = Number(curr.endPeriod || start + 1);
+                            return acc + Math.max(1, end - start);
+                          }, 0);
+
                           return (
-                            <th key={day} className="min-w-[185px] p-3 text-center border-r border-border last:border-r-0">
-                              <div className="text-sm font-bold text-foreground">{dayName}</div>
-                              <div className="text-xs text-muted-foreground font-normal">{dateStr}</div>
+                            <th key={day} className="min-w-[190px] p-3 text-center border-r border-border last:border-r-0">
+                              <div className="text-sm font-extrabold text-foreground">{dayName}</div>
+                              <div className="text-[11px] text-muted-foreground font-medium">{dateStr}</div>
+                              {dayPeriodsCount > 0 ? (
+                                <div className="mt-1">
+                                  <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                                    {dayPeriodsCount} tiết
+                                  </span>
+                                </div>
+                              ) : null}
                             </th>
                           );
                         })}
@@ -1589,25 +1771,29 @@ export default function SchedulesPage() {
                     </thead>
                     <tbody className="divide-y divide-border text-sm">
                       {/* BUỔI SÁNG HEADER */}
-                      <tr className="bg-blue-50/50 font-bold text-xs text-blue-900">
-                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide flex items-center gap-1.5">
-                          <span>☀️ Buổi sáng (Tiết 1 — 5)</span>
+                      <tr className="bg-gradient-to-r from-blue-50/80 via-blue-50/40 to-transparent font-bold text-xs text-blue-900 border-t-2 border-t-blue-200">
+                        <td colSpan={6} className="px-4 py-2.5 uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1.5">
+                            ☀️ BUỔI SÁNG (Tiết 1 — 5)
+                          </span>
                         </td>
                       </tr>
-                      {morningPeriods.map((slot) => {
+                      {morningPeriods.map((slot, index) => {
                         const p = periodNumber(slot);
                         return (
                           <tr key={`morning-${p}`} className="divide-x divide-border hover:bg-muted/10 transition">
                             <td className="p-2.5 text-center bg-muted/20 align-middle">
-                              <div className="font-bold text-foreground text-xs">{primaryCatalogName(slot)}</div>
-                              <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                              <div className="font-extrabold text-foreground text-xs">{primaryCatalogName(slot)}</div>
+                              <div className="text-[11px] text-muted-foreground font-mono mt-0.5 font-medium">
                                 {slot.startTime || "?"} – {slot.endTime || "?"}
                               </div>
                             </td>
                             {WEEKDAYS.map((day) => {
                               const matches = getSchedulesForSlot(day, p);
+                              const isTeacherAvailable = selectedTeacherAvailabilitySlots.has(`${day}-${p}`);
+
                               return (
-                                <td key={`slot-${day}-${p}`} className="p-2 align-top h-24">
+                                <td key={`slot-${day}-${p}`} className="p-2 align-top h-28">
                                   {matches.length > 0 ? (
                                     <div className="flex flex-col gap-1.5 h-full">
                                       {matches.map((schedule) => {
@@ -1618,6 +1804,8 @@ export default function SchedulesPage() {
                                         const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== (schedule.actualTeacherId || schedule.teacherId);
                                         const isAdjunct = schedule.teacherType === "thinh_giang";
                                         const theme = getSubjectTheme(subjectName, schedule.subjectId);
+                                        const startPeriodNum = Number(schedule.startPeriod || 1);
+                                        const isContinuation = p > startPeriodNum;
 
                                         return (
                                           <div
@@ -1628,26 +1816,27 @@ export default function SchedulesPage() {
                                               theme.bg,
                                               theme.border,
                                               theme.accent,
+                                              isContinuation && "border-t-dashed opacity-95",
                                             )}
                                           >
                                             <div className="flex items-start justify-between gap-1">
-                                              <span className={cn("font-bold text-xs tracking-tight", theme.text)}>
-                                                {subjectName}
+                                              <span className={cn("font-extrabold text-xs tracking-tight", theme.text)}>
+                                                {isContinuation ? `↳ ${subjectName}` : subjectName}
                                               </span>
-                                              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
+                                              <span className={cn("text-[10px] font-extrabold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
                                                 {periodDisplay(schedule)}
                                               </span>
                                             </div>
 
                                             <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] opacity-95">
                                               {viewScope !== "class" ? (
-                                                <div className="flex items-center gap-1 font-semibold text-slate-800">
+                                                <div className="flex items-center gap-1 font-bold text-slate-800">
                                                   <GraduationCap className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                                   <span>{className}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "teacher" ? (
-                                                <div className="flex items-center gap-1 font-medium text-slate-700 truncate">
+                                                <div className="flex items-center gap-1 font-semibold text-slate-700 truncate">
                                                   <User className="h-3 w-3 text-slate-400 shrink-0" />
                                                   <span className="truncate">{teacherName}</span>
                                                 </div>
@@ -1689,11 +1878,26 @@ export default function SchedulesPage() {
                                         startPeriod: String(p),
                                         endPeriod: String(p),
                                       })}
-                                      className="group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/35 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
-                                      title="Bấm để xếp lịch vào tiết này"
+                                      className={cn(
+                                        "group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-xl border border-dashed transition",
+                                        isTeacherAvailable
+                                          ? "border-emerald-300 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-100/60"
+                                          : "border-border/60 bg-transparent text-muted-foreground/35 hover:border-primary/60 hover:bg-primary/5 hover:text-primary",
+                                      )}
+                                      title={isTeacherAvailable ? "Khung giờ rảnh đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
                                     >
-                                      <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
-                                      <span className="text-[11px] font-medium opacity-0 transition group-hover:opacity-100">+ Xếp lịch</span>
+                                      {isTeacherAvailable ? (
+                                        <div className="flex flex-col items-center text-center px-1">
+                                          <Zap className="h-3.5 w-3.5 text-emerald-600 mb-0.5" />
+                                          <span className="text-[10px] font-bold text-emerald-700">Giờ rảnh đã duyệt</span>
+                                          <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition">+ Xếp lịch</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
+                                          <span className="text-[11px] font-medium opacity-0 transition group-hover:opacity-100">+ Xếp lịch</span>
+                                        </>
+                                      )}
                                     </button>
                                   )}
                                 </td>
@@ -1704,9 +1908,11 @@ export default function SchedulesPage() {
                       })}
 
                       {/* BUỔI CHIỀU HEADER */}
-                      <tr className="bg-amber-50/50 font-bold text-xs text-amber-900">
-                        <td colSpan={6} className="px-4 py-2 uppercase tracking-wide flex items-center gap-1.5">
-                          <span>🌤️ Buổi chiều (Tiết 6 — 10)</span>
+                      <tr className="bg-gradient-to-r from-amber-50/80 via-amber-50/40 to-transparent font-bold text-xs text-amber-900 border-t-2 border-t-amber-200">
+                        <td colSpan={6} className="px-4 py-2.5 uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1.5">
+                            🌤️ BUỔI CHIỀU (Tiết 6 — 10)
+                          </span>
                         </td>
                       </tr>
                       {afternoonPeriods.map((slot) => {
@@ -1714,15 +1920,17 @@ export default function SchedulesPage() {
                         return (
                           <tr key={`afternoon-${p}`} className="divide-x divide-border hover:bg-muted/10 transition">
                             <td className="p-2.5 text-center bg-muted/20 align-middle">
-                              <div className="font-bold text-foreground text-xs">{primaryCatalogName(slot)}</div>
-                              <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                              <div className="font-extrabold text-foreground text-xs">{primaryCatalogName(slot)}</div>
+                              <div className="text-[11px] text-muted-foreground font-mono mt-0.5 font-medium">
                                 {slot.startTime || "?"} – {slot.endTime || "?"}
                               </div>
                             </td>
                             {WEEKDAYS.map((day) => {
                               const matches = getSchedulesForSlot(day, p);
+                              const isTeacherAvailable = selectedTeacherAvailabilitySlots.has(`${day}-${p}`);
+
                               return (
-                                <td key={`slot-${day}-${p}`} className="p-2 align-top h-24">
+                                <td key={`slot-${day}-${p}`} className="p-2 align-top h-28">
                                   {matches.length > 0 ? (
                                     <div className="flex flex-col gap-1.5 h-full">
                                       {matches.map((schedule) => {
@@ -1733,6 +1941,8 @@ export default function SchedulesPage() {
                                         const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== (schedule.actualTeacherId || schedule.teacherId);
                                         const isAdjunct = schedule.teacherType === "thinh_giang";
                                         const theme = getSubjectTheme(subjectName, schedule.subjectId);
+                                        const startPeriodNum = Number(schedule.startPeriod || 1);
+                                        const isContinuation = p > startPeriodNum;
 
                                         return (
                                           <div
@@ -1743,26 +1953,27 @@ export default function SchedulesPage() {
                                               theme.bg,
                                               theme.border,
                                               theme.accent,
+                                              isContinuation && "border-t-dashed opacity-95",
                                             )}
                                           >
                                             <div className="flex items-start justify-between gap-1">
-                                              <span className={cn("font-bold text-xs tracking-tight", theme.text)}>
-                                                {subjectName}
+                                              <span className={cn("font-extrabold text-xs tracking-tight", theme.text)}>
+                                                {isContinuation ? `↳ ${subjectName}` : subjectName}
                                               </span>
-                                              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
+                                              <span className={cn("text-[10px] font-extrabold px-1.5 py-0.5 rounded-full shadow-2xs", theme.badgeBg)}>
                                                 {periodDisplay(schedule)}
                                               </span>
                                             </div>
 
                                             <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] opacity-95">
                                               {viewScope !== "class" ? (
-                                                <div className="flex items-center gap-1 font-semibold text-slate-800">
+                                                <div className="flex items-center gap-1 font-bold text-slate-800">
                                                   <GraduationCap className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                                   <span>{className}</span>
                                                 </div>
                                               ) : null}
                                               {viewScope !== "teacher" ? (
-                                                <div className="flex items-center gap-1 font-medium text-slate-700 truncate">
+                                                <div className="flex items-center gap-1 font-semibold text-slate-700 truncate">
                                                   <User className="h-3 w-3 text-slate-400 shrink-0" />
                                                   <span className="truncate">{teacherName}</span>
                                                 </div>
@@ -1804,11 +2015,26 @@ export default function SchedulesPage() {
                                         startPeriod: String(p),
                                         endPeriod: String(p),
                                       })}
-                                      className="group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-transparent text-muted-foreground/35 transition hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
-                                      title="Bấm để xếp lịch vào tiết này"
+                                      className={cn(
+                                        "group flex h-full min-h-[5.5rem] w-full flex-col items-center justify-center rounded-xl border border-dashed transition",
+                                        isTeacherAvailable
+                                          ? "border-emerald-300 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-100/60"
+                                          : "border-border/60 bg-transparent text-muted-foreground/35 hover:border-primary/60 hover:bg-primary/5 hover:text-primary",
+                                      )}
+                                      title={isTeacherAvailable ? "Khung giờ rảnh đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
                                     >
-                                      <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
-                                      <span className="text-[11px] font-medium opacity-0 transition group-hover:opacity-100">+ Xếp lịch</span>
+                                      {isTeacherAvailable ? (
+                                        <div className="flex flex-col items-center text-center px-1">
+                                          <Zap className="h-3.5 w-3.5 text-emerald-600 mb-0.5" />
+                                          <span className="text-[10px] font-bold text-emerald-700">Giờ rảnh đã duyệt</span>
+                                          <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition">+ Xếp lịch</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <Plus className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
+                                          <span className="text-[11px] font-medium opacity-0 transition group-hover:opacity-100">+ Xếp lịch</span>
+                                        </>
+                                      )}
                                     </button>
                                   )}
                                 </td>
