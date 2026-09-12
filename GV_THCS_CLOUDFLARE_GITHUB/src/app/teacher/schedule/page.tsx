@@ -26,7 +26,7 @@ import { addDaysDateOnly, currentWeekStartDateOnly, normalizeWeekStartDateOnly }
 
 type Row = DocumentData & { id: string };
 
-const weekdays = [2, 3, 4, 5, 6, 7] as const;
+const weekdays = [2, 3, 4, 5, 6] as const;
 
 function currentMonday() {
   return currentWeekStartDateOnly();
@@ -174,7 +174,7 @@ export default function TeacherSchedulePage() {
       .filter((schedule) => textValue(schedule.actualTeacherId) ? schedule.actualTeacherId === teacherId : schedule.teacherId === teacherId);
   }, [legacySchedules, primarySchedules, teacherId]);
 
-  const weekEnd = useMemo(() => addDaysDateOnly(selectedWeek, 5), [selectedWeek]);
+  const weekEnd = useMemo(() => addDaysDateOnly(selectedWeek, 4), [selectedWeek]);
 
   const filteredSchedules = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
@@ -287,11 +287,11 @@ export default function TeacherSchedulePage() {
 
         <Card className="overflow-hidden p-4">
           {loading || contextLoading ? (
-            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">{weekdays.map((day) => <Skeleton key={day} className="h-72" />)}</div>
+            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">{weekdays.map((day) => <Skeleton key={day} className="h-72" />)}</div>
           ) : error ? null : filteredSchedules.length === 0 ? (
             <EmptyState icon={<CalendarDays className="h-6 w-6" />} title="Không có lịch dạy trong tuần này" description="Nếu bạn vừa được xếp lịch, hãy kiểm tra lại tuần đang chọn hoặc liên hệ admin để xác nhận lịch đã được phân công đúng hồ sơ giáo viên." />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {weekdays.map((day) => {
                 const date = addDays(parseISO(selectedWeek), day - 2);
                 const daySchedules = schedulesByDay.get(day) || [];
