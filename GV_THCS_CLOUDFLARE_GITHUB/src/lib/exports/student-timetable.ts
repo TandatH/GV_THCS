@@ -127,7 +127,7 @@ function scheduleCellText(schedule: Row, input: StudentTimetableExportInput) {
 
 export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput): StudentTimetableWorkbook {
   const monday = dateOnly(input.weekStart);
-  const saturday = addDays(monday, 5);
+  const friday = addDays(monday, 4);
   const activeSchedules = input.schedules.filter((schedule) =>
     schedule.status !== "cancelled"
     && text(schedule.weekStart) === input.weekStart
@@ -164,14 +164,14 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
     const periodRows = new Map(configuredPeriods.map((slot) => [periodNumber(slot), slot]));
 
     const headerCells = [cell("Tiết", "Header")];
-    for (let day = 2; day <= 7; day += 1) {
+    for (let day = 2; day <= 6; day += 1) {
       headerCells.push(cell(`Thứ ${day}\n${viDate(addDays(monday, day - 2))}`, "Header"));
     }
 
     const rows = periods.map((period) => {
       const periodInfo = periodRows.get(period);
       const values = [cell(periodInfo ? periodLabel(periodInfo, period) : `Tiết ${period}`, "Period")];
-      for (let day = 2; day <= 7; day += 1) {
+      for (let day = 2; day <= 6; day += 1) {
         const matches = classSchedules.filter((schedule) =>
           Number(schedule.dayOfWeek) === day
           && period >= Number(schedule.startPeriod || 0)
@@ -187,13 +187,13 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
       <Table>
         <Column ss:Width="82"/>
         <Column ss:Width="145"/><Column ss:Width="145"/><Column ss:Width="145"/>
-        <Column ss:Width="145"/><Column ss:Width="145"/><Column ss:Width="145"/>
-        <Row ss:Height="28">${cell(text(input.schoolName) || "TRƯỜNG THCS", "School", 6)}</Row>
-        <Row ss:Height="30">${cell("THỜI KHÓA BIỂU HỌC SINH", "Title", 6)}</Row>
-        <Row ss:Height="24">${cell(`Lớp ${className} · Tuần ${viDate(monday)} – ${viDate(saturday)}`, "Subtitle", 6)}</Row>
+        <Column ss:Width="145"/><Column ss:Width="145"/>
+        <Row ss:Height="28">${cell(text(input.schoolName) || "TRƯỜNG THCS", "School", 5)}</Row>
+        <Row ss:Height="30">${cell("THỜI KHÓA BIỂU HỌC SINH", "Title", 5)}</Row>
+        <Row ss:Height="24">${cell(`Lớp ${className} · Tuần ${viDate(monday)} – ${viDate(friday)}`, "Subtitle", 5)}</Row>
         <Row ss:Height="36">${headerCells.join("")}</Row>
         ${rows}
-        <Row ss:Height="22">${cell("Ghi chú: Thời khóa biểu được xuất từ hệ thống quản lý giáo viên. Vui lòng theo dõi thông báo của nhà trường nếu có điều chỉnh.", "Note", 6)}</Row>
+        <Row ss:Height="22">${cell("Ghi chú: Thời khóa biểu được xuất từ hệ thống quản lý giáo viên. Vui lòng theo dõi thông báo của nhà trường nếu có điều chỉnh.", "Note", 5)}</Row>
       </Table>
       <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
         <FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane>
