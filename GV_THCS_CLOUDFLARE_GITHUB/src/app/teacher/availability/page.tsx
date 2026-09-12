@@ -17,7 +17,7 @@ import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { FirebaseUiError, firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { cn, formatDate } from "@/lib/utils";
 
-const days = [2, 3, 4, 5, 6, 7];
+const days = [2, 3, 4, 5, 6];
 type SchoolLevel = "primary" | "secondary";
 type SemesterRow = DocumentData & { id: string };
 type TimeSlotRow = DocumentData & { id: string };
@@ -416,7 +416,7 @@ export default function AvailabilityPage() {
                   <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
                     Đang xem bộ tiết <strong>{schoolLevelLabel(selectedSchoolLevel)}</strong>. Nhiều giáo viên thỉnh giảng được phép cùng chọn một ô rảnh. Mỗi ô vẫn được lưu theo <strong>cấp học + thứ + mã tiết</strong>.
                   </div>
-                  <div className="grid grid-cols-[150px_repeat(6,minmax(96px,1fr))] gap-2">
+                  <div className="grid grid-cols-[150px_repeat(5,minmax(96px,1fr))] gap-2">
                     <div className="grid place-items-center rounded-xl bg-muted p-3 text-sm font-semibold"><Clock3 className="mr-2 inline h-4 w-4" />Tiết / giờ</div>
                     {days.map((day) => <div key={day} className="grid place-items-center rounded-xl bg-muted p-3 text-sm font-semibold">Thứ {day}</div>)}
                     {selectedLevelTimeSlots.map((timeSlot) => {
