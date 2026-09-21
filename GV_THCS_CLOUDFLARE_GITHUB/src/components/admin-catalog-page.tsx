@@ -148,8 +148,15 @@ function filteredReferenceOptions(field: CatalogField, form: FormState, rows: Ca
       const actual = row[filter.optionField];
       if (filter.mode === "arrayIncludes") {
         if (Array.isArray(actual)) return actual.map(String).includes(expected);
-        // Hồ sơ giáo viên cũ chưa có schoolLevels được xem là THCS để giữ tương thích dữ liệu hiện tại.
-        return filter.optionField === "schoolLevels" && expected === "secondary" && (actual === undefined || actual === null || actual === "");
+        if (typeof actual === "string") return actual === expected || actual === "both";
+        if (filter.optionField === "schoolLevels") {
+          const singularLevel = row.schoolLevel;
+          if (Array.isArray(singularLevel)) return singularLevel.map(String).includes(expected);
+          if (typeof singularLevel === "string") return singularLevel === expected || singularLevel === "both";
+          // Hồ sơ giáo viên cũ chưa có schoolLevels được xem là THCS để giữ tương thích dữ liệu hiện tại.
+          return expected === "secondary" && (actual === undefined || actual === null || actual === "");
+        }
+        return false;
       }
       if (filter.mode === "equalsOrBoth") {
         const value = String(actual ?? "").trim();
@@ -272,7 +279,31 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
   }
 
   function setField(name: string, value: string | boolean) {
-    setForm((current) => ({ ...current, [name]: value }));
+    setForm((current) => {
+      const next = { ...current, [name]: value };
+      if (name === "schoolLevel") {
+        const schoolLevel = String(value);
+        const grade = Number(next.grade);
+        if (Number.isInteger(grade) && grade > 0) {
+          const isValidGrade = schoolLevel === "primary" ? grade >= 1 && grade <= 5 : grade >= 6 && grade <= 9;
+          if (!isValidGrade) {
+            next.grade = "";
+          }
+        }
+        for (const field of fields) {
+          if (field.optionFilters?.some((filter) => filter.formField === "schoolLevel")) {
+            const currentSelected = String(next[field.name] ?? "").trim();
+            if (currentSelected && referenceOptions[field.name]) {
+              const valid = filteredReferenceOptions(field, next, referenceOptions[field.name]);
+              if (!valid.some((item) => item.id === currentSelected)) {
+                next[field.name] = "";
+              }
+            }
+          }
+        }
+      }
+      return next;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -384,7 +415,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
                   <tr>
                     <th>Mã</th>
                     <th>Tên</th>
-                    {visibleFields.slice(2, 5).map((field) => <th key={field.name}>{field.label}</th>)}
+                    {visibleFields.slice(2).map((field) => <th key={field.name}>{field.label}</th>)}
                     <th>Trạng thái</th>
                     <th>Thao tác</th>
                   </tr>
@@ -394,7 +425,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
                     <tr key={row.id}>
                       <td><p className="font-semibold">{row.code || row.id}</p><p className="text-xs text-muted-foreground">ID: {row.id}</p></td>
                       <td>{row.name || "—"}</td>
-                      {visibleFields.slice(2, 5).map((field) => { const reference = referenceOptions[field.name]?.find((option) => option.id === row[field.name]); return <td key={field.name}>{reference ? referenceLabel(reference, field.optionLabelFields) : staticOptionLabel(field, row[field.name])}</td>; })}
+                      {visibleFields.slice(2).map((field) => { const reference = referenceOptions[field.name]?.find((option) => option.id === row[field.name]); return <td key={field.name}>{reference ? referenceLabel(reference, field.optionLabelFields) : staticOptionLabel(field, row[field.name])}</td>; })}
                       <td><Badge tone={statusTone(row)}>{row.isActive === false || row.status === "inactive" ? "Ngừng hoạt động" : "Đang hoạt động"}</Badge></td>
                       <td>
                         <div className="flex flex-wrap gap-2">
