@@ -25,11 +25,6 @@ export default function ClassesPage() {
       optionLabelFields: ["fullName", "teacherCode"],
       optionFilters: [
         { formField: "schoolLevel", optionField: "schoolLevels", mode: "arrayIncludes" },
-        { formField: "grade", optionField: "teachingAssignments", mode: "teachingGradeIncludes" },
-      ],
-      optionAllowedValues: [
-        { optionField: "teachingRole", values: ["chu_nhiem", "ca_hai"], allowMissing: true },
-        { optionField: "teacherType", values: ["co_huu"] },
       ],
     },
     { name: "expectedSize", label: "Sĩ số dự kiến", type: "number" },
