@@ -266,17 +266,19 @@ export default function AdminEvaluationsPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["admin", "totruong"]}>
+    <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow={role === "totruong" ? "Đánh giá trong tổ" : "Đánh giá giáo viên"}
-          title={role === "totruong" ? "Đánh giá giáo viên trong tổ" : "Quản lý kỳ và kết quả đánh giá"}
-          description="Tạo kỳ đánh giá, chuyển kỳ từ Nháp sang Chính thức, nhập điểm theo tiêu chí và công bố kết quả cho giáo viên."
+          eyebrow={role === "bgh" ? "Ban Giám Hiệu theo dõi" : role === "totruong" ? "Đánh giá trong tổ" : "Đánh giá giáo viên"}
+          title={role === "bgh" ? "Theo dõi Kết quả Đánh giá Giáo viên" : role === "totruong" ? "Đánh giá giáo viên trong tổ" : "Quản lý kỳ và kết quả đánh giá"}
+          description={role === "bgh" ? "Theo dõi kết quả đánh giá năng lực, chuyên môn giáo viên và phân tích biểu đồ tiêu chí (chế độ chỉ xem)." : "Tạo kỳ đánh giá, chuyển kỳ từ Nháp sang Chính thức, nhập điểm theo tiêu chí và công bố kết quả cho giáo viên."}
           actions={
-            <div className="flex flex-wrap gap-2">
-              {role === "admin" ? <Button variant="secondary" onClick={() => setPeriodModalOpen(true)}><CalendarPlus className="h-4 w-4" />Tạo kỳ đánh giá</Button> : null}
-              <Button onClick={() => setEvaluationModalOpen(true)} disabled={periods.length === 0 || teachers.length === 0}><CirclePlus className="h-4 w-4" />Nhập đánh giá</Button>
-            </div>
+            role !== "bgh" ? (
+              <div className="flex flex-wrap gap-2">
+                {role === "admin" ? <Button variant="secondary" onClick={() => setPeriodModalOpen(true)}><CalendarPlus className="h-4 w-4" />Tạo kỳ đánh giá</Button> : null}
+                <Button onClick={() => setEvaluationModalOpen(true)} disabled={periods.length === 0 || teachers.length === 0}><CirclePlus className="h-4 w-4" />Nhập đánh giá</Button>
+              </div>
+            ) : undefined
           }
         />
 

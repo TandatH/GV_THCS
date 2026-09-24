@@ -243,10 +243,18 @@ export default function TeachersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [roleForm, setRoleForm] = useState<{ email: string; role: Role; departmentId: string }>({
+  const [roleForm, setRoleForm] = useState<{
+    email: string;
+    role: Role;
+    departmentId: string;
+    bghPosition?: "hieutruong" | "phohieutruong";
+    schoolLevel?: "primary" | "secondary" | "all";
+  }>({
     email: "",
     role: "giaovien",
     departmentId: "",
+    bghPosition: "phohieutruong",
+    schoolLevel: "secondary",
   });
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [roleMessage, setRoleMessage] = useState("");
@@ -487,6 +495,8 @@ export default function TeachersPage() {
         email: roleForm.email.trim(),
         role: roleForm.role,
         departmentId: roleForm.role === "totruong" ? roleForm.departmentId.trim() : roleForm.departmentId.trim() || undefined,
+        bghPosition: roleForm.role === "bgh" ? roleForm.bghPosition : undefined,
+        schoolLevel: roleForm.role === "bgh" ? roleForm.schoolLevel : undefined,
       });
       setRoleMessage("Đã cập nhật phân quyền. Người dùng cần đăng nhập lại để nhận Custom Claims mới.");
     } catch (submitError) {
@@ -614,14 +624,53 @@ export default function TeachersPage() {
             </div>
             <div>
               <h2 className="font-bold">Phân quyền</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Cập nhật Custom Claims cho admin, tổ trưởng hoặc giáo viên qua Cloud Function setUserRole.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Cập nhật Custom Claims cho admin, Ban Giám Hiệu, tổ trưởng hoặc giáo viên qua Cloud Function setUserRole.</p>
             </div>
           </div>
-          <form className="grid gap-4 lg:grid-cols-[1.3fr_.8fr_1fr_auto] lg:items-end" onSubmit={submitRoleAssignment}>
-            <div><Label>Email đăng nhập</Label><Input required type="email" value={roleForm.email} onChange={(event) => setRoleForm((current) => ({ ...current, email: event.target.value }))} placeholder="giaovien@truong.edu.vn" /></div>
-            <div><Label>Vai trò</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value as Role }))}><option value="admin">Quản trị viên</option><option value="totruong">Tổ trưởng</option><option value="giaovien">Giáo viên</option></select></div>
-            <div><Label>Bộ môn phụ trách</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={roleForm.role === "totruong"} value={roleForm.departmentId} onChange={(event) => setRoleForm((current) => ({ ...current, departmentId: event.target.value }))}><option value="">{roleForm.role === "totruong" ? "Chọn bộ môn" : "Không bắt buộc"}</option>{departments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
-            <Button loading={roleSubmitting} type="submit">Phân quyền</Button>
+          <form className="space-y-4" onSubmit={submitRoleAssignment}>
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr_auto] lg:items-end">
+              <div>
+                <Label>Email đăng nhập</Label>
+                <Input required type="email" value={roleForm.email} onChange={(event) => setRoleForm((current) => ({ ...current, email: event.target.value }))} placeholder="giaovien@truong.edu.vn" />
+              </div>
+              <div>
+                <Label>Vai trò</Label>
+                <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={roleForm.role} onChange={(event) => setRoleForm((current) => ({ ...current, role: event.target.value as Role }))}>
+                  <option value="admin">Quản trị viên</option>
+                  <option value="bgh">Ban Giám Hiệu</option>
+                  <option value="totruong">Tổ trưởng bộ môn</option>
+                  <option value="giaovien">Giáo viên</option>
+                </select>
+              </div>
+              {roleForm.role === "bgh" ? (
+                <>
+                  <div>
+                    <Label>Chức vụ BGH</Label>
+                    <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={roleForm.bghPosition} onChange={(event) => setRoleForm((current) => ({ ...current, bghPosition: event.target.value as "hieutruong" | "phohieutruong" }))}>
+                      <option value="hieutruong">Hiệu trưởng</option>
+                      <option value="phohieutruong">Phó hiệu trưởng</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Cấp học phụ trách</Label>
+                    <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={roleForm.schoolLevel} onChange={(event) => setRoleForm((current) => ({ ...current, schoolLevel: event.target.value as "primary" | "secondary" | "all" }))}>
+                      <option value="secondary">THCS (Khối 6–9)</option>
+                      <option value="primary">Tiểu học (Khối 1–5)</option>
+                      <option value="all">Toàn trường (Cả 2 cấp)</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div className="lg:col-span-2">
+                  <Label>Bộ môn phụ trách</Label>
+                  <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={roleForm.role === "totruong"} value={roleForm.departmentId} onChange={(event) => setRoleForm((current) => ({ ...current, departmentId: event.target.value }))}>
+                    <option value="">{roleForm.role === "totruong" ? "Chọn bộ môn" : "Không bắt buộc"}</option>
+                    {departments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}
+                  </select>
+                </div>
+              )}
+              <Button loading={roleSubmitting} type="submit">Phân quyền</Button>
+            </div>
           </form>
           {roleError ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{roleError}</div> : null}
           {roleMessage ? <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{roleMessage}</div> : null}

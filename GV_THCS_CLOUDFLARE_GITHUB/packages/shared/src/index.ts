@@ -1,16 +1,18 @@
 import { z } from "zod";
 
-export const roles = ["admin", "totruong", "giaovien"] as const;
+export const roles = ["admin", "bgh", "totruong", "giaovien"] as const;
 export const teacherTypes = ["co_huu", "thinh_giang"] as const;
 export const activityStatuses = ["active", "inactive"] as const;
 export const schoolLevels = ["primary", "secondary"] as const;
 export const teachingRoles = ["chu_nhiem", "bo_mon", "ca_hai"] as const;
+export const bghPositions = ["hieutruong", "phohieutruong"] as const;
 
 export type Role = (typeof roles)[number];
 export type TeacherType = (typeof teacherTypes)[number];
 export type ActivityStatus = (typeof activityStatuses)[number];
 export type SchoolLevel = (typeof schoolLevels)[number];
 export type TeachingRole = (typeof teachingRoles)[number];
+export type BghPosition = (typeof bghPositions)[number];
 
 export interface AuditFields {
   createdAt?: unknown;
@@ -27,12 +29,15 @@ export interface AppUser extends AuditFields {
   role: Role;
   departmentId?: string;
   teacherId?: string;
+  bghPosition?: BghPosition;
+  schoolLevel?: SchoolLevel | "all";
 }
 
 export const roleSchema = z.enum(roles);
 export const teacherTypeSchema = z.enum(teacherTypes);
 export const schoolLevelSchema = z.enum(schoolLevels);
 export const teachingRoleSchema = z.enum(teachingRoles);
+export const bghPositionSchema = z.enum(bghPositions);
 export const teachingAssignmentSchema = z.object({
   subjectId: z.string().trim().min(1),
   gradeLevels: z.array(z.number().int().min(1).max(9)).min(1, "Chọn ít nhất một khối").max(9),
@@ -148,6 +153,8 @@ export const setUserRoleSchema = z.object({
   email: z.string().trim().email().optional(),
   role: roleSchema,
   departmentId: z.string().trim().optional(),
+  bghPosition: bghPositionSchema.optional(),
+  schoolLevel: z.enum(["primary", "secondary", "all"]).optional(),
 }).refine((value) => Boolean(value.uid || value.email), {
   message: "Cần cung cấp UID hoặc email người dùng.",
   path: ["email"],

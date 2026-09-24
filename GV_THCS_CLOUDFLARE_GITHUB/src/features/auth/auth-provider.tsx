@@ -131,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function dashboardPathForRole(role: Role) {
+  if (role === "bgh") return "/bgh/dashboard";
   if (role === "totruong") return "/totruong/dashboard";
   if (role === "giaovien") return "/teacher/dashboard";
   return "/dashboard";

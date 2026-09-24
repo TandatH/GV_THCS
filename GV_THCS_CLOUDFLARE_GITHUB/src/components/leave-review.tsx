@@ -126,6 +126,7 @@ function timeline(row: LeaveRow) {
 
 export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[] }) {
   const { claims, role } = useAuth();
+  const isReadOnly = role === "bgh";
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -292,9 +293,9 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
     <RoleGuard allowedRoles={allowedRoles}>
       <Shell>
         <PageHeader
-          eyebrow="Phê duyệt nghiệp vụ"
-          title="Đơn nghỉ dạy"
-          description="Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và xử lý bằng Cloud Function trong phạm vi được phân quyền."
+          eyebrow={isReadOnly ? "Ban Giám Hiệu theo dõi" : "Phê duyệt nghiệp vụ"}
+          title={isReadOnly ? "Theo dõi Đơn nghỉ dạy" : "Đơn nghỉ dạy"}
+          description={isReadOnly ? "Nắm bắt tình hình giáo viên xin nghỉ dạy, lý do và giáo viên dạy thay (chế độ chỉ xem)." : "Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và xử lý bằng Cloud Function trong phạm vi được phân quyền."}
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -346,7 +347,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                         <td>{attachments.length > 0 ? `${attachments.length} file` : "—"}</td>
                         <td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td>
                         <td>{formatDate(row.submittedAt || row.createdAt)}</td>
-                        <td><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => setDetail(row)}><FileText className="h-4 w-4" />Chi tiết</Button>{row.status === "cho_duyet" ? <Button size="sm" onClick={() => openReview(row, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button> : row.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(row, schedules).length > 0 ? <Button size="sm" variant="secondary" onClick={() => openReview(row, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại</Button> : null}</div></td>
+                        <td><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => setDetail(row)}><FileText className="h-4 w-4" />Chi tiết</Button>{!isReadOnly && row.status === "cho_duyet" ? <Button size="sm" onClick={() => openReview(row, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button> : !isReadOnly && row.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(row, schedules).length > 0 ? <Button size="sm" variant="secondary" onClick={() => openReview(row, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại</Button> : null}</div></td>
                       </tr>
                     );
                   })}
@@ -356,7 +357,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           )}
         </Card>
 
-        <Modal open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)} title="Chi tiết đơn nghỉ" description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ." wide footer={detail?.status === "cho_duyet" ? <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}><XCircle className="h-4 w-4" />Từ chối</Button><Button onClick={() => openReview(detail, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button></div> : detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? <div className="flex justify-end"><Button onClick={() => openReview(detail, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn</Button></div> : undefined}>
+        <Modal open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)} title="Chi tiết đơn nghỉ" description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ." wide footer={!isReadOnly && detail?.status === "cho_duyet" ? <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}><XCircle className="h-4 w-4" />Từ chối</Button><Button onClick={() => openReview(detail, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button></div> : !isReadOnly && detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? <div className="flex justify-end"><Button onClick={() => openReview(detail, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn</Button></div> : undefined}>
           {detail ? (
             <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
               <div className="space-y-3 text-sm">

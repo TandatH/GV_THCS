@@ -65,6 +65,16 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/admin/payroll", label: "Chấm công và bảng lương", icon: WalletCards },
     { href: "/admin/settings", label: "Cài đặt", icon: Settings },
   ],
+  bgh: [
+    { href: "/bgh/dashboard", label: "Tổng quan", icon: LayoutDashboard },
+    { href: "/bgh/schedules", label: "Thời khóa biểu", icon: CalendarDays },
+    { href: "/bgh/teachers", label: "Giáo viên", icon: UsersRound },
+    { href: "/bgh/classes", label: "Lớp học", icon: GraduationCap },
+    { href: "/bgh/subjects", label: "Môn học", icon: BookOpen },
+    { href: "/bgh/rooms", label: "Phòng học", icon: DoorOpen },
+    { href: "/bgh/leave-requests", label: "Đơn nghỉ", icon: CalendarClock },
+    { href: "/bgh/evaluations", label: "Đánh giá", icon: Star },
+  ],
   totruong: [
     { href: "/totruong/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/totruong/teachers", label: "Giáo viên trong tổ", icon: UsersRound },
@@ -87,14 +97,29 @@ const menuByRole: Record<Role, MenuItem[]> = {
 
 const roleLabel: Record<Role, string> = {
   admin: "Quản trị viên",
+  bgh: "Ban Giám Hiệu",
   totruong: "Tổ trưởng bộ môn",
   giaovien: "Giáo viên",
 };
 
+function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | null) {
+  if (!role) return "Chưa cấp quyền";
+  if (role === "bgh") {
+    const position = claims?.bghPosition === "hieutruong" ? "Hiệu trưởng" : "Phó Hiệu trưởng";
+    const level = claims?.schoolLevel === "primary"
+      ? "Tiểu học"
+      : claims?.schoolLevel === "secondary"
+        ? "THCS"
+        : "Toàn trường";
+    return `${position} (${level})`;
+  }
+  return roleLabel[role];
+}
+
 function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { role, user, signOutUser } = useAuth();
+  const { claims, role, user, signOutUser } = useAuth();
   const items = role ? menuByRole[role] : [];
 
   async function logout() {
@@ -161,7 +186,7 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
             {!collapsed || mobile ? (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{user?.displayName || user?.email || "Tài khoản"}</p>
-                <p className="truncate text-xs text-slate-400">{role ? roleLabel[role] : "Chưa cấp quyền"}</p>
+                <p className="truncate text-xs text-slate-400">{formatRoleLabel(role, claims)}</p>
               </div>
             ) : null}
           </div>

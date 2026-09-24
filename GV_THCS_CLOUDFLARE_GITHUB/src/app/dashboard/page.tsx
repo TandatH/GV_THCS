@@ -13,6 +13,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -92,6 +93,7 @@ async function countCollection(collectionName: string, constraints: QueryConstra
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { claims, loading: authLoading, role, user } = useAuth();
   const [stats, setStats] = useState<DashboardStat[]>([]);
   const [setupStats, setSetupStats] = useState<DashboardStat[]>([]);
@@ -99,6 +101,12 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const uid = user?.uid ?? null;
   const departmentId = claimString(claims, "departmentId");
+
+  useEffect(() => {
+    if (!authLoading && role === "bgh") {
+      router.replace("/bgh/dashboard");
+    }
+  }, [authLoading, role, router]);
 
   const quickActions = useMemo(() => {
     if (role === "admin") {
@@ -203,7 +211,7 @@ export default function DashboardPage() {
   const setupIncomplete = role === "admin" && setupStats.some((item) => item.value === 0);
 
   return (
-    <RoleGuard allowedRoles={["admin", "totruong", "giaovien"]}>
+    <RoleGuard allowedRoles={["admin", "bgh", "totruong", "giaovien"]}>
       <Shell>
         <PageHeader
           eyebrow="Bảng điều khiển"

@@ -569,6 +569,7 @@ function formatWeekRange(weekStart: string) {
 export default function SchedulesPage() {
   const { role, claims, loading: authLoading } = useAuth();
   const managerDepartmentId = typeof claims?.departmentId === "string" ? claims.departmentId : "";
+  const bghSchoolLevel = typeof claims?.schoolLevel === "string" ? claims.schoolLevel : "secondary";
 
   // Data states
   const [rows, setRows] = useState<ScheduleRow[]>([]);
@@ -627,6 +628,13 @@ export default function SchedulesPage() {
   const [applying, setApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState<{ current: number; total: number; message: string } | null>(null);
   const [applyError, setApplyError] = useState("");
+
+  // Sync school level for bgh
+  useEffect(() => {
+    if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+      setSelectedSchoolLevel(bghSchoolLevel);
+    }
+  }, [role, bghSchoolLevel]);
 
   // Sync manager department for totruong
   useEffect(() => {
@@ -1370,36 +1378,40 @@ export default function SchedulesPage() {
   }, [applyScope, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
 
   return (
-    <RoleGuard allowedRoles={["admin", "totruong"]}>
+    <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow={role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
-          title={role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
-          description="Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."
+          eyebrow={role === "bgh" ? "Ban Giám Hiệu theo dõi" : role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
+          title={role === "bgh" ? `Thời khóa biểu ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "Toàn trường"}` : role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
+          description={role === "bgh" ? "Chế độ xem và xuất thời khóa biểu dành cho Ban Giám Hiệu. Dữ liệu được giới hạn trong phạm vi cấp học phụ trách." : "Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setApplyError("");
-                  setApplyModalOpen(true);
-                }}
-                className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
-              >
-                <CalendarSync className="h-4 w-4 text-indigo-600" />
-                Áp dụng cho tuần sau
-              </Button>
+              {role !== "bgh" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setApplyError("");
+                    setApplyModalOpen(true);
+                  }}
+                  className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
+                >
+                  <CalendarSync className="h-4 w-4 text-indigo-600" />
+                  Áp dụng cho tuần sau
+                </Button>
+              )}
               {role === "admin" ? (
-                <>
-                  <Button variant="secondary" asChild>
-                    <a href="/admin/ai-scheduler/"><Sparkles className="h-4 w-4 text-amber-500" />AI xếp lịch</a>
-                  </Button>
-                  <Button variant="secondary" onClick={() => { setExportError(""); setExportOpen(true); }}>
-                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />Xuất TKB học sinh
-                  </Button>
-                </>
+                <Button variant="secondary" asChild>
+                  <a href="/admin/ai-scheduler/"><Sparkles className="h-4 w-4 text-amber-500" />AI xếp lịch</a>
+                </Button>
               ) : null}
-              <Button onClick={() => openCreate()}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
+              {(role === "admin" || role === "bgh") && (
+                <Button variant="secondary" onClick={() => { setExportError(""); setExportOpen(true); }}>
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />Xuất TKB học sinh
+                </Button>
+              )}
+              {role !== "bgh" && (
+                <Button onClick={() => openCreate()}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
+              )}
             </div>
           )}
         />
@@ -2629,7 +2641,7 @@ export default function SchedulesPage() {
           onOpenChange={(next) => !next && setDetail(null)}
           title="Chi tiết lịch dạy"
           description="Lịch sử hủy được giữ lại để đối chiếu; thao tác hủy sẽ giải phóng toàn bộ khóa tài nguyên."
-          footer={detail ? (
+          footer={detail && role !== "bgh" ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" loading={cancelling} onClick={() => void cancelSelectedSchedule(detail)}>
                 <Trash2 className="h-4 w-4" />Hủy lịch
