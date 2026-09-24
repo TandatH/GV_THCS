@@ -318,7 +318,7 @@ export default function TeachersPage() {
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
     return rows.filter((row) => {
-      const matchesKeyword = !keyword || [row.fullName, row.email, row.phone, row.departmentId, row.specialization]
+      const matchesKeyword = !keyword || [row.fullName, row.teacherCode, row.email, row.phone, row.departmentId, row.specialization]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("vi").includes(keyword));
       const matchesType = typeFilter === "all" || row.teacherType === typeFilter;
@@ -591,9 +591,9 @@ export default function TeachersPage() {
   async function copyTeacherId(teacherId: string) {
     try {
       await navigator.clipboard.writeText(teacherId);
-      toast.success("Đã copy ID giáo viên.");
+      toast.success("Đã copy mã giáo viên.");
     } catch {
-      toast.error("Không thể copy tự động. Bạn có thể bôi đen ID để copy thủ công.");
+      toast.error("Không thể copy tự động. Bạn có thể bôi đen mã để copy thủ công.");
     }
   }
 
@@ -833,13 +833,72 @@ export default function TeachersPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[1540px]">
-                <thead><tr><th>ID giáo viên</th><th>Giáo viên</th><th>Bộ môn</th><th>Cấp học</th><th>Vai trò</th><th>Loại</th><th>Chuyên môn</th><th>Định mức / đơn giá</th><th>Mật khẩu tạm</th><th>Đổi MK</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Mã giáo viên</th>
+                    <th>Giáo viên</th>
+                    <th>Bộ môn</th>
+                    <th>Cấp học</th>
+                    <th>Vai trò</th>
+                    <th>Loại</th>
+                    <th>Chuyên môn</th>
+                    <th>Định mức / đơn giá</th>
+                    <th>Mật khẩu tạm</th>
+                    <th>Đổi MK</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const status = teacherStatus(row.status);
+                    const teacherDisplayCode = row.teacherCode ? String(row.teacherCode).trim() : row.id;
                     return (
                       <tr key={row.id}>
-                        <td><div className="flex items-center gap-2"><code className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold">{row.id}</code><Button size="sm" variant="ghost" onClick={() => copyTeacherId(row.id)} aria-label="Copy ID giáo viên"><Copy className="h-4 w-4" /></Button></div></td>
+                        {/* 1. Mã giáo viên */}
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <code
+                              className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800 border border-blue-200"
+                              title={`Mã: ${row.teacherCode || "Chưa đặt"}\nID Firestore: ${row.id}`}
+                            >
+                              {teacherDisplayCode}
+                            </code>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => copyTeacherId(teacherDisplayCode)}
+                              aria-label="Copy mã giáo viên"
+                              title="Copy mã giáo viên"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+
+                        {/* 2. Thông tin giáo viên */}
+                        <td>
+                          <div className="flex items-center gap-3">
+                            {row.avatarUrl ? (
+                              <img
+                                alt={row.fullName || "GV"}
+                                className="h-10 w-10 rounded-full object-cover ring-1 ring-border shrink-0"
+                                src={String(row.avatarUrl)}
+                              />
+                            ) : (
+                              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">
+                                {initials(row.fullName)}
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-bold text-foreground">{row.fullName || "—"}</p>
+                              <p className="text-xs text-muted-foreground">{row.email || "—"}</p>
+                              {row.phone ? <p className="text-xs text-muted-foreground">{row.phone}</p> : null}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 3. Bộ môn */}
                         <td>
                           <div>
                             <p className="font-semibold">{catalogName(departments, row.departmentId) || "—"}</p>
@@ -850,16 +909,113 @@ export default function TeachersPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td>{teachingRoleLabel(row.teachingRole)}</td>
-                        <td><Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>{row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}</Badge></td>
-                        <td><p className="max-w-52 truncate">{row.specialization || "—"}</p><p className="text-xs text-muted-foreground">{row.degree || ""}</p></td>
-                        <td>{row.teacherType === "co_huu" ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần` : formatCurrency(Number(row.ratePerPeriod || 0)) + "/tiết"}</td>
+
+                        {/* 4. Cấp học */}
                         <td>
-                          {temporaryPasswords[row.id] ? <div className="flex items-center gap-1"><code className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">{temporaryPasswords[row.id]}</code><Button size="sm" variant="ghost" onClick={() => copyTemporaryPassword(temporaryPasswords[row.id])} aria-label="Copy mật khẩu tạm"><Copy className="h-4 w-4" /></Button></div> : <span className="text-xs text-muted-foreground">Không thể đọc MK hiện tại</span>}
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(row.schoolLevels) ? row.schoolLevels : []).map((lvl: string) => (
+                              <Badge key={lvl} tone={lvl === "primary" ? "info" : "neutral"}>
+                                {lvl === "primary" ? "Tiểu học" : "THCS"}
+                              </Badge>
+                            ))}
+                          </div>
                         </td>
-                        <td><Badge tone={row.mustChangePassword === true ? "warning" : "success"}>{row.mustChangePassword === true ? "Phải đổi MK" : "Đã đổi / bình thường"}</Badge></td>
-                        <td><Badge tone={status.tone}>{status.label}</Badge></td>
-                        <td><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => openEdit(row)}><PencilLine className="h-4 w-4" />Sửa</Button><Button size="sm" variant="danger" loading={deletingTeacherId === row.id} onClick={() => void deleteTeacher(row)}><Trash2 className="h-4 w-4" />Xóa</Button><Button size="sm" variant="secondary" loading={resettingTeacherId === row.id} onClick={() => resetPasswordForTeacher(row)}><RotateCcw className="h-4 w-4" />Reset MK</Button><Button size="sm" variant="secondary" onClick={() => { setAvatarTarget(row); setAvatarFile(null); setAvatarError(""); }}><ImagePlus className="h-4 w-4" />Ảnh</Button></div></td>
+
+                        {/* 5. Vai trò */}
+                        <td>{teachingRoleLabel(row.teachingRole)}</td>
+
+                        {/* 6. Loại giáo viên */}
+                        <td>
+                          <Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>
+                            {row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}
+                          </Badge>
+                        </td>
+
+                        {/* 7. Chuyên môn */}
+                        <td>
+                          <p className="max-w-52 truncate">{row.specialization || "—"}</p>
+                          <p className="text-xs text-muted-foreground">{row.degree || ""}</p>
+                        </td>
+
+                        {/* 8. Định mức / đơn giá */}
+                        <td>
+                          {row.teacherType === "co_huu"
+                            ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần`
+                            : `${formatCurrency(Number(row.ratePerPeriod || 0))}/tiết`}
+                        </td>
+
+                        {/* 9. Mật khẩu tạm */}
+                        <td>
+                          {temporaryPasswords[row.id] ? (
+                            <div className="flex items-center gap-1">
+                              <code className="rounded-lg bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">
+                                {temporaryPasswords[row.id]}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => copyTemporaryPassword(temporaryPasswords[row.id])}
+                                aria-label="Copy mật khẩu tạm"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Không thể đọc MK hiện tại</span>
+                          )}
+                        </td>
+
+                        {/* 10. Trạng thái đổi MK */}
+                        <td>
+                          <Badge tone={row.mustChangePassword === true ? "warning" : "success"}>
+                            {row.mustChangePassword === true ? "Phải đổi MK" : "Đã đổi / bình thường"}
+                          </Badge>
+                        </td>
+
+                        {/* 11. Trạng thái hoạt động */}
+                        <td>
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                        </td>
+
+                        {/* 12. Thao tác */}
+                        <td>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>
+                              <PencilLine className="h-4 w-4" />
+                              Sửa
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              loading={deletingTeacherId === row.id}
+                              onClick={() => void deleteTeacher(row)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Xóa
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              loading={resettingTeacherId === row.id}
+                              onClick={() => resetPasswordForTeacher(row)}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                              Reset MK
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setAvatarTarget(row);
+                                setAvatarFile(null);
+                                setAvatarError("");
+                              }}
+                            >
+                              <ImagePlus className="h-4 w-4" />
+                              Ảnh
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
