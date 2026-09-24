@@ -603,7 +603,7 @@ export default function SchedulesPage() {
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [selectedSchoolLevel, setSelectedSchoolLevel] = useState<string>("");
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>(managerDepartmentId || "");
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("matrix");
 
@@ -652,6 +652,8 @@ export default function SchedulesPage() {
   useEffect(() => {
     if (role === "totruong" && managerDepartmentId) {
       setSelectedDepartmentId(managerDepartmentId);
+    } else {
+      setSelectedDepartmentId("");
     }
   }, [role, managerDepartmentId]);
 
@@ -712,18 +714,36 @@ export default function SchedulesPage() {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [authLoading, managerDepartmentId, role]);
 
+  // Filtered lists based on secondary filters
+  const filteredCatalogClasses = useMemo(() => {
+    return classes.filter((cls) => {
+      if (selectedSchoolLevel && catalogSchoolLevel(cls) !== selectedSchoolLevel) return false;
+      return true;
+    });
+  }, [classes, selectedSchoolLevel]);
+
+  const filteredCatalogTeachers = useMemo(() => {
+    return teachers.filter((teacher) => {
+      if (selectedDepartmentId && teacher.departmentId !== selectedDepartmentId) return false;
+      if (selectedSchoolLevel && !teacherSchoolLevels(teacher).includes(selectedSchoolLevel)) return false;
+      return true;
+    });
+  }, [teachers, selectedDepartmentId, selectedSchoolLevel]);
+
   // Auto select default class/teacher when catalogs load
   useEffect(() => {
-    if (!selectedClassId && classes.length > 0) {
-      setSelectedClassId(classes[0].id);
+    const list = filteredCatalogClasses.length > 0 ? filteredCatalogClasses : classes;
+    if (list.length > 0 && (!selectedClassId || !list.some((c) => c.id === selectedClassId))) {
+      setSelectedClassId(list[0].id);
     }
-  }, [classes, selectedClassId]);
+  }, [classes, filteredCatalogClasses, selectedClassId]);
 
   useEffect(() => {
-    if (!selectedTeacherId && teachers.length > 0) {
-      setSelectedTeacherId(teachers[0].id);
+    const list = filteredCatalogTeachers.length > 0 ? filteredCatalogTeachers : teachers;
+    if (list.length > 0 && (!selectedTeacherId || !list.some((t) => t.id === selectedTeacherId))) {
+      setSelectedTeacherId(list[0].id);
     }
-  }, [teachers, selectedTeacherId]);
+  }, [teachers, filteredCatalogTeachers, selectedTeacherId]);
 
   useEffect(() => {
     if (!selectedRoomId && rooms.length > 0) {
@@ -757,22 +777,6 @@ export default function SchedulesPage() {
       },
     );
   }, [authLoading, role]);
-
-  // Filtered lists based on secondary filters
-  const filteredCatalogClasses = useMemo(() => {
-    return classes.filter((cls) => {
-      if (selectedSchoolLevel && catalogSchoolLevel(cls) !== selectedSchoolLevel) return false;
-      return true;
-    });
-  }, [classes, selectedSchoolLevel]);
-
-  const filteredCatalogTeachers = useMemo(() => {
-    return teachers.filter((teacher) => {
-      if (selectedDepartmentId && teacher.departmentId !== selectedDepartmentId) return false;
-      if (selectedSchoolLevel && !teacherSchoolLevels(teacher).includes(selectedSchoolLevel)) return false;
-      return true;
-    });
-  }, [teachers, selectedDepartmentId, selectedSchoolLevel]);
 
   // Filter schedules for the current active view
   const currentWeekSchedules = useMemo(() => {
@@ -1867,7 +1871,7 @@ export default function SchedulesPage() {
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   {viewScope === "class"
-                    ? `Cấp: ${selectedClassLevel === "primary" ? "Tiểu học" : "THCS"}`
+                    ? `Cấp: ${activeLevelForSlots === "primary" ? "Tiểu học" : "THCS"}`
                     : `Bộ môn: ${catalogName(departments, teachers.find((t) => t.id === selectedTeacherId)?.departmentId) || "—"}`}
                 </p>
               </div>
