@@ -36,6 +36,7 @@ type FormState = {
   email: string;
   phone: string;
   departmentId: string;
+  homeroomDepartmentId: string;
   subjectIds: string[];
   schoolLevels: SchoolLevel[];
   teachingRole: TeachingRole;
@@ -65,6 +66,7 @@ const initialForm: FormState = {
   email: "",
   phone: "",
   departmentId: "",
+  homeroomDepartmentId: "",
   subjectIds: [],
   schoolLevels: ["secondary"],
   teachingRole: "bo_mon",
@@ -217,6 +219,7 @@ function formFromTeacher(row: TeacherRow, subjects: CatalogRow[]): FormState {
     email: textValue(row.email),
     phone: textValue(row.phone),
     departmentId: textValue(row.departmentId),
+    homeroomDepartmentId: textValue(row.homeroomDepartmentId),
     subjectIds,
     schoolLevels,
     teachingRole: row.teachingRole === "chu_nhiem" || row.teachingRole === "ca_hai" ? row.teachingRole : "bo_mon",
@@ -330,9 +333,16 @@ export default function TeachersPage() {
     [departments, form.schoolLevels],
   );
 
+  const teacherDepartmentIds = useMemo(() => {
+    return [form.departmentId, form.homeroomDepartmentId].filter(Boolean);
+  }, [form.departmentId, form.homeroomDepartmentId]);
+
   const availableSubjects = useMemo(
-    () => subjects.filter((subject) => (!form.departmentId || subject.departmentId === form.departmentId) && subjectMatchesSchoolLevels(subject, form.schoolLevels)),
-    [form.departmentId, form.schoolLevels, subjects],
+    () => subjects.filter((subject) => {
+      const matchesDept = teacherDepartmentIds.length === 0 || teacherDepartmentIds.includes(subject.departmentId);
+      return matchesDept && subjectMatchesSchoolLevels(subject, form.schoolLevels);
+    }),
+    [teacherDepartmentIds, form.schoolLevels, subjects],
   );
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -355,12 +365,44 @@ export default function TeachersPage() {
       const nextSubjectIds = current.subjectIds.filter((subjectId) => nextAssignments.some((assignment) => assignment.subjectId === subjectId));
       const currentDepartment = departments.find((item) => item.id === current.departmentId);
       const departmentId = currentDepartment && departmentMatchesSchoolLevels(currentDepartment, nextLevels) ? current.departmentId : "";
-      return { ...current, schoolLevels: nextLevels, departmentId, subjectIds: departmentId ? nextSubjectIds : [], teachingAssignments: departmentId ? nextAssignments : [] };
+      const homeroomDept = departments.find((item) => item.id === current.homeroomDepartmentId);
+      const homeroomDepartmentId = homeroomDept && nextLevels.includes("secondary") ? current.homeroomDepartmentId : "";
+      return { ...current, schoolLevels: nextLevels, departmentId, homeroomDepartmentId, subjectIds: departmentId ? nextSubjectIds : [], teachingAssignments: departmentId ? nextAssignments : [] };
     });
   }
 
   function selectDepartment(departmentId: string) {
-    setForm((current) => ({ ...current, departmentId, subjectIds: [], teachingAssignments: [] }));
+    setForm((current) => {
+      const activeDeptIds = [departmentId, current.homeroomDepartmentId].filter(Boolean);
+      const remainingSubjectIds = current.subjectIds.filter((id) => {
+        const sub = subjects.find((s) => s.id === id);
+        return sub && (activeDeptIds.length === 0 || activeDeptIds.includes(sub.departmentId));
+      });
+      const remainingAssignments = current.teachingAssignments.filter((a) => remainingSubjectIds.includes(a.subjectId));
+      return {
+        ...current,
+        departmentId,
+        subjectIds: remainingSubjectIds,
+        teachingAssignments: remainingAssignments,
+      };
+    });
+  }
+
+  function selectHomeroomDepartment(homeroomDepartmentId: string) {
+    setForm((current) => {
+      const activeDeptIds = [current.departmentId, homeroomDepartmentId].filter(Boolean);
+      const remainingSubjectIds = current.subjectIds.filter((id) => {
+        const sub = subjects.find((s) => s.id === id);
+        return sub && (activeDeptIds.length === 0 || activeDeptIds.includes(sub.departmentId));
+      });
+      const remainingAssignments = current.teachingAssignments.filter((a) => remainingSubjectIds.includes(a.subjectId));
+      return {
+        ...current,
+        homeroomDepartmentId,
+        subjectIds: remainingSubjectIds,
+        teachingAssignments: remainingAssignments,
+      };
+    });
   }
 
   function toggleSubject(subject: CatalogRow, checked: boolean) {
@@ -451,6 +493,7 @@ export default function TeachersPage() {
         email: form.email.trim(),
         phone: form.phone.trim(),
         departmentId: form.isTeaching ? form.departmentId : (availableDepartments[0]?.id || "dept_general"),
+        homeroomDepartmentId: (form.isTeaching && form.schoolLevels.includes("secondary")) ? form.homeroomDepartmentId : "",
         subjectIds: form.isTeaching ? form.subjectIds : [],
         schoolLevels: form.isTeaching ? form.schoolLevels : [form.accountBghLevel === "primary" ? "primary" : "secondary"],
         teachingRole: form.isTeaching ? form.teachingRole : "bo_mon",
@@ -797,9 +840,16 @@ export default function TeachersPage() {
                     return (
                       <tr key={row.id}>
                         <td><div className="flex items-center gap-2"><code className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold">{row.id}</code><Button size="sm" variant="ghost" onClick={() => copyTeacherId(row.id)} aria-label="Copy ID giáo viên"><Copy className="h-4 w-4" /></Button></div></td>
-                        <td><div className="flex items-center gap-3">{row.avatarUrl ? <img alt={row.fullName || "Giáo viên"} className="h-10 w-10 rounded-full object-cover ring-1 ring-border" src={String(row.avatarUrl)} /> : <div className="grid h-10 w-10 place-items-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{initials(row.fullName)}</div>}<div><p className="font-semibold">{row.fullName || "Chưa cập nhật"}</p><p className="text-xs text-muted-foreground">{row.email || row.phone || row.id}</p></div></div></td>
-                        <td>{catalogName(departments, row.departmentId) || "—"}</td>
-                        <td><Badge tone={normalizeSchoolLevels(row.schoolLevels).includes("primary") ? "success" : "info"}>{schoolLevelLabel(row.schoolLevels)}</Badge></td>
+                        <td>
+                          <div>
+                            <p className="font-semibold">{catalogName(departments, row.departmentId) || "—"}</p>
+                            {row.homeroomDepartmentId ? (
+                              <span className="inline-block mt-0.5 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700 border border-purple-200">
+                                GVCN: {catalogName(departments, row.homeroomDepartmentId) || row.homeroomDepartmentId}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                         <td>{teachingRoleLabel(row.teachingRole)}</td>
                         <td><Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>{row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}</Badge></td>
                         <td><p className="max-w-52 truncate">{row.specialization || "—"}</p><p className="text-xs text-muted-foreground">{row.degree || ""}</p></td>
@@ -917,8 +967,31 @@ export default function TeachersPage() {
                 </div>
                 <div><Label>Mã giáo viên</Label><Input value={form.teacherCode} onChange={(e) => setField("teacherCode", e.target.value.toUpperCase())} placeholder="Để trống để hệ thống tự tạo" /></div>
                 <div><Label>Cơ sở chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={form.isTeaching || Boolean(editingTeacher)} value={form.campusId} onChange={(e) => setField("campusId", e.target.value)}><option value="">Chọn cơ sở</option>{campuses.map((row) => <option key={row.id} value={row.id}>{catalogName(campuses, row.id)}</option>)}</select></div>
-                <div><Label>Bộ môn / tổ chuyên môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={form.isTeaching || Boolean(editingTeacher)} value={form.departmentId} onChange={(e) => selectDepartment(e.target.value)}><option value="">Chọn bộ môn</option>{availableDepartments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
+                <div><Label>Bộ môn / tổ chuyên môn chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={form.isTeaching || Boolean(editingTeacher)} value={form.departmentId} onChange={(e) => selectDepartment(e.target.value)}><option value="">Chọn bộ môn</option>{availableDepartments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
                 <div><Label>Vai trò giảng dạy</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teachingRole} onChange={(e) => setField("teachingRole", e.target.value as TeachingRole)}><option value="chu_nhiem">Giáo viên chủ nhiệm</option><option value="bo_mon">Giáo viên bộ môn</option><option value="ca_hai">Chủ nhiệm + bộ môn</option></select></div>
+                {form.schoolLevels.includes("secondary") ? (
+                  <div className="sm:col-span-2 rounded-xl border-2 border-purple-200 bg-purple-50/60 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label>Tổ GVCN kiêm nhiệm (Cấp 2 - Dành cho tiết chủ nhiệm / SHL)</Label>
+                      <span className="text-xs font-semibold text-purple-700 bg-purple-100 rounded px-2 py-0.5">Tùy chọn</span>
+                    </div>
+                    <select
+                      className="h-11 w-full rounded-xl border border-purple-200 bg-white px-3 text-sm font-medium"
+                      value={form.homeroomDepartmentId}
+                      onChange={(e) => selectHomeroomDepartment(e.target.value)}
+                    >
+                      <option value="">— Không chọn (Chỉ thuộc tổ bộ môn chính) —</option>
+                      {departments.map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {catalogName(departments, row.id)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-purple-800">
+                      Khi chọn tổ GVCN, thầy/cô có thể chọn thêm các môn thuộc tổ GVCN (Sinh hoạt lớp, HĐTN...) bên dưới để phân công và xếp thời khóa biểu.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="sm:col-span-2">
                   <Label>Cấp học phân công giảng dạy</Label>
                   <div className="mt-1 flex flex-wrap gap-3 rounded-xl border border-border p-3">

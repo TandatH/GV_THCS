@@ -558,12 +558,16 @@ export default function AiSchedulerPage() {
       return;
     }
     const teacherDepartmentId = textValue(teacher.departmentId);
+    const teacherHomeroomDeptId = textValue(teacher.homeroomDepartmentId);
+    const teacherDepartmentIds = [teacherDepartmentId, teacherHomeroomDeptId].filter(Boolean);
     const subjectDepartmentId = textValue(subject.departmentId);
-    if (teacherDepartmentId && subjectDepartmentId && teacherDepartmentId !== subjectDepartmentId) {
-      setProposalError("Giáo viên và môn học không cùng tổ chuyên môn.");
+    if (teacherDepartmentIds.length > 0 && subjectDepartmentId && !teacherDepartmentIds.includes(subjectDepartmentId)) {
+      setProposalError("Giáo viên và môn học không cùng tổ chuyên môn hoặc tổ GVCN.");
       return;
     }
-    const departmentId = teacherDepartmentId || subjectDepartmentId;
+    const departmentId = (subjectDepartmentId && teacherDepartmentIds.includes(subjectDepartmentId))
+      ? subjectDepartmentId
+      : (teacherDepartmentId || subjectDepartmentId);
     if (!departmentId) {
       setProposalError("Giáo viên/môn học chưa được gán bộ môn.");
       return;

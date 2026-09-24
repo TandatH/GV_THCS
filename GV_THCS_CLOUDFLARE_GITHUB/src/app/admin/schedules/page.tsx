@@ -724,7 +724,7 @@ export default function SchedulesPage() {
 
   const filteredCatalogTeachers = useMemo(() => {
     return teachers.filter((teacher) => {
-      if (selectedDepartmentId && teacher.departmentId !== selectedDepartmentId) return false;
+      if (selectedDepartmentId && teacher.departmentId !== selectedDepartmentId && teacher.homeroomDepartmentId !== selectedDepartmentId) return false;
       if (selectedSchoolLevel && !teacherSchoolLevels(teacher).includes(selectedSchoolLevel)) return false;
       return true;
     });
@@ -942,6 +942,8 @@ export default function SchedulesPage() {
   // Form helpers & dependencies
   const selectedTeacher = useMemo(() => selectedCatalogRow(teachers, form.teacherId), [form.teacherId, teachers]);
   const teacherDepartmentId = textValue(selectedTeacher?.departmentId);
+  const teacherHomeroomDeptId = textValue(selectedTeacher?.homeroomDepartmentId);
+  const teacherDepartmentIds = useMemo(() => [teacherDepartmentId, teacherHomeroomDeptId].filter(Boolean), [teacherDepartmentId, teacherHomeroomDeptId]);
   const selectedSubject = useMemo(() => selectedCatalogRow(subjects, form.subjectId), [form.subjectId, subjects]);
   const subjectDepartmentId = textValue(selectedSubject?.departmentId);
   const selectedClass = useMemo(() => selectedCatalogRow(classes, form.classId), [classes, form.classId]);
@@ -1041,13 +1043,14 @@ export default function SchedulesPage() {
     [exportCandidateRows],
   );
 
-  const departmentSummary = teacherDepartmentId
-    ? `${catalogName(departments, teacherDepartmentId) || teacherDepartmentId}`
+  const departmentSummary = teacherDepartmentIds.length > 0
+    ? teacherDepartmentIds.map((id) => catalogName(departments, id) || id).join(" / ")
     : form.teacherId
       ? "Hồ sơ giáo viên chưa có bộ môn. Vui lòng cập nhật ở trang Giáo viên."
       : "Chọn giáo viên trước, hệ thống sẽ tự lấy bộ môn từ hồ sơ giáo viên.";
-  const subjectDepartmentWarning = form.teacherId && subjectDepartmentId && teacherDepartmentId && subjectDepartmentId !== teacherDepartmentId
-    ? `Môn học đang thuộc bộ môn ${catalogName(departments, subjectDepartmentId) || subjectDepartmentId}, khác bộ môn của giáo viên.`
+  const isSubjectDeptMatch = !subjectDepartmentId || teacherDepartmentIds.length === 0 || teacherDepartmentIds.includes(subjectDepartmentId);
+  const subjectDepartmentWarning = form.teacherId && subjectDepartmentId && !isSubjectDeptMatch
+    ? `Môn học đang thuộc bộ môn ${catalogName(departments, subjectDepartmentId) || subjectDepartmentId}, khác bộ môn của giáo viên (${departmentSummary}).`
     : "";
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -1085,13 +1088,31 @@ export default function SchedulesPage() {
       const next: FormState = { ...current, [key]: value };
       if (key === "teacherId") {
         const teacher = teachers.find((row) => row.id === value);
-        next.departmentId = textValue(teacher?.departmentId);
+        const tDept = textValue(teacher?.departmentId);
+        const tHomeDept = textValue(teacher?.homeroomDepartmentId);
+        const tDeptIds = [tDept, tHomeDept].filter(Boolean);
+        const currentSub = subjects.find((row) => row.id === next.subjectId);
+        const subDept = textValue(currentSub?.departmentId);
+        if (subDept && tDeptIds.includes(subDept)) {
+          next.departmentId = subDept;
+        } else {
+          next.departmentId = tDept;
+        }
         if (textValue(teacher?.campusId)) next.campusId = textValue(teacher?.campusId);
         if (teacher?.teacherType !== "thinh_giang") next.confirmationDeadline = "";
       }
-      if (key === "subjectId" && !next.teacherId && !next.departmentId) {
+      if (key === "subjectId") {
         const subject = subjects.find((row) => row.id === value);
-        if (textValue(subject?.departmentId)) next.departmentId = textValue(subject?.departmentId);
+        const subDept = textValue(subject?.departmentId);
+        const teacher = teachers.find((row) => row.id === next.teacherId);
+        const tDept = textValue(teacher?.departmentId);
+        const tHomeDept = textValue(teacher?.homeroomDepartmentId);
+        const tDeptIds = [tDept, tHomeDept].filter(Boolean);
+        if (subDept && tDeptIds.includes(subDept)) {
+          next.departmentId = subDept;
+        } else if (subDept && !next.teacherId && !next.departmentId) {
+          next.departmentId = subDept;
+        }
       }
       if (key === "classId") {
         const schoolClass = classes.find((row) => row.id === value);
@@ -1153,7 +1174,9 @@ export default function SchedulesPage() {
     setSubmitting(true);
     setFormError("");
     try {
-      const scheduleDepartmentId = teacherDepartmentId || form.departmentId;
+      const scheduleDepartmentId = (subjectDepartmentId && teacherDepartmentIds.includes(subjectDepartmentId))
+        ? subjectDepartmentId
+        : (teacherDepartmentId || form.departmentId);
       if (!scheduleDepartmentId) throw new Error("Hồ sơ giáo viên chưa có bộ môn. Vui lòng cập nhật bộ môn trước khi tạo lịch.");
       if (subjectDepartmentWarning) throw new Error(subjectDepartmentWarning);
       if (!subjectMatchesClass(selectedSubject, selectedClass)) throw new Error("Môn học không phù hợp với cấp học/khối của lớp đã chọn.");
