@@ -133,7 +133,16 @@ export async function createTeacherAccount(input: {
   schoolLevel?: "primary" | "secondary" | "all";
   isTeaching?: boolean;
 }) {
-  return (await createTeacherAccountCallable(input)).data;
+  const payload: Record<string, unknown> = {
+    teacher: input.teacher,
+    role: input.role || "giaovien",
+    isTeaching: input.isTeaching !== false,
+  };
+  if (input.password) payload.password = input.password;
+  if (input.bghPosition) payload.bghPosition = input.bghPosition;
+  if (input.schoolLevel) payload.schoolLevel = input.schoolLevel;
+
+  return (await createTeacherAccountCallable(payload as any)).data;
 }
 
 export async function createOrUpdateSchedule(input: ScheduleInput) {
@@ -157,7 +166,12 @@ export async function approveLeaveRequest(input: ApproveLeaveInput) {
 }
 
 export async function setUserRole(input: SetUserRoleInput) {
-  return (await setUserRoleCallable(input)).data;
+  const payload: Record<string, unknown> = { ...input };
+  if (!payload.bghPosition) delete payload.bghPosition;
+  if (!payload.schoolLevel) delete payload.schoolLevel;
+  if (!payload.departmentId) delete payload.departmentId;
+  if (!payload.teacherId) delete payload.teacherId;
+  return (await setUserRoleCallable(payload as SetUserRoleInput)).data;
 }
 
 export async function suggestSubstituteTeachers(scheduleId: string) {
