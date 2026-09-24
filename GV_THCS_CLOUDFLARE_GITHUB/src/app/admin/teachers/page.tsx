@@ -481,14 +481,24 @@ export default function TeachersPage() {
         setSuccessMessage("Đã cập nhật hồ sơ giáo viên.");
         toast.success("Đã cập nhật hồ sơ giáo viên.");
       } else {
-        const result = await createTeacherAccount({
+        const payload: {
+          teacher: TeacherInput;
+          password?: string;
+          role?: Role;
+          bghPosition?: "hieutruong" | "phohieutruong";
+          schoolLevel?: "primary" | "secondary" | "all";
+          isTeaching?: boolean;
+        } = {
           teacher,
           password: form.password || undefined,
           role: form.accountRole,
-          bghPosition: form.accountRole === "bgh" ? form.accountBghPosition : undefined,
-          schoolLevel: form.accountRole === "bgh" ? form.accountBghLevel : undefined,
           isTeaching: form.isTeaching,
-        });
+        };
+        if (form.accountRole === "bgh") {
+          payload.bghPosition = form.accountBghPosition;
+          payload.schoolLevel = form.accountBghLevel;
+        }
+        const result = await createTeacherAccount(payload);
         const temporaryPassword = form.password || "";
         if (temporaryPassword) {
           const id = result.teacherId || result.uid || "account";
