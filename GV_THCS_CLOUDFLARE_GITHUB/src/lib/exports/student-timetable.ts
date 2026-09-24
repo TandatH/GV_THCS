@@ -20,6 +20,15 @@ export type StudentTimetableWorkbook = {
   classNames: string[];
 };
 
+const DAY_LABELS: Record<number, string> = {
+  2: "THỨ HAI",
+  3: "THỨ BA",
+  4: "THỨ TƯ",
+  5: "THỨ NĂM",
+  6: "THỨ SÁU",
+  7: "THỨ BẢY",
+};
+
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
@@ -87,11 +96,14 @@ function timeSlotSchoolLevel(row: Row) {
   return explicit === "primary" || explicit === "secondary" ? explicit : "secondary";
 }
 
-function periodLabel(row: Row, fallback: number) {
+function periodLabel(row: Row, fallback: number): { name: string; time: string } {
   const name = text(row.name) || text(row.displayName) || `Tiết ${fallback}`;
   const start = text(row.startTime);
   const end = text(row.endTime);
-  return start && end ? `${name}\n${start}–${end}` : name;
+  return {
+    name,
+    time: start && end ? `${start} – ${end}` : "",
+  };
 }
 
 function safeSheetName(value: string, used: Set<string>) {
@@ -111,32 +123,98 @@ function safeSheetName(value: string, used: Set<string>) {
   return candidate;
 }
 
-function cell(value: string, style = "Content", mergeAcross = 0) {
-  const merge = mergeAcross > 0 ? ` ss:MergeAcross="${mergeAcross}"` : "";
-  return `<Cell ss:StyleID="${style}"${merge}><Data ss:Type="String">${xml(value)}</Data></Cell>`;
+function formatRoom(rawRoom: string) {
+  const r = (rawRoom || "").trim();
+  if (!r || r === "—" || r === "-" || r.toLowerCase() === "chưa rõ" || r.toLowerCase() === "chưa có") {
+    return "";
+  }
+  if (/^(phòng|p\.|sân|khu|nhà|hội trường|lab|bãi)/i.test(r)) {
+    return `(${r})`;
+  }
+  return `(Phòng ${r})`;
 }
 
-function scheduleCellText(schedule: Row, input: StudentTimetableExportInput, classRow?: Row) {
-  const subject = text(schedule.subjectName) || catalogName(input.subjects, schedule.subjectId) || "Môn học";
-  const teacher = text(schedule.teacherName)
-    || catalogName(input.teachers, schedule.actualTeacherId || schedule.teacherId)
-    || "Chưa rõ giáo viên";
-  let room = text(schedule.roomName) || catalogName(input.rooms, schedule.roomId);
-  if (!room && classRow) {
-    room = text(classRow.roomName) || catalogName(input.rooms, classRow.roomId);
+function findHomeroomTeacher(classRow: Row | undefined, classSchedules: Row[], input: StudentTimetableExportInput): string {
+  if (classRow) {
+    const directId = text(classRow.homeroomTeacherId) || text(classRow.teacherId) || text(classRow.advisorTeacherId);
+    if (directId) {
+      const found = catalogName(input.teachers, directId);
+      if (found && found !== directId) return found;
+    }
+    const directName = text(classRow.homeroomTeacherName) || text(classRow.teacherName);
+    if (directName) return directName;
   }
-  const roomDisplay = room ? `Phòng: ${room}` : "Phòng: —";
 
-  return [
-    `Môn: ${subject}`,
-    `GV: ${teacher}`,
-    roomDisplay,
-  ].join("\n");
+  const shlSchedule = classSchedules.find((s) => {
+    const sName = (text(s.subjectName) || catalogName(input.subjects, s.subjectId)).toLowerCase();
+    return sName.includes("sinh hoạt lớp") || sName.includes("chủ nhiệm") || sName.includes("shl");
+  });
+
+  if (shlSchedule) {
+    const tName = text(shlSchedule.teacherName) || catalogName(input.teachers, shlSchedule.actualTeacherId || shlSchedule.teacherId);
+    if (tName) return tName;
+  }
+
+  return "";
+}
+
+function findHomeroomRoom(classRow: Row | undefined, input: StudentTimetableExportInput): string {
+  if (!classRow) return "";
+  const rName = text(classRow.roomName) || catalogName(input.rooms, classRow.roomId);
+  if (!rName || rName === "—" || rName === "-") return "";
+  if (/^(phòng|p\.|sân|khu|nhà|hội trường|lab)/i.test(rName)) {
+    return rName;
+  }
+  return `Phòng ${rName}`;
+}
+
+function cleanClassName(rawName: string) {
+  return rawName.replace(/^lớp\s+/i, "").trim() || rawName;
+}
+
+function plainCell(value: string, style = "Content", mergeAcross = 0) {
+  const merge = mergeAcross > 0 ? ` ss:MergeAcross="${mergeAcross}"` : "";
+  const escaped = xml(value).replaceAll("\r\n", "&#10;").replaceAll("\n", "&#10;");
+  return `<Cell ss:StyleID="${style}"${merge}><Data ss:Type="String">${escaped}</Data></Cell>`;
+}
+
+function scheduleCellXml(matches: Row[], input: StudentTimetableExportInput, classRow?: Row) {
+  if (matches.length === 0) {
+    return `<Cell ss:StyleID="Empty"><Data ss:Type="String">—</Data></Cell>`;
+  }
+
+  const items = matches.map((schedule) => {
+    let subject = text(schedule.subjectName) || catalogName(input.subjects, schedule.subjectId) || "Môn học";
+    subject = subject.replace(/^môn:\s*/i, "").trim();
+
+    let teacher = text(schedule.teacherName)
+      || catalogName(input.teachers, schedule.actualTeacherId || schedule.teacherId)
+      || "";
+    teacher = teacher.replace(/^gv:\s*/i, "").trim();
+
+    let room = text(schedule.roomName) || catalogName(input.rooms, schedule.roomId);
+    if (!room && classRow) {
+      room = text(classRow.roomName) || catalogName(input.rooms, classRow.roomId);
+    }
+    room = room.replace(/^phòng:\s*/i, "").trim();
+    const formattedRoom = formatRoom(room);
+
+    let html = `<html:B><html:Font html:Color="#1E3A8A" html:Size="10">${xml(subject.toUpperCase())}</html:Font></html:B>`;
+    if (teacher) {
+      html += `&#10;<html:Font html:Color="#2563EB" html:Size="9">GV: ${xml(teacher)}</html:Font>`;
+    }
+    if (formattedRoom) {
+      html += `&#10;<html:Font html:Color="#64748B" html:Size="8.5">${xml(formattedRoom)}</html:Font>`;
+    }
+    return html;
+  });
+
+  const content = items.join('&#10;<html:Font html:Color="#CBD5E1">────────</html:Font>&#10;');
+  return `<Cell ss:StyleID="Content"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40">${content}</ss:Data></Cell>`;
 }
 
 export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput): StudentTimetableWorkbook {
   const monday = dateOnly(input.weekStart);
-  const friday = addDays(monday, 4);
   const activeSchedules = input.schedules.filter((schedule) =>
     schedule.status !== "cancelled"
     && text(schedule.weekStart) === input.weekStart
@@ -152,14 +230,20 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
   const classNames: string[] = [];
 
   const worksheets = classIds.map((classId) => {
-    const className = catalogName(input.classes, classId)
+    const rawClassName = catalogName(input.classes, classId)
       || text(activeSchedules.find((schedule) => text(schedule.classId) === classId)?.className)
       || classId;
-    classNames.push(className);
-    const sheetName = safeSheetName(className, usedSheetNames);
+    classNames.push(rawClassName);
+    const sheetName = safeSheetName(rawClassName, usedSheetNames);
     const classSchedules = activeSchedules.filter((schedule) => text(schedule.classId) === classId);
     const classRow = input.classes.find((item) => item.id === classId);
     const classLevel = text(classSchedules[0]?.schoolLevel) || rowSchoolLevel(classRow) || "secondary";
+
+    const hasSaturday = classSchedules.some((schedule) => Number(schedule.dayOfWeek) === 7);
+    const dayNumbers = [2, 3, 4, 5, 6];
+    if (hasSaturday) dayNumbers.push(7);
+    const lastDayDate = addDays(monday, dayNumbers[dayNumbers.length - 1] - 2);
+
     const configuredPeriods = input.timeSlots
       .filter((slot) => slot.isActive !== false && periodNumber(slot) > 0 && timeSlotSchoolLevel(slot) === classLevel)
       .sort((first, second) => periodNumber(first) - periodNumber(second));
@@ -172,50 +256,85 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
     const periods = Array.from({ length: maxPeriod }, (_, index) => index + 1);
     const periodRows = new Map(configuredPeriods.map((slot) => [periodNumber(slot), slot]));
 
-    const headerCells = [cell("Tiết", "Header")];
-    for (let day = 2; day <= 6; day += 1) {
-      headerCells.push(cell(`Thứ ${day}\n${viDate(addDays(monday, day - 2))}`, "Header"));
+    const colSpan = dayNumbers.length; // Merge across from 0..colSpan = colSpan + 1 columns
+    const halfCols = Math.floor(colSpan / 2);
+    const restCols = colSpan - halfCols - 1;
+
+    // Header row
+    const headerCells = [`<Cell ss:StyleID="Header"><Data ss:Type="String">TIẾT / GIỜ</Data></Cell>`];
+    for (const day of dayNumbers) {
+      const dayDate = addDays(monday, day - 2);
+      const dayTitle = DAY_LABELS[day] || `THỨ ${day}`;
+      const dateStr = viDate(dayDate);
+      headerCells.push(
+        `<Cell ss:StyleID="Header"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40"><html:B>${xml(dayTitle)}</html:B>&#10;<html:Font html:Size="9" html:Color="#DBEAFE">${xml(dateStr)}</html:Font></ss:Data></Cell>`,
+      );
     }
 
+    // Grid rows
     const rows: string[] = [];
     periods.forEach((period) => {
       const periodInfo = periodRows.get(period);
-      const values = [cell(periodInfo ? periodLabel(periodInfo, period) : `Tiết ${period}`, "Period")];
-      for (let day = 2; day <= 6; day += 1) {
+      const { name, time } = periodInfo ? periodLabel(periodInfo, period) : { name: `Tiết ${period}`, time: "" };
+
+      let periodHtml = `<html:B><html:Font html:Color="#1E3A8A" html:Size="9.5">${xml(name)}</html:Font></html:B>`;
+      if (time) {
+        periodHtml += `&#10;<html:Font html:Color="#64748B" html:Size="8.5">${xml(time)}</html:Font>`;
+      }
+      const periodCell = `<Cell ss:StyleID="Period"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40">${periodHtml}</ss:Data></Cell>`;
+
+      const dayCells = dayNumbers.map((day) => {
         const matches = classSchedules.filter((schedule) =>
           Number(schedule.dayOfWeek) === day
           && period >= Number(schedule.startPeriod || 0)
           && period < Number(schedule.endPeriod || 0),
         );
-        const content = matches.map((schedule) => scheduleCellText(schedule, input, classRow)).join("\n────────\n");
-        values.push(cell(content || "—", content ? "Content" : "Empty"));
-      }
-      rows.push(`<Row ss:Height="54">${values.join("")}</Row>`);
-      // Add lunch break divider after Period 5 if there are afternoon periods
+        return scheduleCellXml(matches, input, classRow);
+      });
+
+      rows.push(`<Row ss:Height="66">${periodCell}${dayCells.join("")}</Row>`);
+
+      // Lunch break divider
       if (period === 5 && periods.some((p) => p >= 6)) {
-        rows.push(`<Row ss:Height="22"><Cell ss:StyleID="SessionBreak" ss:MergeAcross="5"><Data ss:Type="String">── NGHỈ TRƯA ──</Data></Cell></Row>`);
+        rows.push(`<Row ss:Height="24"><Cell ss:StyleID="SessionBreak" ss:MergeAcross="${colSpan}"><Data ss:Type="String">── NGHỈ TRƯA ──</Data></Cell></Row>`);
       }
     });
 
+    // Subtitle information
+    const cleanedClassName = cleanClassName(rawClassName);
+    const homeroomTeacher = findHomeroomTeacher(classRow, classSchedules, input);
+    const homeroomRoom = findHomeroomRoom(classRow, input);
+
+    const subtitleParts: string[] = [`Lớp: ${cleanedClassName}`];
+    if (homeroomTeacher) subtitleParts.push(`GVCN: ${homeroomTeacher}`);
+    if (homeroomRoom) subtitleParts.push(`Phòng học: ${homeroomRoom}`);
+    subtitleParts.push(`Tuần áp dụng: ${viDate(monday)} – ${viDate(lastDayDate)}`);
+
+    const subtitleText = subtitleParts.join("   ·   ");
+    const schoolTitle = (text(input.schoolName) || "TRƯỜNG PHỔ THÔNG LIÊN CẤP").toUpperCase();
+
+    const columnDefinitions = [
+      `<Column ss:Width="95"/>`,
+      ...dayNumbers.map(() => `<Column ss:Width="185"/>`),
+    ].join("");
+
     return `<Worksheet ss:Name="${xml(sheetName)}">
       <Table>
-        <Column ss:Width="92"/>
-        <Column ss:Width="170"/><Column ss:Width="170"/><Column ss:Width="170"/>
-        <Column ss:Width="170"/><Column ss:Width="170"/>
-        <Row ss:Height="28">${cell(text(input.schoolName) || "TRƯỜNG PHỔ THÔNG LIÊN CẤP", "School", 5)}</Row>
-        <Row ss:Height="32">${cell("THỜI KHÓA BIỂU HỌC SINH", "Title", 5)}</Row>
-        <Row ss:Height="24">${cell(`Lớp: ${className} · Tuần áp dụng: ${viDate(monday)} – ${viDate(friday)}`, "Subtitle", 5)}</Row>
-        <Row ss:Height="36">${headerCells.join("")}</Row>
+        ${columnDefinitions}
+        <Row ss:Height="28">${plainCell(schoolTitle, "School", colSpan)}</Row>
+        <Row ss:Height="32">${plainCell("THỜI KHÓA BIỂU HỌC SINH", "Title", colSpan)}</Row>
+        <Row ss:Height="24">${plainCell(subtitleText, "Subtitle", colSpan)}</Row>
+        <Row ss:Height="38">${headerCells.join("")}</Row>
         ${rows.join("")}
-        <Row ss:Height="24">${cell("Ghi chú: Học sinh có mặt tại phòng học trước giờ học 15 phút. Vui lòng theo dõi thông báo của nhà trường khi có lịch điều chỉnh.", "Note", 5)}</Row>
+        <Row ss:Height="24">${plainCell("Ghi chú: Học sinh có mặt tại phòng học trước giờ học 15 phút. Khi có thay đổi về lịch học, nhà trường sẽ thông báo qua GVCN.", "Note", colSpan)}</Row>
         <Row ss:Height="16"/>
         <Row ss:Height="22">
-          <Cell ss:StyleID="SignLabel" ss:MergeAcross="2"><Data ss:Type="String">NGƯỜI LẬP BIỂU</Data></Cell>
-          <Cell ss:StyleID="SignLabel" ss:MergeAcross="2"><Data ss:Type="String">BAN GIÁM HIỆU DUYỆT</Data></Cell>
+          <Cell ss:StyleID="SignLabel" ss:MergeAcross="${halfCols}"><Data ss:Type="String">NGƯỜI LẬP BIỂU</Data></Cell>
+          <Cell ss:StyleID="SignLabel" ss:MergeAcross="${restCols}"><Data ss:Type="String">BAN GIÁM HIỆU DUYỆT</Data></Cell>
         </Row>
         <Row ss:Height="18">
-          <Cell ss:StyleID="SignSub" ss:MergeAcross="2"><Data ss:Type="String">(Ký và ghi rõ họ tên)</Data></Cell>
-          <Cell ss:StyleID="SignSub" ss:MergeAcross="2"><Data ss:Type="String">(Ký tên và đóng dấu)</Data></Cell>
+          <Cell ss:StyleID="SignSub" ss:MergeAcross="${halfCols}"><Data ss:Type="String">(Ký và ghi rõ họ tên)</Data></Cell>
+          <Cell ss:StyleID="SignSub" ss:MergeAcross="${restCols}"><Data ss:Type="String">(Ký tên và đóng dấu)</Data></Cell>
         </Row>
       </Table>
       <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
@@ -237,7 +356,7 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:html="http://www.w3.org/TR/REC-html40">
   <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
-    <Author>Hệ thống quản lý giáo viên</Author>
+    <Author>Hệ thống Quản lý Thời khóa biểu</Author>
     <Created>${new Date().toISOString()}</Created>
   </DocumentProperties>
   <ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
@@ -245,24 +364,87 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
     <ProtectStructure>False</ProtectStructure><ProtectWindows>False</ProtectWindows>
   </ExcelWorkbook>
   <Styles>
-    <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="10"/></Style>
-    <Style ss:ID="Border"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Borders>
-      <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-      <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-      <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-      <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#94A3B8"/>
-    </Borders></Style>
-    <Style ss:ID="School"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="12" ss:Bold="1" ss:Color="#1E3A8A"/></Style>
-    <Style ss:ID="Title"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#0F172A"/></Style>
-    <Style ss:ID="Subtitle"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="11" ss:Italic="1" ss:Color="#334155"/></Style>
-    <Style ss:ID="Header" ss:Parent="Border"><Font ss:FontName="Segoe UI" ss:Size="10.5" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1E40AF" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Period" ss:Parent="Border"><Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Bold="1" ss:Color="#1E3A8A"/><Interior ss:Color="#EEF2FF" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Content" ss:Parent="Border"><Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Color="#0F172A"/><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Empty" ss:Parent="Border"><Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Color="#94A3B8"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="SessionBreak"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#475569"/><Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Note"><Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/><Font ss:FontName="Segoe UI" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/></Style>
-    <Style ss:ID="SignLabel"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#1E293B"/></Style>
-    <Style ss:ID="SignSub"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Font ss:FontName="Segoe UI" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/></Style>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Alignment ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="10"/>
+    </Style>
+    <Style ss:ID="School">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="12" ss:Bold="1" ss:Color="#1E3A8A"/>
+    </Style>
+    <Style ss:ID="Title">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#0F172A"/>
+    </Style>
+    <Style ss:ID="Subtitle">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="10.5" ss:Italic="1" ss:Color="#334155"/>
+    </Style>
+    <Style ss:ID="Header">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="Period">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Color="#1E293B"/>
+      <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="Content">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Color="#0F172A"/>
+      <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="Empty">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#94A3B8"/>
+      <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="SessionBreak">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#CBD5E1"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="9.5" ss:Bold="1" ss:Italic="1" ss:Color="#475569"/>
+      <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="Note">
+      <Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/>
+      <Font ss:FontName="Segoe UI" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
+    </Style>
+    <Style ss:ID="SignLabel">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#1E293B"/>
+    </Style>
+    <Style ss:ID="SignSub">
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+      <Font ss:FontName="Segoe UI" ss:Size="9" ss:Italic="1" ss:Color="#64748B"/>
+    </Style>
   </Styles>
   ${worksheets}
 </Workbook>`;
