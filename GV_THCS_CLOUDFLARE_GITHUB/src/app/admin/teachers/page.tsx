@@ -487,7 +487,7 @@ export default function TeachersPage() {
           throw new Error("Mỗi môn giảng dạy cần có ít nhất một khối phụ trách.");
         }
       }
-      const teacher: TeacherInput = {
+      const teacher: TeacherInput & { homeroomDepartmentId?: string } = {
         teacherCode: form.isTeaching ? form.teacherCode.trim() : "",
         fullName: form.fullName.trim(),
         email: form.email.trim(),
