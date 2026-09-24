@@ -391,10 +391,18 @@ function schoolLevelForGrade(grade: number) {
   return "";
 }
 
+function inferGradeFromName(name: unknown): number {
+  const str = String(name ?? "").trim();
+  const match = /^([1-9])/.exec(str);
+  if (match) return Number(match[1]);
+  return 0;
+}
+
 function catalogSchoolLevel(row: CatalogRow | null | undefined) {
   const explicit = textValue(row?.schoolLevel);
   if (explicit === "primary" || explicit === "secondary") return explicit;
-  return schoolLevelForGrade(numericGrade(row?.grade ?? row?.gradeLevel));
+  const grade = numericGrade(row?.grade ?? row?.gradeLevel) || inferGradeFromName(row?.name ?? row?.code);
+  return schoolLevelForGrade(grade);
 }
 
 function timeSlotSchoolLevel(row: CatalogRow | null | undefined) {
@@ -411,6 +419,9 @@ function teacherSchoolLevels(teacher: CatalogRow | null | undefined) {
   if (Array.isArray(teacher?.schoolLevels)) {
     const levels = teacher.schoolLevels.map(String).filter((level) => level === "primary" || level === "secondary");
     if (levels.length > 0) return levels;
+  }
+  if (teacher?.schoolLevel === "primary" || teacher?.schoolLevel === "secondary") {
+    return [teacher.schoolLevel];
   }
   return ["secondary"];
 }
@@ -633,6 +644,7 @@ export default function SchedulesPage() {
   useEffect(() => {
     if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
       setSelectedSchoolLevel(bghSchoolLevel);
+      setExportSchoolName(bghSchoolLevel === "primary" ? "TRƯỜNG TIỂU HỌC" : "TRƯỜNG THCS");
     }
   }, [role, bghSchoolLevel]);
 
@@ -1007,12 +1019,17 @@ export default function SchedulesPage() {
       if (row.status === "cancelled") return false;
       if (textValue(row.weekStart) !== exportWeekStart) return false;
       if (exportClassId && textValue(row.classId) !== exportClassId) return false;
+      if (selectedSchoolLevel) {
+        const cls = classes.find((c) => c.id === row.classId);
+        const lvl = row.schoolLevel || catalogSchoolLevel(cls);
+        if (lvl && lvl !== selectedSchoolLevel) return false;
+      }
       if (!exportOnlyReady) return true;
       const confirmationStatus = textValue(row.confirmationStatus);
       return row.status !== "needs_attention"
         && !["cho_xac_nhan", "tu_choi", "qua_han", "da_huy"].includes(confirmationStatus);
     }),
-    [exportClassId, exportOnlyReady, exportWeekStart, rows],
+    [classes, exportClassId, exportOnlyReady, exportWeekStart, rows, selectedSchoolLevel],
   );
 
   const exportClassCount = useMemo(
@@ -1653,7 +1670,9 @@ export default function SchedulesPage() {
                   )}
                 >
                   <Building2 className="h-3.5 w-3.5" />
-                  Toàn trường
+                  {role === "bgh" && bghSchoolLevel !== "all"
+                    ? (bghSchoolLevel === "primary" ? "Toàn cấp Tiểu học" : "Toàn cấp THCS")
+                    : "Toàn trường"}
                 </button>
               </div>
 
@@ -1761,13 +1780,22 @@ export default function SchedulesPage() {
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">Cấp:</span>
                 <select
-                  className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+                  className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground font-semibold"
                   value={selectedSchoolLevel}
                   onChange={(e) => setSelectedSchoolLevel(e.target.value)}
+                  disabled={role === "bgh" && bghSchoolLevel !== "all"}
                 >
-                  <option value="">Tất cả cấp</option>
-                  <option value="primary">Tiểu học</option>
-                  <option value="secondary">THCS</option>
+                  {role === "bgh" && bghSchoolLevel !== "all" ? (
+                    <option value={bghSchoolLevel}>
+                      {bghSchoolLevel === "primary" ? "Tiểu học (Theo thẩm quyền BGH)" : "THCS (Theo thẩm quyền BGH)"}
+                    </option>
+                  ) : (
+                    <>
+                      <option value="">Tất cả cấp</option>
+                      <option value="primary">Tiểu học</option>
+                      <option value="secondary">THCS</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -1808,7 +1836,9 @@ export default function SchedulesPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setSelectedSchoolLevel("");
+                    if (role !== "bgh" || bghSchoolLevel === "all") {
+                      setSelectedSchoolLevel("");
+                    }
                     if (role === "admin") setSelectedDepartmentId("");
                     setSearchQuery("");
                   }}
@@ -2008,6 +2038,10 @@ export default function SchedulesPage() {
                                         );
                                       })}
                                     </div>
+                                  ) : role === "bgh" ? (
+                                    <div className="flex h-full min-h-[5.5rem] w-full items-center justify-center rounded-xl border border-dashed border-border/30 bg-muted/5 text-[11px] text-muted-foreground/30 font-medium">
+                                      —
+                                    </div>
                                   ) : (
                                     <button
                                       type="button"
@@ -2145,6 +2179,10 @@ export default function SchedulesPage() {
                                         );
                                       })}
                                     </div>
+                                  ) : role === "bgh" ? (
+                                    <div className="flex h-full min-h-[5.5rem] w-full items-center justify-center rounded-xl border border-dashed border-border/30 bg-muted/5 text-[11px] text-muted-foreground/30 font-medium">
+                                      —
+                                    </div>
                                   ) : (
                                     <button
                                       type="button"
@@ -2274,6 +2312,10 @@ export default function SchedulesPage() {
                                             </div>
                                           );
                                         })}
+                                      </div>
+                                    ) : role === "bgh" ? (
+                                      <div className="h-full min-h-[4rem] w-full rounded-md border border-dashed border-border/30 bg-muted/5 flex items-center justify-center text-muted-foreground/30 text-xs">
+                                        —
                                       </div>
                                     ) : (
                                       <button
@@ -2530,7 +2572,7 @@ export default function SchedulesPage() {
                 <Label>Lớp cần xuất</Label>
                 <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={exportClassId} onChange={(event) => setExportClassId(event.target.value)}>
                   <option value="">Tất cả lớp có lịch</option>
-                  {classes.map((row) => <option key={row.id} value={row.id}>{catalogOptionLabel(row)}</option>)}
+                  {(filteredCatalogClasses.length > 0 ? filteredCatalogClasses : classes).map((row) => <option key={row.id} value={row.id}>{catalogOptionLabel(row)}</option>)}
                 </select>
               </div>
             </div>

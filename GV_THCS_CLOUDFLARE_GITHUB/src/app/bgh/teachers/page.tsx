@@ -73,7 +73,14 @@ export default function BghTeachersPage() {
   const scopedRows = useMemo(() => {
     if (schoolLevel === "all") return rows;
     return rows.filter((r) => {
-      const levels = Array.isArray(r.schoolLevels) ? r.schoolLevels.map(String) : [];
+      let levels: string[] = [];
+      if (Array.isArray(r.schoolLevels) && r.schoolLevels.length > 0) {
+        levels = r.schoolLevels.map(String);
+      } else if (typeof r.schoolLevel === "string" && r.schoolLevel) {
+        levels = [r.schoolLevel];
+      } else {
+        levels = ["secondary"]; // Mặc định THCS cho dữ liệu giáo viên hiện hữu
+      }
       return levels.includes(schoolLevel);
     });
   }, [rows, schoolLevel]);
