@@ -23,6 +23,7 @@ export const teacherSchema = z.object({
     email: z.email("Email không hợp lệ"),
     phone: z.string().trim().regex(/^[0-9+ ()-]{8,20}$/, "Số điện thoại không hợp lệ"),
     departmentId: z.string().trim().min(1, "Vui lòng chọn bộ môn"),
+    homeroomDepartmentId: z.string().trim().optional().default(""),
     subjectIds: z.array(z.string()).min(1, "Chọn ít nhất một môn"),
     schoolLevels: z.array(schoolLevelSchema).min(1, "Chọn ít nhất một cấp học").max(2).default(["secondary"]),
     teachingRole: teachingRoleSchema.default("bo_mon"),

@@ -63,6 +63,7 @@ export declare const teacherSchema: z.ZodObject<{
     email: z.ZodEmail;
     phone: z.ZodString;
     departmentId: z.ZodString;
+    homeroomDepartmentId: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     subjectIds: z.ZodArray<z.ZodString>;
     schoolLevels: z.ZodDefault<z.ZodArray<z.ZodEnum<{
         primary: "primary";
