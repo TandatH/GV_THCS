@@ -415,7 +415,7 @@ export default function TeacherSchedulePage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["giaovien"]}>
+    <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
           eyebrow="Thời khóa biểu"

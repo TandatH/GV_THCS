@@ -70,7 +70,7 @@ export default function TeacherNotificationsPage() {
 
   const unreadCount = rows.filter((row) => row.read !== true).length;
 
-  return <RoleGuard allowedRoles={["giaovien"]}><Shell>
+  return <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}><Shell>
     <PageHeader eyebrow="Trung tâm thông báo" title="Thông báo của tôi" description="Theo dõi lịch dạy, đơn nghỉ, dạy thay và các kết quả đã được công bố." actions={<Button variant="secondary" loading={updating} disabled={unreadCount === 0} onClick={markAllRead}><CheckCheck className="h-4 w-4" />Đọc tất cả</Button>} />
     {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
     <div className="mb-5 grid gap-4 sm:grid-cols-2"><Card className="p-5"><p className="text-sm text-muted-foreground">Tổng thông báo</p><p className="mt-2 text-3xl font-extrabold">{rows.length}</p></Card><Card className="p-5"><p className="text-sm text-muted-foreground">Chưa đọc</p><p className="mt-2 text-3xl font-extrabold text-rose-600">{unreadCount}</p></Card></div>

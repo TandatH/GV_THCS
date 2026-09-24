@@ -114,6 +114,7 @@ export const setUserRoleSchema = z.object({
     departmentId: z.string().trim().optional(),
     bghPosition: bghPositionSchema.optional(),
     schoolLevel: z.enum(["primary", "secondary", "all"]).optional(),
+    teacherId: z.string().trim().nullable().optional(),
 }).refine((value) => Boolean(value.uid || value.email), {
     message: "Cần cung cấp UID hoặc email người dùng.",
     path: ["email"],

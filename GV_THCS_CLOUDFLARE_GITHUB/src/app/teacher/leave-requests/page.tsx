@@ -344,7 +344,7 @@ export default function TeacherLeaveRequestsPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["giaovien"]}>
+    <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
           eyebrow="Đơn nghỉ"

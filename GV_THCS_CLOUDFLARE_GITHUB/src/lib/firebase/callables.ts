@@ -1,5 +1,6 @@
 import type {
   ApproveLeaveInput,
+  Role,
   ScheduleInput,
   SetUserRoleInput,
   SubstituteCandidate,
@@ -38,7 +39,14 @@ function callable<TInput, TOutput>(name: string) {
 }
 
 const createTeacherAccountCallable = callable<
-  { teacher: TeacherInput; password?: string },
+  {
+    teacher: TeacherInput;
+    password?: string;
+    role?: Role;
+    bghPosition?: "hieutruong" | "phohieutruong";
+    schoolLevel?: "primary" | "secondary" | "all";
+    isTeaching?: boolean;
+  },
   { uid: string; teacherId: string }
 >("createTeacherAccount");
 
@@ -120,6 +128,10 @@ export function firebaseErrorMessage(error: unknown) {
 export async function createTeacherAccount(input: {
   teacher: TeacherInput;
   password?: string;
+  role?: Role;
+  bghPosition?: "hieutruong" | "phohieutruong";
+  schoolLevel?: "primary" | "secondary" | "all";
+  isTeaching?: boolean;
 }) {
   return (await createTeacherAccountCallable(input)).data;
 }

@@ -148,7 +148,7 @@ export default function TeacherAttendancePage() {
   const pendingSchedules = monthSchedules.filter((schedule) => !checkinBySchedule.has(schedule.id)).length;
 
   return (
-    <RoleGuard allowedRoles={["giaovien"]}>
+    <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
           eyebrow="Chấm công"

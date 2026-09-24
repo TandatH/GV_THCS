@@ -53,6 +53,10 @@ type FormState = {
   avatarUrl: string;
   status: "active" | "inactive";
   password: string;
+  accountRole: Role;
+  accountBghPosition: "hieutruong" | "phohieutruong";
+  accountBghLevel: "primary" | "secondary" | "all";
+  isTeaching: boolean;
 };
 
 const initialForm: FormState = {
@@ -78,6 +82,10 @@ const initialForm: FormState = {
   avatarUrl: "",
   status: "active",
   password: "",
+  accountRole: "giaovien",
+  accountBghPosition: "phohieutruong",
+  accountBghLevel: "secondary",
+  isTeaching: true,
 };
 
 function teacherStatus(value: unknown) {
@@ -226,6 +234,10 @@ function formFromTeacher(row: TeacherRow, subjects: CatalogRow[]): FormState {
     avatarUrl: textValue(row.avatarUrl),
     status: row.status === "inactive" ? "inactive" : "active",
     password: "",
+    accountRole: "giaovien",
+    accountBghPosition: "phohieutruong",
+    accountBghLevel: "secondary",
+    isTeaching: true,
   };
 }
 
@@ -249,12 +261,14 @@ export default function TeachersPage() {
     departmentId: string;
     bghPosition?: "hieutruong" | "phohieutruong";
     schoolLevel?: "primary" | "secondary" | "all";
+    teacherId: string;
   }>({
     email: "",
     role: "giaovien",
     departmentId: "",
     bghPosition: "phohieutruong",
     schoolLevel: "secondary",
+    teacherId: "",
   });
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [roleMessage, setRoleMessage] = useState("");
@@ -417,14 +431,16 @@ export default function TeachersPage() {
       if (!user) {
         throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
       }
-      if (form.schoolLevels.length === 0) {
-        throw new Error("Vui lòng chọn ít nhất một cấp học phụ trách.");
-      }
-      if (form.subjectIds.length === 0) {
-        throw new Error("Vui lòng chọn ít nhất một môn giảng dạy.");
-      }
-      if (form.teachingAssignments.length !== form.subjectIds.length || form.teachingAssignments.some((assignment) => assignment.gradeLevels.length === 0)) {
-        throw new Error("Mỗi môn giảng dạy cần có ít nhất một khối phụ trách.");
+      if (form.isTeaching || editingTeacher) {
+        if (form.schoolLevels.length === 0) {
+          throw new Error("Vui lòng chọn ít nhất một cấp học phụ trách.");
+        }
+        if (form.subjectIds.length === 0) {
+          throw new Error("Vui lòng chọn ít nhất một môn giảng dạy.");
+        }
+        if (form.teachingAssignments.length !== form.subjectIds.length || form.teachingAssignments.some((assignment) => assignment.gradeLevels.length === 0)) {
+          throw new Error("Mỗi môn giảng dạy cần có ít nhất một khối phụ trách.");
+        }
       }
       const teacher: TeacherInput = {
         teacherCode: form.teacherCode.trim(),
@@ -462,7 +478,14 @@ export default function TeachersPage() {
         setSuccessMessage("Đã cập nhật hồ sơ giáo viên.");
         toast.success("Đã cập nhật hồ sơ giáo viên.");
       } else {
-        const result = await createTeacherAccount({ teacher, password: form.password || undefined });
+        const result = await createTeacherAccount({
+          teacher,
+          password: form.password || undefined,
+          role: form.accountRole,
+          bghPosition: form.accountRole === "bgh" ? form.accountBghPosition : undefined,
+          schoolLevel: form.accountRole === "bgh" ? form.accountBghLevel : undefined,
+          isTeaching: form.isTeaching,
+        });
         const temporaryPassword = form.password || "";
         if (temporaryPassword) {
           setTemporaryPasswords((current) => ({ ...current, [result.teacherId]: temporaryPassword }));
@@ -473,7 +496,7 @@ export default function TeachersPage() {
             temporaryPassword,
           });
         }
-        setSuccessMessage("Đã tạo tài khoản và hồ sơ giáo viên thành công.");
+        setSuccessMessage("Đã tạo tài khoản thành công.");
         setForm(initialForm);
         setOpen(false);
       }
@@ -497,8 +520,9 @@ export default function TeachersPage() {
         departmentId: roleForm.role === "totruong" ? roleForm.departmentId.trim() : roleForm.departmentId.trim() || undefined,
         bghPosition: roleForm.role === "bgh" ? roleForm.bghPosition : undefined,
         schoolLevel: roleForm.role === "bgh" ? roleForm.schoolLevel : undefined,
+        teacherId: roleForm.teacherId ? roleForm.teacherId.trim() : null,
       });
-      setRoleMessage("Đã cập nhật phân quyền. Người dùng cần đăng nhập lại để nhận Custom Claims mới.");
+      setRoleMessage("Đã cập nhật phân quyền và liên kết hồ sơ giảng dạy. Người dùng cần đăng nhập lại để nhận Custom Claims mới.");
     } catch (submitError) {
       setRoleError(firebaseErrorMessage(submitError));
     } finally {
@@ -631,7 +655,25 @@ export default function TeachersPage() {
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr_auto] lg:items-end">
               <div>
                 <Label>Email đăng nhập</Label>
-                <Input required type="email" value={roleForm.email} onChange={(event) => setRoleForm((current) => ({ ...current, email: event.target.value }))} placeholder="giaovien@truong.edu.vn" />
+                <Input
+                  required
+                  type="email"
+                  value={roleForm.email}
+                  onChange={(event) => {
+                    const nextEmail = event.target.value;
+                    setRoleForm((current) => {
+                      const matched = rows.find(
+                        (t) => typeof t.email === "string" && t.email.trim().toLowerCase() === nextEmail.trim().toLowerCase(),
+                      );
+                      return {
+                        ...current,
+                        email: nextEmail,
+                        teacherId: matched ? matched.id : current.teacherId,
+                      };
+                    });
+                  }}
+                  placeholder="giaovien@truong.edu.vn"
+                />
               </div>
               <div>
                 <Label>Vai trò</Label>
@@ -669,6 +711,32 @@ export default function TeachersPage() {
                   </select>
                 </div>
               )}
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[2fr_auto] lg:items-end pt-2 border-t border-border/60">
+              <div>
+                <Label>Hồ sơ giáo viên (Tham gia giảng dạy / Đi dạy)</Label>
+                <select
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                  value={roleForm.teacherId}
+                  onChange={(event) => setRoleForm((current) => ({ ...current, teacherId: event.target.value }))}
+                  required={roleForm.role === "giaovien"}
+                >
+                  <option value="">
+                    {roleForm.role === "giaovien"
+                      ? "Bắt buộc chọn giáo viên"
+                      : "— Không tham gia giảng dạy (chỉ quản lý thuần túy) —"}
+                  </option>
+                  {rows.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.fullName} ({textValue(teacher.teacherCode) || teacher.id.slice(0, 8)}) - {catalogName(departments, teacher.departmentId) || "Chưa có tổ"}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Nếu BGH, Quản trị viên hoặc Tổ trưởng có đi dạy: Chọn hồ sơ giáo viên để người này xem được lịch dạy cá nhân, gửi đơn nghỉ và được xếp thời khóa biểu.
+                </p>
+              </div>
               <Button loading={roleSubmitting} type="submit">Phân quyền</Button>
             </div>
           </form>
@@ -745,6 +813,72 @@ export default function TeachersPage() {
           footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button loading={submitting} form="teacher-form" type="submit">{editingTeacher ? "Lưu thay đổi" : "Tạo giáo viên"}</Button></div>}
         >
           <form id="teacher-form" className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+            {!editingTeacher ? (
+              <div className="sm:col-span-2 rounded-xl border-2 border-blue-200 bg-blue-50/70 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-blue-900">Phân quyền tài khoản khi cấp</h4>
+                  <span className="text-xs text-blue-700">Tự động gán Custom Claims ngay khi tạo</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <Label>Vai trò</Label>
+                    <select
+                      className="h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-sm"
+                      value={form.accountRole}
+                      onChange={(e) => setField("accountRole", e.target.value as Role)}
+                    >
+                      <option value="giaovien">Giáo viên</option>
+                      <option value="bgh">Ban Giám Hiệu</option>
+                      <option value="totruong">Tổ trưởng bộ môn</option>
+                      <option value="admin">Quản trị viên</option>
+                    </select>
+                  </div>
+                  {form.accountRole === "bgh" ? (
+                    <>
+                      <div>
+                        <Label>Chức vụ BGH</Label>
+                        <select
+                          className="h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-sm"
+                          value={form.accountBghPosition}
+                          onChange={(e) => setField("accountBghPosition", e.target.value as "hieutruong" | "phohieutruong")}
+                        >
+                          <option value="hieutruong">Hiệu trưởng</option>
+                          <option value="phohieutruong">Phó hiệu trưởng</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Cấp học phụ trách</Label>
+                        <select
+                          className="h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-sm"
+                          value={form.accountBghLevel}
+                          onChange={(e) => setField("accountBghLevel", e.target.value as "primary" | "secondary" | "all")}
+                        >
+                          <option value="secondary">THCS (Khối 6–9)</option>
+                          <option value="primary">Tiểu học (Khối 1–5)</option>
+                          <option value="all">Toàn trường (Cả 2 cấp)</option>
+                        </select>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                <div className="pt-2 border-t border-blue-200/70">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-blue-950 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                      checked={form.isTeaching}
+                      onChange={(e) => setField("isTeaching", e.target.checked)}
+                    />
+                    <span>Tài khoản có tham gia giảng dạy (đi dạy)</span>
+                  </label>
+                  <p className="mt-1 text-xs text-blue-800">
+                    {form.isTeaching
+                      ? "✓ Hồ sơ giáo viên sẽ được tạo và liên kết trực tiếp với tài khoản. Thầy/Cô có thể được phân công TKB, chấm công và xem lịch dạy cá nhân."
+                      : "✕ Chỉ tạo tài khoản người dùng phục vụ công tác quản lý, không tạo hồ sơ giáo viên và không xếp lịch dạy."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div><Label>Mã giáo viên</Label><Input value={form.teacherCode} onChange={(e) => setField("teacherCode", e.target.value.toUpperCase())} placeholder="Để trống để hệ thống tự tạo" /></div>
             <div><Label>Họ và tên</Label><Input required value={form.fullName} onChange={(e) => setField("fullName", e.target.value)} /></div>
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>

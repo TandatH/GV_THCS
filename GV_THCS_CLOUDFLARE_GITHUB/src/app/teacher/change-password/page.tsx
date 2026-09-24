@@ -97,7 +97,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["giaovien"]}>
+    <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
           eyebrow="Tài khoản giáo viên"

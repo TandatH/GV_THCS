@@ -318,7 +318,7 @@ export default function AvailabilityPage() {
   const reviewTone = status === "draft" ? "warning" : reviewStatus === "approved" ? "success" : reviewStatus === "rejected" ? "danger" : "info";
 
   return (
-    <RoleGuard allowedRoles={["giaovien"]}>
+    <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
           eyebrow="Lịch cá nhân"

@@ -169,6 +169,7 @@ export declare const setUserRoleSchema: z.ZodObject<{
         secondary: "secondary";
         all: "all";
     }>>;
+    teacherId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strip>;
 export type SetUserRoleInput = z.infer<typeof setUserRoleSchema>;
 export declare const scheduleResponseSchema: z.ZodObject<{

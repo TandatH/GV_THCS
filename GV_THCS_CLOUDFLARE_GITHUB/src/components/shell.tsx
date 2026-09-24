@@ -104,6 +104,9 @@ const roleLabel: Record<Role, string> = {
 
 function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | null) {
   if (!role) return "Chưa cấp quyền";
+  const isTeaching = Boolean(claims?.teacherId);
+  const teachingSuffix = isTeaching && role !== "giaovien" ? " • Có đi dạy" : "";
+
   if (role === "bgh") {
     const position = claims?.bghPosition === "hieutruong" ? "Hiệu trưởng" : "Phó Hiệu trưởng";
     const level = claims?.schoolLevel === "primary"
@@ -111,9 +114,9 @@ function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | nu
       : claims?.schoolLevel === "secondary"
         ? "THCS"
         : "Toàn trường";
-    return `${position} (${level})`;
+    return `${position} (${level})${teachingSuffix}`;
   }
-  return roleLabel[role];
+  return `${roleLabel[role]}${teachingSuffix}`;
 }
 
 function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: boolean; onClose?: () => void }) {
@@ -121,6 +124,12 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
   const router = useRouter();
   const { claims, role, user, signOutUser } = useAuth();
   const items = role ? menuByRole[role] : [];
+  const hasTeachingProfile = Boolean(claims?.teacherId) && role !== "giaovien";
+  const teachingItems = [
+    { href: "/teacher/schedule", label: "Lịch dạy của tôi", icon: CalendarDays },
+    { href: "/teacher/availability", label: "Khung giờ rảnh", icon: BookOpenCheck },
+    { href: "/teacher/leave-requests", label: "Đơn nghỉ của tôi", icon: CalendarClock },
+  ];
 
   async function logout() {
     await signOutUser();
@@ -175,6 +184,39 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
             </Link>
           );
         })}
+
+        {hasTeachingProfile ? (
+          <>
+            <div className="my-3 border-t border-slate-800/80" />
+            {!collapsed || mobile ? (
+              <p className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-blue-400">
+                Lịch dạy cá nhân
+              </p>
+            ) : null}
+            {teachingItems.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={mobile ? onClose : undefined}
+                  className={cn(
+                    "group flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition",
+                    active
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-950/30"
+                      : "text-slate-300 hover:bg-slate-800/80 hover:text-white",
+                    collapsed && !mobile && "justify-center px-0",
+                  )}
+                  title={collapsed && !mobile ? label : undefined}
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {!collapsed || mobile ? <span className="truncate">{label}</span> : null}
+                  {active && (!collapsed || mobile) ? <ChevronRight className="ml-auto h-4 w-4 opacity-70" /> : null}
+                </Link>
+              );
+            })}
+          </>
+        ) : null}
       </nav>
 
       <div className="border-t border-slate-800 p-3">
@@ -207,7 +249,7 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { role, user } = useAuth();
+  const { role, user, claims } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -216,8 +258,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const current = useMemo(() => {
     if (!role) return null;
-    return menuByRole[role].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
-  }, [pathname, role]);
+    const baseItems = menuByRole[role] || [];
+    const teachingItems = claims?.teacherId ? [
+      { href: "/teacher/schedule", label: "Lịch dạy của tôi" },
+      { href: "/teacher/availability", label: "Khung giờ rảnh" },
+      { href: "/teacher/leave-requests", label: "Đơn nghỉ của tôi" },
+    ] : [];
+    return [...baseItems, ...teachingItems].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  }, [pathname, role, claims?.teacherId]);
 
   useEffect(() => {
     if (!user) {
