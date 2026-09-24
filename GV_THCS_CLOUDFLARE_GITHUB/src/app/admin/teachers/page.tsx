@@ -432,6 +432,9 @@ export default function TeachersPage() {
         throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
       }
       if (form.isTeaching || editingTeacher) {
+        if (!form.departmentId) {
+          throw new Error("Vui lòng chọn bộ môn / tổ chuyên môn.");
+        }
         if (form.schoolLevels.length === 0) {
           throw new Error("Vui lòng chọn ít nhất một cấp học phụ trách.");
         }
@@ -443,28 +446,28 @@ export default function TeachersPage() {
         }
       }
       const teacher: TeacherInput = {
-        teacherCode: form.teacherCode.trim(),
-        fullName: form.fullName,
-        email: form.email,
-        phone: form.phone,
-        departmentId: form.departmentId,
-        subjectIds: form.subjectIds,
-        schoolLevels: form.schoolLevels,
-        teachingRole: form.teachingRole,
-        teachingAssignments: form.teachingAssignments,
-        specialization: form.specialization,
-        degree: form.degree,
-        startDate: form.startDate,
-        teacherType: form.teacherType,
-        standardPeriodsPerWeek: form.teacherType === "co_huu" ? Number(form.standardPeriodsPerWeek) : null,
-        ratePerPeriod: form.teacherType === "thinh_giang" ? Number(form.ratePerPeriod) : null,
-        campusId: form.campusId,
+        teacherCode: form.isTeaching ? form.teacherCode.trim() : "",
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        departmentId: form.isTeaching ? form.departmentId : (availableDepartments[0]?.id || "dept_general"),
+        subjectIds: form.isTeaching ? form.subjectIds : [],
+        schoolLevels: form.isTeaching ? form.schoolLevels : [form.accountBghLevel === "primary" ? "primary" : "secondary"],
+        teachingRole: form.isTeaching ? form.teachingRole : "bo_mon",
+        teachingAssignments: form.isTeaching ? form.teachingAssignments : [],
+        specialization: form.isTeaching ? form.specialization.trim() : (form.accountRole === "bgh" ? "Ban Giám Hiệu" : "Quản trị"),
+        degree: form.isTeaching ? form.degree.trim() : "Đại học",
+        startDate: form.isTeaching ? form.startDate : todayDateOnly(),
+        teacherType: form.isTeaching ? form.teacherType : "co_huu",
+        standardPeriodsPerWeek: form.isTeaching && form.teacherType === "co_huu" ? Number(form.standardPeriodsPerWeek) : null,
+        ratePerPeriod: form.isTeaching && form.teacherType === "thinh_giang" ? Number(form.ratePerPeriod) : null,
+        campusId: form.isTeaching ? form.campusId : (campuses[0]?.id || ""),
         status: form.status,
         avatarUrl: form.avatarUrl.trim(),
         contract: {
-          type: form.contractType,
-          number: form.contractNumber,
-          expiresAt: form.contractExpiresAt,
+          type: form.isTeaching ? form.contractType : "",
+          number: form.isTeaching ? form.contractNumber : "",
+          expiresAt: form.isTeaching ? form.contractExpiresAt : "",
         },
         userId: editingTeacher ? textValue(editingTeacher.userId) : "",
       };
@@ -488,15 +491,17 @@ export default function TeachersPage() {
         });
         const temporaryPassword = form.password || "";
         if (temporaryPassword) {
-          setTemporaryPasswords((current) => ({ ...current, [result.teacherId]: temporaryPassword }));
+          const id = result.teacherId || result.uid || "account";
+          setTemporaryPasswords((current) => ({ ...current, [id]: temporaryPassword }));
           setCredentialResult({
-            teacherId: result.teacherId,
+            teacherId: id,
             fullName: teacher.fullName,
             email: teacher.email,
             temporaryPassword,
           });
         }
-        setSuccessMessage("Đã tạo tài khoản thành công.");
+        setSuccessMessage(form.isTeaching ? "Đã tạo tài khoản và hồ sơ giáo viên thành công." : "Đã tạo tài khoản cán bộ quản trị thành công.");
+        toast.success(form.isTeaching ? "Đã tạo tài khoản và hồ sơ giáo viên thành công." : "Đã tạo tài khoản cán bộ quản trị thành công.");
         setForm(initialForm);
         setOpen(false);
       }
@@ -807,10 +812,10 @@ export default function TeachersPage() {
         <Modal
           open={open}
           onOpenChange={setOpen}
-          title={editingTeacher ? "Sửa thông tin giáo viên" : "Thêm giáo viên"}
-          description={editingTeacher ? "Cập nhật hồ sơ giáo viên trong Cloud Firestore. Nếu thay đổi phân quyền, dùng mục Phân quyền ở phía trên." : "Cloud Function sẽ tạo Firebase Auth user, Custom Claims và hồ sơ Firestore trong một quy trình an toàn."}
+          title={editingTeacher ? "Sửa thông tin giáo viên" : (form.isTeaching ? "Thêm giáo viên" : "Tạo tài khoản cán bộ / BGH")}
+          description={editingTeacher ? "Cập nhật hồ sơ giáo viên trong Cloud Firestore. Nếu thay đổi phân quyền, dùng mục Phân quyền ở phía trên." : (form.isTeaching ? "Cloud Function sẽ tạo Firebase Auth user, Custom Claims và hồ sơ Firestore trong một quy trình an toàn." : "Tạo tài khoản cán bộ quản trị / Ban Giám Hiệu phục vụ đăng nhập quản lý, không lập hồ sơ giảng dạy.")}
           wide
-          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button loading={submitting} form="teacher-form" type="submit">{editingTeacher ? "Lưu thay đổi" : "Tạo giáo viên"}</Button></div>}
+          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button loading={submitting} form="teacher-form" type="submit">{editingTeacher ? "Lưu thay đổi" : (form.isTeaching ? "Tạo giáo viên" : "Tạo tài khoản")}</Button></div>}
         >
           <form id="teacher-form" className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
             {!editingTeacher ? (
@@ -825,7 +830,15 @@ export default function TeachersPage() {
                     <select
                       className="h-10 w-full rounded-xl border border-blue-200 bg-white px-3 text-sm"
                       value={form.accountRole}
-                      onChange={(e) => setField("accountRole", e.target.value as Role)}
+                      onChange={(e) => {
+                        const newRole = e.target.value as Role;
+                        setField("accountRole", newRole);
+                        if (newRole === "bgh" || newRole === "admin") {
+                          setField("isTeaching", false);
+                        } else {
+                          setField("isTeaching", true);
+                        }
+                      }}
                     >
                       <option value="giaovien">Giáo viên</option>
                       <option value="bgh">Ban Giám Hiệu</option>
@@ -879,48 +892,57 @@ export default function TeachersPage() {
                 </div>
               </div>
             ) : null}
-            <div><Label>Mã giáo viên</Label><Input value={form.teacherCode} onChange={(e) => setField("teacherCode", e.target.value.toUpperCase())} placeholder="Để trống để hệ thống tự tạo" /></div>
             <div><Label>Họ và tên</Label><Input required value={form.fullName} onChange={(e) => setField("fullName", e.target.value)} /></div>
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>
             <div><Label>Số điện thoại</Label><Input required value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></div>
-            <div className="sm:col-span-2">
-              <Label>Cấp học phụ trách</Label>
-              <div className="mt-1 flex flex-wrap gap-3 rounded-xl border border-border p-3">
-                <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("primary")} onChange={(event) => toggleSchoolLevel("primary", event.target.checked)} />Tiểu học (khối 1–5)</label>
-                <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("secondary")} onChange={(event) => toggleSchoolLevel("secondary", event.target.checked)} />THCS (khối 6–9)</label>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">Một giáo viên có thể phụ trách một hoặc cả hai cấp học.</p>
-            </div>
-            <div><Label>Vai trò giảng dạy</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teachingRole} onChange={(e) => setField("teachingRole", e.target.value as TeachingRole)}><option value="chu_nhiem">Giáo viên chủ nhiệm</option><option value="bo_mon">Giáo viên bộ môn</option><option value="ca_hai">Chủ nhiệm + bộ môn</option></select></div>
-            <div><Label>Bộ môn / tổ chuyên môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.departmentId} onChange={(e) => selectDepartment(e.target.value)}><option value="">Chọn bộ môn</option>{availableDepartments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
-            <div><Label>Cơ sở chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required value={form.campusId} onChange={(e) => setField("campusId", e.target.value)}><option value="">Chọn cơ sở</option>{campuses.map((row) => <option key={row.id} value={row.id}>{catalogName(campuses, row.id)}</option>)}</select></div>
-            <div className="sm:col-span-2">
-              <Label>Môn và khối được phân công</Label>
-              <div className="mt-1 max-h-72 space-y-2 overflow-y-auto rounded-xl border border-border p-3">
-                {availableSubjects.map((subject) => {
-                  const checked = form.subjectIds.includes(subject.id);
-                  const eligibleGrades = eligibleGradesForSubject(subject, form.schoolLevels);
-                  const assignedGrades = form.teachingAssignments.find((assignment) => assignment.subjectId === subject.id)?.gradeLevels ?? [];
-                  return <div className="rounded-lg border border-border/70 px-3 py-2" key={subject.id}>
-                    <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={checked} onChange={(event) => toggleSubject(subject, event.target.checked)} /><span>{catalogName(subjects, subject.id)}</span></label>
-                    {checked ? <div className="mt-2 flex flex-wrap gap-2 pl-6">{eligibleGrades.map((grade) => <label key={grade} className="flex items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-xs"><input type="checkbox" checked={assignedGrades.includes(grade)} onChange={(event) => toggleAssignmentGrade(subject.id, grade, event.target.checked)} />Khối {grade}</label>)}</div> : null}
-                  </div>;
-                })}
-                {availableSubjects.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn phù hợp với cấp học và bộ môn đã chọn.</p> : null}
-              </div>
-              {form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn và khối giảng dạy.</p> : null}
-            </div>
-            <div><Label>Chuyên môn</Label><Input required value={form.specialization} onChange={(e) => setField("specialization", e.target.value)} /></div>
-            <div><Label>Trình độ</Label><Input required value={form.degree} onChange={(e) => setField("degree", e.target.value)} /></div>
-            <div><Label>Ngày vào làm</Label><Input required type="date" value={form.startDate} onChange={(e) => setField("startDate", e.target.value)} /></div>
-            <div><Label>Loại giáo viên</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teacherType} onChange={(e) => setField("teacherType", e.target.value as FormState["teacherType"])}><option value="co_huu">Cơ hữu</option><option value="thinh_giang">Thỉnh giảng</option></select></div>
-            {form.teacherType === "co_huu" ? <div><Label>Số tiết chuẩn/tuần</Label><Input required min="1" type="number" value={form.standardPeriodsPerWeek} onChange={(e) => setField("standardPeriodsPerWeek", e.target.value)} /></div> : <div><Label>Đơn giá/tiết</Label><Input required min="1" type="number" value={form.ratePerPeriod} onChange={(e) => setField("ratePerPeriod", e.target.value)} /></div>}
             <div><Label>Trạng thái</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.status} onChange={(e) => setField("status", e.target.value as FormState["status"])}><option value="active">Đang hoạt động</option><option value="inactive">Ngừng hoạt động</option></select></div>
-            <div><Label>URL hình giáo viên</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
-            {!editingTeacher ? <div><Label>Mật khẩu tạm ban đầu</Label><div className="flex gap-2"><Input minLength={8} type="text" value={form.password} onChange={(e) => setField("password", e.target.value)} /><Button type="button" variant="secondary" onClick={() => setField("password", generateTemporaryPassword())} aria-label="Tạo mật khẩu tạm mới"><KeyRound className="h-4 w-4" /></Button></div><p className="mt-1 text-xs text-muted-foreground">Giáo viên sẽ phải đổi mật khẩu này sau khi đăng nhập.</p></div> : null}
-            <div><Label>Loại hợp đồng</Label><Input value={form.contractType} onChange={(e) => setField("contractType", e.target.value)} /></div>
-            <div><Label>Số hợp đồng</Label><Input value={form.contractNumber} onChange={(e) => setField("contractNumber", e.target.value)} /></div>
-            <div><Label>Ngày hết hạn</Label><Input type="date" value={form.contractExpiresAt} onChange={(e) => setField("contractExpiresAt", e.target.value)} /></div>
+            <div><Label>URL hình đại diện</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
+            {!editingTeacher ? <div><Label>Mật khẩu tạm ban đầu</Label><div className="flex gap-2"><Input minLength={8} type="text" value={form.password} onChange={(e) => setField("password", e.target.value)} /><Button type="button" variant="secondary" onClick={() => setField("password", generateTemporaryPassword())} aria-label="Tạo mật khẩu tạm mới"><KeyRound className="h-4 w-4" /></Button></div><p className="mt-1 text-xs text-muted-foreground">Người dùng sẽ phải đổi mật khẩu này sau khi đăng nhập lần đầu.</p></div> : null}
+
+            {(form.isTeaching || editingTeacher) ? (
+              <>
+                <div className="sm:col-span-2 pt-2 border-t border-border">
+                  <h4 className="text-sm font-bold text-foreground">Cấu hình hồ sơ chuyên môn &amp; Giảng dạy</h4>
+                  <p className="text-xs text-muted-foreground">Phân công tổ bộ môn, môn/khối giảng dạy và định mức tiết cho giáo viên</p>
+                </div>
+                <div><Label>Mã giáo viên</Label><Input value={form.teacherCode} onChange={(e) => setField("teacherCode", e.target.value.toUpperCase())} placeholder="Để trống để hệ thống tự tạo" /></div>
+                <div><Label>Cơ sở chính</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={form.isTeaching || Boolean(editingTeacher)} value={form.campusId} onChange={(e) => setField("campusId", e.target.value)}><option value="">Chọn cơ sở</option>{campuses.map((row) => <option key={row.id} value={row.id}>{catalogName(campuses, row.id)}</option>)}</select></div>
+                <div><Label>Bộ môn / tổ chuyên môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" required={form.isTeaching || Boolean(editingTeacher)} value={form.departmentId} onChange={(e) => selectDepartment(e.target.value)}><option value="">Chọn bộ môn</option>{availableDepartments.map((row) => <option key={row.id} value={row.id}>{catalogName(departments, row.id)}</option>)}</select></div>
+                <div><Label>Vai trò giảng dạy</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teachingRole} onChange={(e) => setField("teachingRole", e.target.value as TeachingRole)}><option value="chu_nhiem">Giáo viên chủ nhiệm</option><option value="bo_mon">Giáo viên bộ môn</option><option value="ca_hai">Chủ nhiệm + bộ môn</option></select></div>
+                <div className="sm:col-span-2">
+                  <Label>Cấp học phân công giảng dạy</Label>
+                  <div className="mt-1 flex flex-wrap gap-3 rounded-xl border border-border p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("primary")} onChange={(event) => toggleSchoolLevel("primary", event.target.checked)} />Tiểu học (khối 1–5)</label>
+                    <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={form.schoolLevels.includes("secondary")} onChange={(event) => toggleSchoolLevel("secondary", event.target.checked)} />THCS (khối 6–9)</label>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Một giáo viên có thể phụ trách một hoặc cả hai cấp học.</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Môn và khối được phân công</Label>
+                  <div className="mt-1 max-h-72 space-y-2 overflow-y-auto rounded-xl border border-border p-3">
+                    {availableSubjects.map((subject) => {
+                      const checked = form.subjectIds.includes(subject.id);
+                      const eligibleGrades = eligibleGradesForSubject(subject, form.schoolLevels);
+                      const assignedGrades = form.teachingAssignments.find((assignment) => assignment.subjectId === subject.id)?.gradeLevels ?? [];
+                      return <div className="rounded-lg border border-border/70 px-3 py-2" key={subject.id}>
+                        <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={checked} onChange={(event) => toggleSubject(subject, event.target.checked)} /><span>{catalogName(subjects, subject.id)}</span></label>
+                        {checked ? <div className="mt-2 flex flex-wrap gap-2 pl-6">{eligibleGrades.map((grade) => <label key={grade} className="flex items-center gap-1.5 rounded-lg bg-muted px-2 py-1 text-xs"><input type="checkbox" checked={assignedGrades.includes(grade)} onChange={(event) => toggleAssignmentGrade(subject.id, grade, event.target.checked)} />Khối {grade}</label>)}</div> : null}
+                      </div>;
+                    })}
+                    {availableSubjects.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có môn phù hợp với cấp học và bộ môn đã chọn.</p> : null}
+                  </div>
+                  {form.subjectIds.length === 0 ? <p className="mt-1 text-xs text-amber-700">Chọn ít nhất một môn và khối giảng dạy.</p> : null}
+                </div>
+                <div><Label>Chuyên môn</Label><Input required={form.isTeaching || Boolean(editingTeacher)} value={form.specialization} onChange={(e) => setField("specialization", e.target.value)} /></div>
+                <div><Label>Trình độ</Label><Input required={form.isTeaching || Boolean(editingTeacher)} value={form.degree} onChange={(e) => setField("degree", e.target.value)} /></div>
+                <div><Label>Ngày vào làm</Label><Input required={form.isTeaching || Boolean(editingTeacher)} type="date" value={form.startDate} onChange={(e) => setField("startDate", e.target.value)} /></div>
+                <div><Label>Loại giáo viên</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.teacherType} onChange={(e) => setField("teacherType", e.target.value as FormState["teacherType"])}><option value="co_huu">Cơ hữu</option><option value="thinh_giang">Thỉnh giảng</option></select></div>
+                {form.teacherType === "co_huu" ? <div><Label>Số tiết chuẩn/tuần</Label><Input required min="1" type="number" value={form.standardPeriodsPerWeek} onChange={(e) => setField("standardPeriodsPerWeek", e.target.value)} /></div> : <div><Label>Đơn giá/tiết</Label><Input required min="1" type="number" value={form.ratePerPeriod} onChange={(e) => setField("ratePerPeriod", e.target.value)} /></div>}
+                <div><Label>Loại hợp đồng</Label><Input value={form.contractType} onChange={(e) => setField("contractType", e.target.value)} /></div>
+                <div><Label>Số hợp đồng</Label><Input value={form.contractNumber} onChange={(e) => setField("contractNumber", e.target.value)} /></div>
+                <div><Label>Ngày hết hạn</Label><Input type="date" value={form.contractExpiresAt} onChange={(e) => setField("contractExpiresAt", e.target.value)} /></div>
+              </>
+            ) : null}
             {formError ? <div className="sm:col-span-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
             {successMessage ? <div className="sm:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div> : null}
           </form>
