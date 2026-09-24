@@ -40,7 +40,7 @@ function callable<TInput, TOutput>(name: string) {
 
 const createTeacherAccountCallable = callable<
   {
-    teacher: TeacherInput;
+    teacher: TeacherInput & { homeroomDepartmentId?: string };
     password?: string;
     role?: Role;
     bghPosition?: "hieutruong" | "phohieutruong";
@@ -126,7 +126,7 @@ export function firebaseErrorMessage(error: unknown) {
 }
 
 export async function createTeacherAccount(input: {
-  teacher: TeacherInput;
+  teacher: TeacherInput & { homeroomDepartmentId?: string };
   password?: string;
   role?: Role;
   bghPosition?: "hieutruong" | "phohieutruong";
