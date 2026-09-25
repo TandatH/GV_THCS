@@ -954,21 +954,37 @@ export default function SchedulesPage() {
   );
   const selectedSemester = useMemo(() => selectedCatalogRow(semesters, form.semesterId), [form.semesterId, semesters]);
 
-  const filteredFormTeachers = useMemo(() => teachers.filter((teacher) => teacher.id === form.teacherId || (
-    teacherMatchesClass(teacher, selectedClass)
-    && teacherCanTeachSubjectAtClass(teacher, selectedSubject, selectedClass)
-  )), [form.teacherId, selectedClass, selectedSubject, teachers]);
+  const filteredFormTeachers = useMemo(() => teachers.filter((teacher) => {
+    if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+      if (!teacherSchoolLevels(teacher).includes(bghSchoolLevel)) return false;
+    }
+    return teacher.id === form.teacherId || (
+      teacherMatchesClass(teacher, selectedClass)
+      && teacherCanTeachSubjectAtClass(teacher, selectedSubject, selectedClass)
+    );
+  }), [bghSchoolLevel, form.teacherId, role, selectedClass, selectedSubject, teachers]);
 
-  const filteredFormSubjects = useMemo(() => subjects.filter((subject) => subject.id === form.subjectId || (
-    subjectMatchesClass(subject, selectedClass)
-    && teacherCanTeachSubjectAtClass(selectedTeacher, subject, selectedClass)
-  )), [form.subjectId, selectedClass, selectedTeacher, subjects]);
+  const filteredFormSubjects = useMemo(() => subjects.filter((subject) => {
+    if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+      const subjectLevel = catalogSchoolLevel(subject);
+      if (subjectLevel && subjectLevel !== bghSchoolLevel) return false;
+    }
+    return subject.id === form.subjectId || (
+      subjectMatchesClass(subject, selectedClass)
+      && teacherCanTeachSubjectAtClass(selectedTeacher, subject, selectedClass)
+    );
+  }), [bghSchoolLevel, form.subjectId, role, selectedClass, selectedTeacher, subjects]);
 
-  const filteredFormClasses = useMemo(() => classes.filter((schoolClass) => schoolClass.id === form.classId || (
-    subjectMatchesClass(selectedSubject, schoolClass)
-    && teacherMatchesClass(selectedTeacher, schoolClass)
-    && teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, schoolClass)
-  )), [classes, form.classId, selectedSubject, selectedTeacher]);
+  const filteredFormClasses = useMemo(() => classes.filter((schoolClass) => {
+    if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+      if (catalogSchoolLevel(schoolClass) !== bghSchoolLevel) return false;
+    }
+    return schoolClass.id === form.classId || (
+      subjectMatchesClass(selectedSubject, schoolClass)
+      && teacherMatchesClass(selectedTeacher, schoolClass)
+      && teacherCanTeachSubjectAtClass(selectedTeacher, selectedSubject, schoolClass)
+    );
+  }), [bghSchoolLevel, classes, form.classId, role, selectedSubject, selectedTeacher]);
 
   const catalogFields: { key: Exclude<CatalogFieldKey, "departmentId">; label: string; options: CatalogRow[] }[] = [
     { key: "teacherId", label: "Giáo viên", options: filteredFormTeachers },
@@ -1309,6 +1325,11 @@ export default function SchedulesPage() {
         if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
         if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
         if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
+        if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+          const cls = classes.find((c) => c.id === row.classId);
+          const lvl = row.schoolLevel || catalogSchoolLevel(cls);
+          if (lvl && lvl !== bghSchoolLevel) return false;
+        }
         return true;
       });
 
@@ -1417,32 +1438,35 @@ export default function SchedulesPage() {
       if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
       if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
       if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
+      if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+        const cls = classes.find((c) => c.id === row.classId);
+        const lvl = row.schoolLevel || catalogSchoolLevel(cls);
+        if (lvl && lvl !== bghSchoolLevel) return false;
+      }
       return true;
     }).length;
-  }, [applyScope, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
+  }, [applyScope, bghSchoolLevel, classes, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
 
   return (
     <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow={role === "bgh" ? "Ban Giám Hiệu theo dõi" : role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
+          eyebrow={role === "bgh" ? "Ban Giám Hiệu quản lý" : role === "totruong" ? "Điều phối trong tổ" : "Điều phối giảng dạy"}
           title={role === "bgh" ? `Thời khóa biểu ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "Toàn trường"}` : role === "totruong" ? "Thời khóa biểu bộ môn" : "Quản lý Thời khóa biểu"}
-          description={role === "bgh" ? "Chế độ xem và xuất thời khóa biểu dành cho Ban Giám Hiệu. Dữ liệu được giới hạn trong phạm vi cấp học phụ trách." : "Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."}
+          description={role === "bgh" ? `Quản lý và xếp thời khóa biểu dành cho Ban Giám Hiệu cấp ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "toàn trường"}.` : "Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
-              {role !== "bgh" && (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setApplyError("");
-                    setApplyModalOpen(true);
-                  }}
-                  className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
-                >
-                  <CalendarSync className="h-4 w-4 text-indigo-600" />
-                  Áp dụng cho tuần sau
-                </Button>
-              )}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setApplyError("");
+                  setApplyModalOpen(true);
+                }}
+                className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
+              >
+                <CalendarSync className="h-4 w-4 text-indigo-600" />
+                Áp dụng cho tuần sau
+              </Button>
               {role === "admin" ? (
                 <Button variant="secondary" asChild>
                   <a href="/admin/ai-scheduler/"><Sparkles className="h-4 w-4 text-amber-500" />AI xếp lịch</a>
@@ -1453,9 +1477,7 @@ export default function SchedulesPage() {
                   <FileSpreadsheet className="h-4 w-4 text-emerald-600" />Xuất TKB học sinh
                 </Button>
               )}
-              {role !== "bgh" && (
-                <Button onClick={() => openCreate()}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
-              )}
+              <Button onClick={() => openCreate()}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
             </div>
           )}
         />
@@ -2065,10 +2087,6 @@ export default function SchedulesPage() {
                                         );
                                       })}
                                     </div>
-                                  ) : role === "bgh" ? (
-                                    <div className="flex h-full min-h-[5.5rem] w-full items-center justify-center rounded-xl border border-dashed border-border/30 bg-muted/5 text-[11px] text-muted-foreground/30 font-medium">
-                                      —
-                                    </div>
                                   ) : (
                                     <button
                                       type="button"
@@ -2205,10 +2223,6 @@ export default function SchedulesPage() {
                                           </div>
                                         );
                                       })}
-                                    </div>
-                                  ) : role === "bgh" ? (
-                                    <div className="flex h-full min-h-[5.5rem] w-full items-center justify-center rounded-xl border border-dashed border-border/30 bg-muted/5 text-[11px] text-muted-foreground/30 font-medium">
-                                      —
                                     </div>
                                   ) : (
                                     <button
@@ -2710,7 +2724,11 @@ export default function SchedulesPage() {
           onOpenChange={(next) => !next && setDetail(null)}
           title="Chi tiết lịch dạy"
           description="Lịch sử hủy được giữ lại để đối chiếu; thao tác hủy sẽ giải phóng toàn bộ khóa tài nguyên."
-          footer={detail && role !== "bgh" ? (
+          footer={detail && (
+            role === "admin" ||
+            (role === "totruong" && detail.departmentId === managerDepartmentId) ||
+            (role === "bgh" && (!bghSchoolLevel || bghSchoolLevel === "all" || (detail.schoolLevel || catalogSchoolLevel(classes.find((c) => c.id === detail.classId))) === bghSchoolLevel))
+          ) ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" loading={cancelling} onClick={() => void cancelSelectedSchedule(detail)}>
                 <Trash2 className="h-4 w-4" />Hủy lịch
