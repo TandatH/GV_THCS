@@ -261,13 +261,15 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
     const restCols = colSpan - halfCols - 1;
 
     // Header row
-    const headerCells = [`<Cell ss:StyleID="Header"><Data ss:Type="String">TIẾT / GIỜ</Data></Cell>`];
+    const headerCells = [
+      `<Cell ss:StyleID="Header"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40"><html:B><html:Font html:Color="#FFFFFF" html:Size="10">TIẾT / GIỜ</html:Font></html:B></ss:Data></Cell>`,
+    ];
     for (const day of dayNumbers) {
       const dayDate = addDays(monday, day - 2);
       const dayTitle = DAY_LABELS[day] || `THỨ ${day}`;
       const dateStr = viDate(dayDate);
       headerCells.push(
-        `<Cell ss:StyleID="Header"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40"><html:B>${xml(dayTitle)}</html:B>&#10;<html:Font html:Size="9" html:Color="#DBEAFE">${xml(dateStr)}</html:Font></ss:Data></Cell>`,
+        `<Cell ss:StyleID="Header"><ss:Data ss:Type="String" xmlns="http://www.w3.org/TR/REC-html40"><html:B><html:Font html:Color="#FFFFFF" html:Size="10">${xml(dayTitle)}</html:Font></html:B>&#10;<html:Font html:Size="9" html:Color="#FFFFFF">${xml(dateStr)}</html:Font></ss:Data></Cell>`,
       );
     }
 
