@@ -124,9 +124,67 @@ function timeline(row: LeaveRow) {
   return items.filter(Boolean) as { label: string; at: unknown; by: unknown }[];
 }
 
+function catalogClassSchoolLevel(cls?: CatalogRow) {
+  if (!cls) return "";
+  if (cls.schoolLevel === "primary" || cls.schoolLevel === "secondary") return cls.schoolLevel;
+  const grade = Number(cls.grade ?? cls.gradeLevel ?? 0);
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  const match = /^([1-9])/.exec(String(cls.name ?? cls.code ?? "").trim());
+  if (match) {
+    const g = Number(match[1]);
+    if (g >= 1 && g <= 5) return "primary";
+    if (g >= 6 && g <= 9) return "secondary";
+  }
+  return "";
+}
+
+function leaveSchoolLevel(
+  row: LeaveRow,
+  schedulesMap: Map<string, ScheduleRow>,
+  classesMap: Map<string, CatalogRow>,
+): string {
+  const scheduleIds: string[] = Array.isArray(row.scheduleIds) ? row.scheduleIds.map(String).filter(Boolean) : [];
+  for (const id of scheduleIds) {
+    const s = schedulesMap.get(id);
+    if (s) {
+      if (s.schoolLevel === "primary" || s.schoolLevel === "secondary") return s.schoolLevel;
+      if (s.classId) {
+        const cls = classesMap.get(s.classId);
+        const lvl = catalogClassSchoolLevel(cls);
+        if (lvl) return lvl;
+      }
+    }
+  }
+
+  const summaries = Array.isArray(row.affectedSchedules) ? row.affectedSchedules : [];
+  for (const item of summaries) {
+    if (item && typeof item === "object") {
+      const classId = String(item.classId ?? "");
+      if (classId) {
+        const cls = classesMap.get(classId);
+        const lvl = catalogClassSchoolLevel(cls);
+        if (lvl) return lvl;
+      }
+      const className = String(item.className ?? "").trim();
+      if (className) {
+        const match = /^([1-9])/.exec(className);
+        if (match) {
+          const g = Number(match[1]);
+          if (g >= 1 && g <= 5) return "primary";
+          if (g >= 6 && g <= 9) return "secondary";
+        }
+      }
+    }
+  }
+
+  return "secondary";
+}
+
 export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[] }) {
   const { claims, role } = useAuth();
-  const isReadOnly = role === "bgh";
+  const isReadOnly = false;
+  const bghSchoolLevel = claimString(claims, "schoolLevel");
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -207,10 +265,16 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
   }, []);
 
   const departments = useMemo(() => Array.from(new Set(rows.map((row) => String(row.departmentId || "")).filter(Boolean))), [rows]);
+  const schedulesMap = useMemo(() => new Map(schedules.map((s) => [s.id, s])), [schedules]);
+  const classesMap = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
     return rows.filter((row) => {
+      if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
+        const level = leaveSchoolLevel(row, schedulesMap, classesMap);
+        if (level !== bghSchoolLevel) return false;
+      }
       const matchesSearch = !keyword || [row.reason, row.teacherName, row.teacherId, row.departmentId, row.status]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("vi").includes(keyword));
@@ -218,7 +282,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
       const matchesDepartment = departmentFilter === "all" || row.departmentId === departmentFilter;
       return matchesSearch && matchesStatus && matchesDepartment;
     });
-  }, [departmentFilter, rows, search, statusFilter]);
+  }, [bghSchoolLevel, classesMap, departmentFilter, role, rows, schedulesMap, search, statusFilter]);
 
   async function openReview(request: LeaveRow, decision: "da_duyet" | "tu_choi") {
     setReview({ request, decision });
@@ -293,9 +357,11 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
     <RoleGuard allowedRoles={allowedRoles}>
       <Shell>
         <PageHeader
-          eyebrow={isReadOnly ? "Ban Giám Hiệu theo dõi" : "Phê duyệt nghiệp vụ"}
-          title={isReadOnly ? "Theo dõi Đơn nghỉ dạy" : "Đơn nghỉ dạy"}
-          description={isReadOnly ? "Nắm bắt tình hình giáo viên xin nghỉ dạy, lý do và giáo viên dạy thay (chế độ chỉ xem)." : "Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và xử lý bằng Cloud Function trong phạm vi được phân quyền."}
+          eyebrow={role === "bgh" ? "Ban Giám Hiệu phê duyệt" : role === "totruong" ? "Tổ trưởng phê duyệt" : "Phê duyệt nghiệp vụ"}
+          title="Đơn nghỉ dạy"
+          description={role === "bgh"
+            ? `Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và phê duyệt / bố trí dạy thay cho cấp ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "toàn trường"}.`
+            : "Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và xử lý bằng Cloud Function trong phạm vi được phân quyền."}
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -316,7 +382,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                 <option value="tu_choi">Từ chối</option>
                 <option value="da_huy">Đã hủy</option>
               </select>
-              {role === "admin" ? (
+              {role === "admin" || role === "bgh" ? (
                 <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
                   <option value="all">Tất cả bộ môn</option>
                   {departments.map((department) => <option key={department} value={department}>{department}</option>)}
