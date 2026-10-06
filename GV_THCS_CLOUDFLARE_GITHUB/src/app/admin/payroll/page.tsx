@@ -1,7 +1,18 @@
 "use client";
 
-import { Calculator, CheckCircle2, CircleDollarSign, Download, PencilLine, Search } from "lucide-react";
-import { collection, doc, limit, onSnapshot, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
+import { Calculator, CheckCircle2, CircleDollarSign, Download, Sparkles } from "lucide-react";
+import {
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+  writeBatch,
+  type DocumentData,
+} from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,42 +24,29 @@ import { useAuth } from "@/features/auth/use-auth";
 import { calculateMonthlyPayroll, firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
-import { dateOnlyFromDate } from "@/lib/date-only";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-type Row = DocumentData & { id: string };
-
-const months = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
-
-function currentMonth() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function dateFromSchedule(schedule: Row) {
-  if (!schedule.weekStart) return "";
-  const date = new Date(String(schedule.weekStart));
-  date.setDate(date.getDate() + Number(schedule.dayOfWeek || 2) - 2);
-  return Number.isNaN(date.getTime()) ? "" : dateOnlyFromDate(date);
-}
-
-function statusLabel(status: unknown) {
-  const labels: Record<string, string> = {
-    confirmed: "Đã dạy",
-    absent: "Vắng",
-    adjusted: "Đã điều chỉnh",
-    draft: "Nháp",
-    paid: "Đã chi trả",
-  };
-  return typeof status === "string" ? labels[status] || status : "Chưa xác nhận";
-}
-
-function statusTone(status: unknown) {
-  if (["confirmed", "paid"].includes(String(status))) return "success" as const;
-  if (["absent"].includes(String(status))) return "danger" as const;
-  if (["adjusted", "draft"].includes(String(status))) return "warning" as const;
-  return "neutral" as const;
-}
+import { AttendanceKpiRibbon } from "./components/attendance-kpi-ribbon";
+import { AttendanceToolbar } from "./components/attendance-toolbar";
+import { AttendanceTableView } from "./components/attendance-table-view";
+import { AttendanceByDateView } from "./components/attendance-by-date-view";
+import { AttendanceByTeacherView } from "./components/attendance-by-teacher-view";
+import { BatchConfirmModal } from "./components/batch-confirm-modal";
+import { AdjustAttendanceModal } from "./components/adjust-attendance-modal";
+import {
+  type Row,
+  type ScheduleWithMeta,
+  type StatusFilter,
+  type ViewMode,
+  MONTH_OPTIONS,
+  currentMonthString,
+  localTodayDateOnly,
+  dateFromScheduleRow,
+  parseScheduleDateDetails,
+  formatPeriodDisplay,
+  statusLabelVi,
+  statusBadgeTone,
+} from "./types";
 
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -62,35 +60,46 @@ function rateDocId(teacherId: string, subjectId: string) {
   return `${teacherId}_${subjectId}`;
 }
 
-function localTodayDateOnly() {
-  return dateOnlyFromDate(new Date());
-}
-
-function isPayableAttendanceStatus(status: unknown) {
-  return ["confirmed", "adjusted"].includes(String(status));
-}
-
 export default function AdminPayrollPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"attendance" | "summary" | "payroll">("attendance");
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthString());
+
+  // Global filters
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [teacherTypeFilter, setTeacherTypeFilter] = useState("all");
+
+  // Attendance specific filters & views
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [search, setSearch] = useState("");
+  const [selectedDate, setSelectedDate] = useState("all");
+  const [selectedTeacherId, setSelectedTeacherId] = useState("all");
+  const [selectedClassId, setSelectedClassId] = useState("all");
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+
+  // Data states
   const [schedules, setSchedules] = useState<Row[]>([]);
   const [teachers, setTeachers] = useState<Row[]>([]);
   const [subjects, setSubjects] = useState<Row[]>([]);
+  const [classes, setClasses] = useState<Row[]>([]);
+  const [departments, setDepartments] = useState<Row[]>([]);
   const [checkins, setCheckins] = useState<Row[]>([]);
   const [payrollRows, setPayrollRows] = useState<Row[]>([]);
   const [rateRows, setRateRows] = useState<Row[]>([]);
   const [auditRows, setAuditRows] = useState<Row[]>([]);
+
+  // Loading & Action states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [calculating, setCalculating] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
-  const [adjustTarget, setAdjustTarget] = useState<Row | null>(null);
-  const [adjustForm, setAdjustForm] = useState({ status: "confirmed", actualTeacherId: "", reason: "", note: "" });
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Modals
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [adjustTarget, setAdjustTarget] = useState<ScheduleWithMeta | null>(null);
   const [adjustError, setAdjustError] = useState("");
+
   const [rateOpen, setRateOpen] = useState(false);
   const [rateSubmitting, setRateSubmitting] = useState(false);
   const [rateError, setRateError] = useState("");
@@ -99,25 +108,32 @@ export default function AdminPayrollPage() {
   const selectedYear = selectedMonth.slice(0, 4);
   const selectedMonthNumber = selectedMonth.slice(5, 7);
 
+  // Firestore listeners
   useEffect(() => {
     setLoading(true);
     setError("");
     const unsubscribers = [
-      onSnapshot(query(collection(firestore, "schedules"), limit(700)), (snapshot) => {
-        setSchedules(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+      onSnapshot(query(collection(firestore, "schedules"), limit(2000)), (snapshot) => {
+        setSchedules(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
         setLoading(false);
       }, (snapshotError) => { setError(firebaseDataErrorMessage(snapshotError)); setLoading(false); }),
       onSnapshot(query(collection(firestore, "teachers"), limit(500)), (snapshot) => {
-        setTeachers(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setTeachers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
       onSnapshot(query(collection(firestore, "subjects"), limit(500)), (snapshot) => {
-        setSubjects(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setSubjects(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
+      onSnapshot(query(collection(firestore, "classes"), limit(500)), (snapshot) => {
+        setClasses(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      }, () => undefined),
+      onSnapshot(query(collection(firestore, "departments"), limit(500)), (snapshot) => {
+        setDepartments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      }, () => undefined),
       onSnapshot(query(collection(firestore, "payrollRates"), limit(500)), (snapshot) => {
-        setRateRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setRateRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
       onSnapshot(query(collection(firestore, "auditLogs"), limit(80)), (snapshot) => {
-        setAuditRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setAuditRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, () => undefined),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -125,92 +141,306 @@ export default function AdminPayrollPage() {
 
   useEffect(() => {
     const unsubscribers = [
-      onSnapshot(query(collection(firestore, "checkins"), where("month", "==", selectedMonth), limit(700)), (snapshot) => {
-        setCheckins(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+      onSnapshot(query(collection(firestore, "checkins"), where("month", "==", selectedMonth), limit(2000)), (snapshot) => {
+        setCheckins(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
       onSnapshot(query(collection(firestore, "payroll"), where("month", "==", selectedMonth), limit(500)), (snapshot) => {
-        setPayrollRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setPayrollRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [selectedMonth]);
 
-  const teacherById = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher])), [teachers]);
-  const subjectById = useMemo(() => new Map(subjects.map((subject) => [subject.id, subject])), [subjects]);
-  const checkinByScheduleId = useMemo(() => new Map(checkins.map((checkin) => [String(checkin.scheduleId), checkin])), [checkins]);
-  const departments = useMemo(() => Array.from(new Set(teachers.map((teacher) => String(teacher.departmentId || "")).filter(Boolean))), [teachers]);
-  const visibleRateRows = useMemo(() => rateRows
-    .filter((row) => {
-      const teacher = teacherById.get(String(row.teacherId));
-      return departmentFilter === "all" || teacher?.departmentId === departmentFilter;
-    })
-    .sort((first, second) => String(first.teacherName || first.teacherId).localeCompare(String(second.teacherName || second.teacherId), "vi")), [departmentFilter, rateRows, teacherById]);
+  // Lookup maps
+  const teacherById = useMemo(() => new Map(teachers.map((t) => [t.id, t])), [teachers]);
+  const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
+  const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
+  const departmentById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
+  const checkinByScheduleId = useMemo(() => new Map(checkins.map((c) => [String(c.scheduleId), c])), [checkins]);
 
-  const monthSchedules = useMemo(
-    () => schedules.filter((schedule) => schedule.status !== "cancelled" && dateFromSchedule(schedule).startsWith(selectedMonth)),
-    [schedules, selectedMonth],
-  );
-  const unconfirmedPastSchedules = useMemo(() => {
+  // Department options with fallback to unique teacher departmentIds
+  const departmentOptions = useMemo(() => {
+    if (departments.length > 0) {
+      return departments.map((d) => ({
+        id: d.id,
+        name: d.name || d.code || d.id,
+      }));
+    }
+    const set = new Set(teachers.map((t) => String(t.departmentId || "")).filter(Boolean));
+    return Array.from(set).map((id) => ({ id, name: id }));
+  }, [departments, teachers]);
+
+  // Process raw schedules into structured ScheduleWithMeta
+  const monthProcessedSchedules = useMemo(() => {
     const today = localTodayDateOnly();
-    return monthSchedules.filter((schedule) => {
-      const date = dateFromSchedule(schedule);
-      return Boolean(date && date <= today && !checkinByScheduleId.has(schedule.id));
-    });
-  }, [checkinByScheduleId, monthSchedules]);
 
-  const filteredSchedules = useMemo(() => {
+    return schedules
+      .filter((s) => s.status !== "cancelled" && dateFromScheduleRow(s).startsWith(selectedMonth))
+      .map((schedule): ScheduleWithMeta => {
+        const calculatedDate = dateFromScheduleRow(schedule);
+        const dateDetails = parseScheduleDateDetails(calculatedDate);
+        const isPast = Boolean(calculatedDate && calculatedDate <= today);
+        const isToday = calculatedDate === today;
+        const isUpcoming = Boolean(calculatedDate && calculatedDate > today);
+
+        const checkinDoc = checkinByScheduleId.get(schedule.id);
+        const assignedTeacher = teacherById.get(String(schedule.actualTeacherId || schedule.teacherId));
+        const resolvedTeacherName = assignedTeacher?.fullName || schedule.teacherName || schedule.teacherId || "—";
+        const resolvedTeacherCode = assignedTeacher?.teacherCode || "";
+
+        const deptId = String(schedule.departmentId || assignedTeacher?.departmentId || "");
+        const deptDoc = departmentById.get(deptId);
+        const resolvedDepartmentName = deptDoc?.name || deptDoc?.code || deptId || "—";
+
+        const classDoc = classById.get(String(schedule.classId));
+        const resolvedClassName = classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "—";
+
+        const subjectDoc = subjectById.get(String(schedule.subjectId));
+        const resolvedSubjectName = subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "—";
+
+        const startPeriodNum = Math.max(1, Number(schedule.startPeriod || 1));
+        const endPeriodNum = Number(schedule.endPeriod || 0);
+        const periodInfo = formatPeriodDisplay(schedule.startPeriod, schedule.endPeriod);
+
+        // Effective status resolution
+        let effectiveStatus: ScheduleWithMeta["effectiveStatus"] = "upcoming";
+        if (checkinDoc) {
+          if (checkinDoc.status === "absent") {
+            effectiveStatus = "absent";
+          } else if (
+            checkinDoc.status === "adjusted" ||
+            (checkinDoc.teacherId && checkinDoc.teacherId !== (schedule.actualTeacherId || schedule.teacherId))
+          ) {
+            effectiveStatus = "adjusted";
+          } else {
+            effectiveStatus = "confirmed";
+          }
+        } else if (isPast) {
+          effectiveStatus = "pending_past";
+        } else {
+          effectiveStatus = "upcoming";
+        }
+
+        const effectiveTeacherId = String(checkinDoc?.teacherId || schedule.actualTeacherId || schedule.teacherId || "");
+        const effectiveTeacherDoc = teacherById.get(effectiveTeacherId);
+        const effectiveTeacherName = checkinDoc?.teacherName || effectiveTeacherDoc?.fullName || resolvedTeacherName;
+        const isSubstituted = Boolean(
+          effectiveTeacherId &&
+          effectiveTeacherId !== String(schedule.originalTeacherId || schedule.teacherId || "") &&
+          effectiveStatus === "adjusted"
+        );
+
+        return {
+          ...schedule,
+          calculatedDate,
+          dayOfWeekNumber: dateDetails.dayOfWeek,
+          dayName: dateDetails.dayName,
+          formattedDate: dateDetails.formattedDate,
+          isPast,
+          isToday,
+          isUpcoming,
+          resolvedTeacherName,
+          resolvedTeacherCode,
+          resolvedDepartmentName,
+          resolvedClassName,
+          resolvedSubjectName,
+          startPeriodNum,
+          endPeriodNum,
+          periodLabel: periodInfo.label,
+          periodCountNum: periodInfo.count,
+          checkinDoc,
+          effectiveStatus,
+          effectiveTeacherId,
+          effectiveTeacherName,
+          isSubstituted,
+        };
+      })
+      .sort((a, b) => a.calculatedDate.localeCompare(b.calculatedDate) || a.startPeriodNum - b.startPeriodNum);
+  }, [checkinByScheduleId, classById, departmentById, schedules, selectedMonth, subjectById, teacherById]);
+
+  // Overall counts for KPI ribbon
+  const kpiCounts = useMemo(() => {
+    let total = 0;
+    let confirmed = 0;
+    let pendingPast = 0;
+    let upcoming = 0;
+    let adjusted = 0;
+    let absent = 0;
+
+    for (const item of monthProcessedSchedules) {
+      total += 1;
+      if (item.effectiveStatus === "confirmed") confirmed += 1;
+      else if (item.effectiveStatus === "pending_past") pendingPast += 1;
+      else if (item.effectiveStatus === "upcoming") upcoming += 1;
+      else if (item.effectiveStatus === "adjusted") adjusted += 1;
+      else if (item.effectiveStatus === "absent") absent += 1;
+    }
+
+    return { total, confirmed, pendingPast, upcoming, adjusted, absent };
+  }, [monthProcessedSchedules]);
+
+  // Past schedules that MUST be resolved before payroll can be calculated
+  const unconfirmedPastSchedules = useMemo(() => {
+    return monthProcessedSchedules.filter((s) => s.effectiveStatus === "pending_past");
+  }, [monthProcessedSchedules]);
+
+  // Available dates for secondary dropdown
+  const availableDates = useMemo(() => {
+    const map = new Map<string, { label: string; count: number }>();
+    for (const item of monthProcessedSchedules) {
+      if (!item.calculatedDate) continue;
+      const existing = map.get(item.calculatedDate);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(item.calculatedDate, {
+          label: `${item.dayName}, ${item.formattedDate}`,
+          count: 1,
+        });
+      }
+    }
+    return Array.from(map.entries())
+      .map(([date, meta]) => ({ date, label: meta.label, count: meta.count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [monthProcessedSchedules]);
+
+  // Filtered schedules according to all active criteria
+  const filteredProcessedSchedules = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
-    return monthSchedules.filter((schedule) => {
-      const teacher = teacherById.get(String(schedule.actualTeacherId || schedule.teacherId));
-      const matchesKeyword = !keyword || [teacher?.fullName, schedule.className, schedule.classId, schedule.subjectName, schedule.subjectId]
-        .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase("vi").includes(keyword));
-      const matchesDepartment = departmentFilter === "all" || schedule.departmentId === departmentFilter || teacher?.departmentId === departmentFilter;
-      return matchesKeyword && matchesDepartment;
+
+    return monthProcessedSchedules.filter((item) => {
+      // 1. Department filter
+      if (departmentFilter !== "all") {
+        const teacher = teacherById.get(item.effectiveTeacherId);
+        const matchesDept = item.departmentId === departmentFilter || teacher?.departmentId === departmentFilter;
+        if (!matchesDept) return false;
+      }
+
+      // 2. Teacher type filter
+      if (teacherTypeFilter !== "all") {
+        const teacher = teacherById.get(item.effectiveTeacherId);
+        const matchesType = item.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
+        if (!matchesType) return false;
+      }
+
+      // 3. Status filter
+      if (statusFilter !== "all" && item.effectiveStatus !== statusFilter) {
+        return false;
+      }
+
+      // 4. Date filter
+      if (selectedDate !== "all" && item.calculatedDate !== selectedDate) {
+        return false;
+      }
+
+      // 5. Teacher filter
+      if (selectedTeacherId !== "all" && item.effectiveTeacherId !== selectedTeacherId && item.teacherId !== selectedTeacherId) {
+        return false;
+      }
+
+      // 6. Class filter
+      if (selectedClassId !== "all" && item.classId !== selectedClassId) {
+        return false;
+      }
+
+      // 7. Search keyword
+      if (keyword) {
+        const searchPool = [
+          item.resolvedTeacherName,
+          item.resolvedTeacherCode,
+          item.effectiveTeacherName,
+          item.resolvedClassName,
+          item.resolvedSubjectName,
+          item.resolvedDepartmentName,
+          item.className,
+          item.subjectName,
+        ].filter(Boolean);
+
+        const matches = searchPool.some((val) => String(val).toLocaleLowerCase("vi").includes(keyword));
+        if (!matches) return false;
+      }
+
+      return true;
     });
-  }, [departmentFilter, monthSchedules, search, teacherById]);
+  }, [
+    departmentFilter,
+    monthProcessedSchedules,
+    search,
+    selectedClassId,
+    selectedDate,
+    selectedTeacherId,
+    statusFilter,
+    teacherById,
+    teacherTypeFilter,
+  ]);
 
-  const summaryRows = useMemo(() => teachers.map((teacher) => {
-    const teacherCheckins = checkins.filter((checkin) => checkin.teacherId === teacher.id && ["confirmed", "adjusted"].includes(String(checkin.status)));
-    const actualPeriods = teacherCheckins.reduce((sum, checkin) => sum + Number(checkin.periodCount || 0), 0);
-    const standardPeriods = teacher.teacherType === "co_huu" ? Number(teacher.standardPeriodsPerWeek || 0) * 4 : null;
-    return {
-      teacherId: teacher.id,
-      teacherName: teacher.fullName || teacher.email || teacher.id,
-      teacherType: teacher.teacherType,
-      departmentId: teacher.departmentId || "",
-      actualPeriods,
-      standardPeriods,
-      differencePeriods: standardPeriods === null ? null : actualPeriods - standardPeriods,
-    };
-  }).filter((row) => row.actualPeriods > 0 || departmentFilter === "all" || row.departmentId === departmentFilter), [checkins, departmentFilter, teachers]);
+  const hasActiveFilters = Boolean(
+    search.trim() ||
+    statusFilter !== "all" ||
+    selectedDate !== "all" ||
+    selectedTeacherId !== "all" ||
+    selectedClassId !== "all"
+  );
 
-  const filteredPayrollRows = useMemo(() => payrollRows.filter((row) => {
-    const teacher = teacherById.get(String(row.teacherId));
-    const matchesDepartment = departmentFilter === "all" || teacher?.departmentId === departmentFilter;
-    const matchesType = teacherTypeFilter === "all" || row.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
-    return matchesDepartment && matchesType;
-  }), [departmentFilter, payrollRows, teacherById, teacherTypeFilter]);
+  const handleResetFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setSelectedDate("all");
+    setSelectedTeacherId("all");
+    setSelectedClassId("all");
+  };
 
-  async function writeCheckin(schedule: Row, override?: Partial<typeof adjustForm>) {
+  // Selection handlers
+  const handleToggleSelect = (id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllPage = (ids: string[]) => {
+    if (ids.length === 0) {
+      setSelectedRowIds(new Set());
+    } else {
+      setSelectedRowIds(new Set(ids));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedRowIds(new Set());
+  };
+
+  // Core write checkin function (single)
+  async function writeCheckin(
+    schedule: ScheduleWithMeta | Row,
+    override?: { status: "confirmed" | "adjusted" | "absent"; actualTeacherId: string; reason: string; note: string }
+  ) {
     if (!user) return;
     const existing = checkinByScheduleId.get(schedule.id);
     const actualTeacherId = override?.actualTeacherId || String(schedule.actualTeacherId || schedule.teacherId || "");
     const teacher = teacherById.get(actualTeacherId);
     const status = override?.status || "confirmed";
-    const periodCount = Math.max(0, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
-    const payable = isPayableAttendanceStatus(status);
+    const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+    const payable = ["confirmed", "adjusted"].includes(status);
+
+    const classDoc = classById.get(String(schedule.classId || ""));
+    const subjectDoc = subjectById.get(String(schedule.subjectId || ""));
+    const deptDoc = departmentById.get(String(schedule.departmentId || teacher?.departmentId || ""));
+
     await setDoc(doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`), {
       scheduleId: schedule.id,
       month: selectedMonth,
-      date: dateFromSchedule(schedule),
+      date: dateFromScheduleRow(schedule),
       teacherId: actualTeacherId,
       teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
       departmentId: teacher?.departmentId || schedule.departmentId || "",
+      departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
       classId: schedule.classId || "",
-      className: schedule.className || "",
+      className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
       subjectId: schedule.subjectId || "",
-      subjectName: schedule.subjectName || "",
+      subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
       startPeriod: schedule.startPeriod || null,
       endPeriod: schedule.endPeriod || null,
       periodCount,
@@ -232,38 +462,174 @@ export default function AdminPayrollPage() {
     }, { merge: true });
   }
 
-  async function confirmSchedule(schedule: Row) {
-    setAdjusting(true);
-    setError("");
-    try {
-      await writeCheckin(schedule);
-      toast.success("Đã xác nhận chấm công.");
-    } catch (submitError) {
-      setError(firebaseDataErrorMessage(submitError));
-    } finally {
-      setAdjusting(false);
+  // Core batch checkin function
+  async function writeCheckinsBatch(
+    targetSchedules: (ScheduleWithMeta | Row)[],
+    status: "confirmed" | "absent" = "confirmed",
+    reason = "Xác nhận hàng loạt theo phân công"
+  ) {
+    if (!user || targetSchedules.length === 0) return;
+    const chunkSize = 400; // safe margin for Firestore 500 limit
+
+    for (let offset = 0; offset < targetSchedules.length; offset += chunkSize) {
+      const chunk = targetSchedules.slice(offset, offset + chunkSize);
+      const batch = writeBatch(firestore);
+
+      for (const schedule of chunk) {
+        const existing = checkinByScheduleId.get(schedule.id);
+        const actualTeacherId = String(schedule.actualTeacherId || schedule.teacherId || "");
+        const teacher = teacherById.get(actualTeacherId);
+        const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+        const payable = status === "confirmed";
+
+        const classDoc = classById.get(String(schedule.classId || ""));
+        const subjectDoc = subjectById.get(String(schedule.subjectId || ""));
+        const deptDoc = departmentById.get(String(schedule.departmentId || teacher?.departmentId || ""));
+
+        const checkinRef = doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`);
+        batch.set(checkinRef, {
+          scheduleId: schedule.id,
+          month: selectedMonth,
+          date: dateFromScheduleRow(schedule),
+          teacherId: actualTeacherId,
+          teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
+          departmentId: teacher?.departmentId || schedule.departmentId || "",
+          departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
+          classId: schedule.classId || "",
+          className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
+          subjectId: schedule.subjectId || "",
+          subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
+          startPeriod: schedule.startPeriod || null,
+          endPeriod: schedule.endPeriod || null,
+          periodCount,
+          payablePeriods: payable ? periodCount : 0,
+          payable,
+          status,
+          actualTeacherId,
+          originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+          teacherType: teacher?.teacherType || schedule.teacherType || "",
+          attendanceSource: "admin_confirmation_batch",
+          confirmedAt: serverTimestamp(),
+          confirmedBy: user.uid,
+          adjustedBy: user.uid,
+          adjustmentReason: reason,
+          note: "",
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+          ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+        }, { merge: true });
+      }
+
+      await batch.commit();
     }
   }
 
-  async function submitAdjustment() {
-    if (!adjustTarget) return;
-    if (!adjustForm.reason.trim()) {
-      setAdjustError("Vui lòng nhập lý do điều chỉnh.");
-      return;
+  // Single schedule quick confirmation
+  async function confirmSchedule(schedule: ScheduleWithMeta) {
+    setActionLoading(true);
+    setError("");
+    try {
+      await writeCheckin(schedule);
+      toast.success(`Đã xác nhận tiết dạy của ${schedule.resolvedTeacherName}`);
+    } catch (submitError) {
+      setError(firebaseDataErrorMessage(submitError));
+    } finally {
+      setActionLoading(false);
     }
-    setAdjusting(true);
+  }
+
+  // Submit modal adjustment
+  async function handleAdjustSubmit(formData: {
+    status: "confirmed" | "adjusted" | "absent";
+    actualTeacherId: string;
+    reason: string;
+    note: string;
+  }) {
+    if (!adjustTarget) return;
+    setActionLoading(true);
     setAdjustError("");
     try {
-      await writeCheckin(adjustTarget, adjustForm);
+      await writeCheckin(adjustTarget, formData);
       setAdjustTarget(null);
-      setAdjustForm({ status: "confirmed", actualTeacherId: "", reason: "", note: "" });
-      toast.success("Đã điều chỉnh chấm công.");
+      toast.success("Đã lưu thông tin điều chỉnh chấm công thành công.");
     } catch (submitError) {
       setAdjustError(firebaseDataErrorMessage(submitError));
     } finally {
-      setAdjusting(false);
+      setActionLoading(false);
     }
   }
+
+  // Batch confirm all unconfirmed past schedules
+  async function handleBatchConfirmAllPast() {
+    if (unconfirmedPastSchedules.length === 0) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await writeCheckinsBatch(unconfirmedPastSchedules, "confirmed", "Duyệt nhanh tất cả lịch đã qua");
+      setBatchModalOpen(false);
+      toast.success(`Đã xác nhận thành công ${unconfirmedPastSchedules.length} lịch dạy đã qua! Bảng lương đã được mở khóa.`);
+    } catch (batchError) {
+      setError(firebaseDataErrorMessage(batchError));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Batch confirm selected checkbox rows
+  async function handleBatchConfirmSelected(ids: string[], status: "confirmed" | "absent") {
+    const targetItems = monthProcessedSchedules.filter((s) => ids.includes(s.id));
+    if (targetItems.length === 0) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      const reason = status === "confirmed" ? "Xác nhận hàng loạt đã dạy" : "Đánh dấu vắng hàng loạt";
+      await writeCheckinsBatch(targetItems, status, reason);
+      setSelectedRowIds(new Set());
+      toast.success(`Đã cập nhật trạng thái cho ${targetItems.length} lịch dạy.`);
+    } catch (batchError) {
+      setError(firebaseDataErrorMessage(batchError));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Batch confirm by date
+  async function handleBatchConfirmDate(dateSchedules: ScheduleWithMeta[]) {
+    setActionLoading(true);
+    setError("");
+    try {
+      await writeCheckinsBatch(dateSchedules, "confirmed", `Duyệt nhanh lịch ngày ${dateSchedules[0]?.formattedDate || ""}`);
+      toast.success(`Đã duyệt tất cả ${dateSchedules.length} tiết chờ trong ngày.`);
+    } catch (batchError) {
+      setError(firebaseDataErrorMessage(batchError));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Batch confirm by teacher
+  async function handleBatchConfirmTeacher(teacherSchedules: ScheduleWithMeta[]) {
+    setActionLoading(true);
+    setError("");
+    try {
+      await writeCheckinsBatch(teacherSchedules, "confirmed", `Duyệt nhanh lịch của ${teacherSchedules[0]?.resolvedTeacherName || ""}`);
+      toast.success(`Đã duyệt tất cả ${teacherSchedules.length} tiết chờ của giáo viên.`);
+    } catch (batchError) {
+      setError(firebaseDataErrorMessage(batchError));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Rate modal logic
+  const visibleRateRows = useMemo(() => {
+    return rateRows
+      .filter((row) => {
+        const teacher = teacherById.get(String(row.teacherId));
+        return departmentFilter === "all" || teacher?.departmentId === departmentFilter;
+      })
+      .sort((a, b) => String(a.teacherName || a.teacherId).localeCompare(String(b.teacherName || b.teacherId), "vi"));
+  }, [departmentFilter, rateRows, teacherById]);
 
   async function saveRate() {
     if (!user) return;
@@ -297,10 +663,48 @@ export default function AdminPayrollPage() {
     }
   }
 
+  // Summary rows logic
+  const summaryRows = useMemo(() => {
+    return teachers
+      .map((teacher) => {
+        const teacherCheckins = checkins.filter(
+          (c) => c.teacherId === teacher.id && ["confirmed", "adjusted"].includes(String(c.status))
+        );
+        const actualPeriods = teacherCheckins.reduce((sum, c) => sum + Number(c.periodCount || 0), 0);
+        const standardPeriods = teacher.teacherType === "co_huu" ? Number(teacher.standardPeriodsPerWeek || 0) * 4 : null;
+        const deptDoc = departmentById.get(String(teacher.departmentId || ""));
+        const departmentName = deptDoc?.name || deptDoc?.code || teacher.departmentId || "—";
+
+        return {
+          teacherId: teacher.id,
+          teacherName: teacher.fullName || teacher.email || teacher.id,
+          teacherType: teacher.teacherType,
+          departmentId: teacher.departmentId || "",
+          departmentName,
+          actualPeriods,
+          standardPeriods,
+          differencePeriods: standardPeriods === null ? null : actualPeriods - standardPeriods,
+        };
+      })
+      .filter((row) => row.actualPeriods > 0 || departmentFilter === "all" || row.departmentId === departmentFilter);
+  }, [checkins, departmentById, departmentFilter, teachers]);
+
+  // Payroll rows logic
+  const filteredPayrollRows = useMemo(() => {
+    return payrollRows.filter((row) => {
+      const teacher = teacherById.get(String(row.teacherId));
+      const matchesDepartment = departmentFilter === "all" || teacher?.departmentId === departmentFilter;
+      const matchesType = teacherTypeFilter === "all" || row.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
+      return matchesDepartment && matchesType;
+    });
+  }, [departmentFilter, payrollRows, teacherById, teacherTypeFilter]);
+
   async function calculatePayroll() {
     setError("");
     if (unconfirmedPastSchedules.length > 0) {
-      setError(`Còn ${unconfirmedPastSchedules.length} lịch dạy đã qua nhưng chưa được xác nhận chấm công. Hãy xác nhận “Đã dạy”, “Vắng” hoặc điều chỉnh giáo viên thực dạy trước khi tính bảng lương.`);
+      setError(
+        `Còn ${unconfirmedPastSchedules.length} lịch dạy đã qua chưa được xác nhận chấm công. Bấm "Duyệt nhanh tất cả lịch đã qua" để mở khóa tính bảng lương ngay.`
+      );
       setTab("attendance");
       return;
     }
@@ -327,10 +731,19 @@ export default function AdminPayrollPage() {
         row.differencePeriods ?? "",
         row.ratePerPeriod ?? "",
         row.amount ?? "",
-        statusLabel(row.status),
+        statusLabelVi(row.status),
       ];
     });
-    const header = ["Giáo viên", "Loại giáo viên", "Số tiết thực dạy", "Số tiết chuẩn", "Số tiết vượt/thiếu", "Đơn giá", "Thành tiền", "Trạng thái"];
+    const header = [
+      "Giáo viên",
+      "Loại giáo viên",
+      "Số tiết thực dạy",
+      "Số tiết chuẩn",
+      "Số tiết vượt/thiếu",
+      "Đơn giá",
+      "Thành tiền",
+      "Trạng thái",
+    ];
     const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
@@ -354,69 +767,333 @@ export default function AdminPayrollPage() {
         <PageHeader
           eyebrow="Chấm công và bảng lương"
           title="Quản lý chấm công, tổng hợp tháng và bảng lương"
-          description="Lịch dạy chỉ là phân công. Chỉ bản ghi chấm công đã xác nhận (Đã dạy/Đã điều chỉnh) mới được tính là tiết thực dạy và đưa vào thù lao."
+          description="Hệ thống chấm công chuẩn hóa: theo dõi lịch phân công, điểm danh tiết dạy, xử lý dạy thay và tự động chốt số liệu tính thù lao."
           actions={
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={exportPayrollCsv} disabled={filteredPayrollRows.length === 0}><Download className="h-4 w-4" />Xuất CSV</Button>
-              <Button variant="secondary" onClick={() => { setRateOpen(true); setRateError(""); }}><CircleDollarSign className="h-4 w-4" />Thành tiền</Button>
-              <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}><Calculator className="h-4 w-4" />Tính bảng lương</Button>
+              <Button variant="secondary" onClick={exportPayrollCsv} disabled={filteredPayrollRows.length === 0}>
+                <Download className="h-4 w-4" />
+                Xuất CSV
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRateOpen(true);
+                  setRateError("");
+                }}
+              >
+                <CircleDollarSign className="h-4 w-4" />
+                Đơn giá thù lao
+              </Button>
+              <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>
+                <Calculator className="h-4 w-4" />
+                Tính bảng lương
+              </Button>
             </div>
           }
         />
 
-        {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-        {unconfirmedPastSchedules.length > 0 ? (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Còn <strong>{unconfirmedPastSchedules.length}</strong> lịch dạy đã qua chưa xác nhận chấm công. Bảng lương sẽ bị khóa tính cho đến khi các lịch này được xác nhận “Đã dạy”, “Vắng” hoặc điều chỉnh giáo viên thực dạy.
+        {error ? (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
           </div>
         ) : null}
 
+        {/* Global Controls Card */}
         <Card className="mb-5 p-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr]">
-            <div><Label>Tháng</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={selectedMonthNumber} onChange={(event) => setMonthPart(event.target.value)}>{months.map((month) => <option key={month} value={month}>Tháng {month}</option>)}</select></div>
-            <div><Label>Năm</Label><Input value={selectedYear} onChange={(event) => setYearPart(event.target.value.replace(/\D/g, "").slice(0, 4))} /></div>
-            <div><Label>Bộ môn</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="all">Tất cả bộ môn</option>{departments.map((department) => <option key={department} value={department}>{department}</option>)}</select></div>
-            <div><Label>Loại giáo viên</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={teacherTypeFilter} onChange={(event) => setTeacherTypeFilter(event.target.value)}><option value="all">Tất cả</option><option value="co_huu">Cơ hữu</option><option value="thinh_giang">Thỉnh giảng</option></select></div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <Label>Tháng</Label>
+              <select
+                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-medium"
+                value={selectedMonthNumber}
+                onChange={(e) => setMonthPart(e.target.value)}
+              >
+                {MONTH_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    Tháng {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>Năm</Label>
+              <Input
+                value={selectedYear}
+                onChange={(e) => setYearPart(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+            </div>
+
+            <div>
+              <Label>Tổ / Bộ môn</Label>
+              <select
+                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+              >
+                <option value="all">Tất cả bộ môn</option>
+                {departmentOptions.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>Loại giáo viên</Label>
+              <select
+                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                value={teacherTypeFilter}
+                onChange={(e) => setTeacherTypeFilter(e.target.value)}
+              >
+                <option value="all">Tất cả loại giáo viên</option>
+                <option value="co_huu">Cơ hữu</option>
+                <option value="thinh_giang">Thỉnh giảng</option>
+              </select>
+            </div>
           </div>
         </Card>
 
+        {/* Main Tabs */}
         <div className="mb-5 flex flex-wrap gap-2">
-          <Button variant={tab === "attendance" ? "primary" : "secondary"} onClick={() => setTab("attendance")}>Chấm công</Button>
-          <Button variant={tab === "summary" ? "primary" : "secondary"} onClick={() => setTab("summary")}>Tổng hợp theo tháng</Button>
-          <Button variant={tab === "payroll" ? "primary" : "secondary"} onClick={() => setTab("payroll")}>Bảng lương</Button>
+          <Button
+            variant={tab === "attendance" ? "primary" : "secondary"}
+            onClick={() => setTab("attendance")}
+            className="relative"
+          >
+            Chấm công tiết dạy
+            {kpiCounts.pendingPast > 0 ? (
+              <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white">
+                {kpiCounts.pendingPast}
+              </span>
+            ) : null}
+          </Button>
+          <Button variant={tab === "summary" ? "primary" : "secondary"} onClick={() => setTab("summary")}>
+            Tổng hợp theo tháng
+          </Button>
+          <Button variant={tab === "payroll" ? "primary" : "secondary"} onClick={() => setTab("payroll")}>
+            Bảng lương tháng
+          </Button>
         </div>
 
-        {tab === "attendance" ? (
-          <Card className="overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative w-full max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm giáo viên, lớp, môn học..." />
+        {/* TAB 1: Chấm công (Industrial Standard Timesheet & Attendance) */}
+        {tab === "attendance" && (
+          <div className="space-y-4">
+            {/* KPI Ribbon */}
+            <AttendanceKpiRibbon
+              total={kpiCounts.total}
+              confirmed={kpiCounts.confirmed}
+              pendingPast={kpiCounts.pendingPast}
+              upcoming={kpiCounts.upcoming}
+              adjusted={kpiCounts.adjusted}
+              absent={kpiCounts.absent}
+              activeFilter={statusFilter}
+              onSelectFilter={(newFilter) => setStatusFilter(newFilter)}
+              onOpenBatchModal={() => setBatchModalOpen(true)}
+            />
+
+            {/* Attendance Workspace Card */}
+            <Card className="p-4 sm:p-5">
+              {/* Toolbar */}
+              <AttendanceToolbar
+                search={search}
+                onSearchChange={setSearch}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                selectedDate={selectedDate}
+                onSelectedDateChange={setSelectedDate}
+                availableDates={availableDates}
+                selectedTeacherId={selectedTeacherId}
+                onSelectedTeacherIdChange={setSelectedTeacherId}
+                teachers={teachers}
+                selectedClassId={selectedClassId}
+                onSelectedClassIdChange={setSelectedClassId}
+                classes={classes}
+                counts={kpiCounts}
+                totalFilteredCount={filteredProcessedSchedules.length}
+                onResetFilters={handleResetFilters}
+                hasActiveFilters={hasActiveFilters}
+              />
+
+              {/* View Rendering */}
+              <div className="mt-5">
+                {loading ? (
+                  <div className="space-y-3 p-4">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <Skeleton key={index} className="h-14" />
+                    ))}
+                  </div>
+                ) : viewMode === "table" ? (
+                  <AttendanceTableView
+                    schedules={filteredProcessedSchedules}
+                    selectedIds={selectedRowIds}
+                    onToggleSelect={handleToggleSelect}
+                    onSelectAllPage={handleSelectAllPage}
+                    onClearSelection={handleClearSelection}
+                    onConfirmSchedule={confirmSchedule}
+                    onAdjustSchedule={(s) => setAdjustTarget(s)}
+                    onBatchConfirm={handleBatchConfirmSelected}
+                    actionLoading={actionLoading}
+                  />
+                ) : viewMode === "by_date" ? (
+                  <AttendanceByDateView
+                    schedules={filteredProcessedSchedules}
+                    onConfirmSchedule={confirmSchedule}
+                    onAdjustSchedule={(s) => setAdjustTarget(s)}
+                    onBatchConfirmDate={handleBatchConfirmDate}
+                    actionLoading={actionLoading}
+                  />
+                ) : (
+                  <AttendanceByTeacherView
+                    schedules={filteredProcessedSchedules}
+                    onConfirmSchedule={confirmSchedule}
+                    onAdjustSchedule={(s) => setAdjustTarget(s)}
+                    onBatchConfirmTeacher={handleBatchConfirmTeacher}
+                    actionLoading={actionLoading}
+                  />
+                )}
               </div>
-              <p className="text-sm text-muted-foreground">{filteredSchedules.length} lịch trong tháng</p>
+            </Card>
+
+            {/* Audit Log Card */}
+            <Card className="mt-6 overflow-hidden">
+              <div className="border-b border-border px-5 py-4 sm:px-6">
+                <h2 className="text-base font-bold">Lịch sử thay đổi chấm công (Audit Log)</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Ghi nhận đầy đủ thông tin người duyệt, thời gian và lý do điều chỉnh theo quy trình kiểm soát.
+                </p>
+              </div>
+              <div className="divide-y divide-border">
+                {auditRows.slice(0, 6).map((row) => (
+                  <div key={row.id} className="px-5 py-3 text-xs sm:px-6">
+                    <p className="font-semibold text-foreground">{row.action || "Chấm công / Điều chỉnh"}</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {row.entityType || "checkin"} · {row.entityId || "—"} · {formatDate(row.createdAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 2: Tổng hợp theo tháng */}
+        {tab === "summary" && (
+          <Card className="overflow-hidden">
+            <div className="border-b border-border px-5 py-4 sm:px-6">
+              <h2 className="text-lg font-bold">Tổng hợp tiết dạy theo tháng</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Số liệu tổng hợp chỉ tính các bản ghi chấm công đã xác nhận (Đã dạy / Đã điều chỉnh).
+              </p>
             </div>
-            {loading ? <div className="space-y-3 p-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-16" />)}</div> : filteredSchedules.length === 0 ? (
-              <EmptyState icon={<CheckCircle2 className="h-6 w-6" />} title="Chưa có lịch trong tháng" description="Không có lịch phù hợp với tháng và bộ lọc hiện tại." />
+            <div className="overflow-x-auto">
+              <table className="data-table min-w-[840px]">
+                <thead>
+                  <tr>
+                    <th>Giáo viên</th>
+                    <th>Tổ bộ môn</th>
+                    <th>Loại giáo viên</th>
+                    <th>Số tiết thực dạy</th>
+                    <th>Số tiết chuẩn (tháng)</th>
+                    <th>Chênh lệch (Vượt/Thiếu)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summaryRows.map((row) => (
+                    <tr key={row.teacherId}>
+                      <td className="font-semibold">{row.teacherName}</td>
+                      <td>{row.departmentName}</td>
+                      <td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td>
+                      <td className="font-bold text-foreground">{row.actualPeriods}</td>
+                      <td>{row.standardPeriods ?? "—"}</td>
+                      <td>
+                        {row.differencePeriods !== null ? (
+                          <span
+                            className={
+                              row.differencePeriods > 0
+                                ? "font-bold text-emerald-700"
+                                : row.differencePeriods < 0
+                                  ? "font-bold text-rose-700"
+                                  : "text-muted-foreground"
+                            }
+                          >
+                            {row.differencePeriods > 0 ? `+${row.differencePeriods}` : row.differencePeriods}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
+        {/* TAB 3: Bảng lương */}
+        {tab === "payroll" && (
+          <Card className="overflow-hidden">
+            <div className="border-b border-border px-5 py-4 sm:px-6">
+              <h2 className="text-lg font-bold">Bảng lương & Thù lao tháng</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Dữ liệu được tính tự động từ collection payroll qua Cloud Function dựa trên số tiết thực dạy.
+              </p>
+            </div>
+            {filteredPayrollRows.length === 0 ? (
+              <EmptyState
+                icon={<Calculator className="h-6 w-6" />}
+                title="Chưa có bảng lương tháng này"
+                description="Bấm 'Tính bảng lương' để hệ thống tính toán thù lao cho giáo viên."
+                action={
+                  <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>
+                    Tính bảng lương
+                  </Button>
+                }
+              />
             ) : (
               <div className="overflow-x-auto">
-                <table className="data-table min-w-[1180px]">
-                  <thead><tr><th>Ngày</th><th>Giáo viên</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Trạng thái</th><th>Giáo viên thực dạy</th><th>Người điều chỉnh</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+                <table className="data-table min-w-[1080px]">
+                  <thead>
+                    <tr>
+                      <th>Giáo viên</th>
+                      <th>Loại giáo viên</th>
+                      <th>Số tiết thực dạy</th>
+                      <th>Số tiết chuẩn</th>
+                      <th>Vượt/Thiếu</th>
+                      <th>Đơn giá / Tiết</th>
+                      <th>Thành tiền</th>
+                      <th>Trạng thái</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {filteredSchedules.map((schedule) => {
-                      const checkin = checkinByScheduleId.get(schedule.id);
-                      const teacher = teacherById.get(String(schedule.actualTeacherId || schedule.teacherId));
+                    {filteredPayrollRows.map((row) => {
+                      const teacher = teacherById.get(String(row.teacherId));
+                      const subjectAmounts = Array.isArray(row.subjectAmounts) ? row.subjectAmounts : [];
+                      const rateText =
+                        subjectAmounts.length > 1
+                          ? `${subjectAmounts.length} mức đơn giá`
+                          : row.ratePerPeriod === null || row.ratePerPeriod === undefined
+                            ? "—"
+                            : formatCurrency(Number(row.ratePerPeriod));
+
                       return (
-                        <tr key={schedule.id}>
-                          <td>{formatDate(dateFromSchedule(schedule))}</td>
-                          <td><p className="font-semibold">{teacher?.fullName || schedule.teacherName || schedule.teacherId}</p><p className="text-xs text-muted-foreground">{schedule.departmentId || teacher?.departmentId || "—"}</p></td>
-                          <td>{schedule.className || schedule.classId || "—"}</td>
-                          <td>{schedule.subjectName || schedule.subjectId || "—"}</td>
-                          <td>{schedule.startPeriod || "—"}-{schedule.endPeriod ? Math.max(Number(schedule.startPeriod || 1), Number(schedule.endPeriod) - 1) : "—"}</td>
-                          <td><Badge tone={statusTone(checkin?.status)}>{statusLabel(checkin?.status)}</Badge></td>
-                          <td>{checkin?.teacherName || teacher?.fullName || "—"}</td>
-                          <td>{checkin?.adjustedBy || "—"}</td>
-                          <td><p className="max-w-xs truncate">{checkin?.note || checkin?.adjustmentReason || "—"}</p></td>
-                          <td><div className="flex gap-2"><Button size="sm" loading={adjusting} onClick={() => confirmSchedule(schedule)}><CheckCircle2 className="h-4 w-4" />Xác nhận</Button><Button size="sm" variant="secondary" onClick={() => { setAdjustTarget(schedule); setAdjustForm({ status: String(checkin?.status || "confirmed"), actualTeacherId: String(checkin?.teacherId || schedule.actualTeacherId || schedule.teacherId || ""), reason: String(checkin?.adjustmentReason || ""), note: String(checkin?.note || "") }); }}><PencilLine className="h-4 w-4" />Điều chỉnh</Button></div></td>
+                        <tr key={row.id}>
+                          <td className="font-semibold">{teacher?.fullName || row.teacherId}</td>
+                          <td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td>
+                          <td className="font-bold text-foreground">{row.actualPeriods ?? 0}</td>
+                          <td>{row.standardPeriods ?? "—"}</td>
+                          <td>{row.differencePeriods ?? "—"}</td>
+                          <td>{rateText}</td>
+                          <td className="font-bold text-primary">
+                            {row.amount === null || row.amount === undefined ? "—" : formatCurrency(Number(row.amount))}
+                          </td>
+                          <td>
+                            <Badge tone={statusBadgeTone(row.status)}>{statusLabelVi(row.status)}</Badge>
+                          </td>
                         </tr>
                       );
                     })}
@@ -425,53 +1102,132 @@ export default function AdminPayrollPage() {
               </div>
             )}
           </Card>
-        ) : null}
+        )}
 
-        {tab === "summary" ? (
-          <Card className="overflow-hidden">
-            <div className="border-b border-border px-5 py-4 sm:px-6"><h2 className="text-lg font-bold">Tổng hợp theo tháng</h2><p className="mt-1 text-sm text-muted-foreground">Dựa trên các bản ghi chấm công đã xác nhận.</p></div>
-            <div className="overflow-x-auto"><table className="data-table min-w-[820px]"><thead><tr><th>Giáo viên</th><th>Bộ môn</th><th>Loại</th><th>Số tiết thực dạy</th><th>Số tiết chuẩn</th><th>Vượt/thiếu</th></tr></thead><tbody>{summaryRows.map((row) => <tr key={row.teacherId}><td className="font-semibold">{row.teacherName}</td><td>{row.departmentId || "—"}</td><td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td><td>{row.actualPeriods}</td><td>{row.standardPeriods ?? "—"}</td><td>{row.differencePeriods ?? "—"}</td></tr>)}</tbody></table></div>
-          </Card>
-        ) : null}
+        {/* Modal Xác nhận hàng loạt cho lịch quá hạn */}
+        <BatchConfirmModal
+          open={batchModalOpen}
+          onOpenChange={setBatchModalOpen}
+          targetSchedules={unconfirmedPastSchedules}
+          onConfirm={handleBatchConfirmAllPast}
+          loading={actionLoading}
+        />
 
-        {tab === "payroll" ? (
-          <Card className="overflow-hidden">
-            <div className="border-b border-border px-5 py-4 sm:px-6"><h2 className="text-lg font-bold">Bảng lương</h2><p className="mt-1 text-sm text-muted-foreground">Dữ liệu được đọc từ collection payroll sau khi Cloud Function tính toán.</p></div>
-            {filteredPayrollRows.length === 0 ? <EmptyState icon={<Calculator className="h-6 w-6" />} title="Chưa có bảng lương" description="Bấm Tính bảng lương để chạy Cloud Function và tải dữ liệu tháng này." action={<Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>Tính bảng lương</Button>} /> : (
-              <div className="overflow-x-auto"><table className="data-table min-w-[1080px]"><thead><tr><th>Giáo viên</th><th>Loại giáo viên</th><th>Số tiết thực dạy</th><th>Số tiết chuẩn</th><th>Số tiết vượt/thiếu</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th></tr></thead><tbody>{filteredPayrollRows.map((row) => { const teacher = teacherById.get(String(row.teacherId)); const subjectAmounts = Array.isArray(row.subjectAmounts) ? row.subjectAmounts : []; const rateText = subjectAmounts.length > 1 ? `${subjectAmounts.length} mức đơn giá` : row.ratePerPeriod === null || row.ratePerPeriod === undefined ? "—" : formatCurrency(Number(row.ratePerPeriod)); return <tr key={row.id}><td className="font-semibold">{teacher?.fullName || row.teacherId}</td><td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td><td>{row.actualPeriods ?? 0}</td><td>{row.standardPeriods ?? "—"}</td><td>{row.differencePeriods ?? "—"}</td><td>{rateText}</td><td>{row.amount === null || row.amount === undefined ? "—" : formatCurrency(Number(row.amount))}</td><td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td></tr>; })}</tbody></table></div>
-            )}
-          </Card>
-        ) : null}
+        {/* Modal Điều chỉnh chấm công & Dạy thay */}
+        <AdjustAttendanceModal
+          open={Boolean(adjustTarget)}
+          onOpenChange={(open) => !open && setAdjustTarget(null)}
+          targetSchedule={adjustTarget}
+          teachers={teachers}
+          onSubmit={handleAdjustSubmit}
+          loading={actionLoading}
+          error={adjustError}
+        />
 
-        {tab === "attendance" ? (
-          <Card className="mt-5 overflow-hidden">
-            <div className="border-b border-border px-5 py-4 sm:px-6"><h2 className="text-lg font-bold">Audit log gần đây</h2><p className="mt-1 text-sm text-muted-foreground">Các thay đổi nghiệp vụ được ghi bởi backend hoặc các chức năng đã có audit.</p></div>
-            <div className="divide-y divide-border">{auditRows.slice(0, 6).map((row) => <div key={row.id} className="px-5 py-3 text-sm sm:px-6"><p className="font-semibold">{row.action || "audit"}</p><p className="text-muted-foreground">{row.entityType || "—"}/{row.entityId || "—"} · {formatDate(row.createdAt)}</p></div>)}</div>
-          </Card>
-        ) : null}
-
-        <Modal open={Boolean(adjustTarget)} onOpenChange={(open) => !open && setAdjustTarget(null)} title="Điều chỉnh chấm công" description="Nhập lý do điều chỉnh để lưu cùng bản ghi chấm công." footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setAdjustTarget(null)}>Hủy</Button><Button loading={adjusting} onClick={submitAdjustment}>Lưu điều chỉnh</Button></div>}>
-          <div className="space-y-4">
-            <div><Label>Trạng thái</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={adjustForm.status} onChange={(event) => setAdjustForm((current) => ({ ...current, status: event.target.value }))}><option value="confirmed">Đã dạy</option><option value="absent">Vắng</option><option value="adjusted">Đã điều chỉnh</option></select></div>
-            <div><Label>Giáo viên thực dạy</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={adjustForm.actualTeacherId} onChange={(event) => setAdjustForm((current) => ({ ...current, actualTeacherId: event.target.value }))}>{teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.fullName || teacher.email || teacher.id}</option>)}</select></div>
-            <div><Label>Lý do điều chỉnh</Label><Input value={adjustForm.reason} onChange={(event) => setAdjustForm((current) => ({ ...current, reason: event.target.value }))} /></div>
-            <div><Label>Ghi chú</Label><textarea className="min-h-28 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" value={adjustForm.note} onChange={(event) => setAdjustForm((current) => ({ ...current, note: event.target.value }))} /></div>
-            {adjustError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{adjustError}</div> : null}
-          </div>
-        </Modal>
-
-        <Modal open={rateOpen} onOpenChange={setRateOpen} title="Thành tiền theo giáo viên và môn" description="Nhập đơn giá/tiết cho từng giáo viên dạy từng môn. Cloud Function sẽ dùng cấu hình này khi tính bảng lương." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setRateOpen(false)}>Đóng</Button><Button loading={rateSubmitting} onClick={saveRate}>Lưu đơn giá</Button></div>}>
+        {/* Modal Đơn giá thù lao */}
+        <Modal
+          open={rateOpen}
+          onOpenChange={setRateOpen}
+          title="Đơn giá thù lao theo giáo viên và môn"
+          description="Cấu hình đơn giá / 1 tiết cho từng giáo viên dạy từng môn để tính bảng lương tự động."
+          wide
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setRateOpen(false)}>
+                Đóng
+              </Button>
+              <Button loading={rateSubmitting} onClick={saveRate}>
+                Lưu đơn giá
+              </Button>
+            </div>
+          }
+        >
           <div className="grid gap-5 lg:grid-cols-[.9fr_1.1fr]">
             <div className="space-y-4">
-              <div><Label>Giáo viên</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={rateForm.teacherId} onChange={(event) => setRateForm((current) => ({ ...current, teacherId: event.target.value }))}><option value="">Chọn giáo viên</option>{teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.fullName || teacher.email || teacher.id}</option>)}</select></div>
-              <div><Label>Môn học</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={rateForm.subjectId} onChange={(event) => setRateForm((current) => ({ ...current, subjectId: event.target.value }))}><option value="">Chọn môn học</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name || subject.code || subject.id}</option>)}</select></div>
-              <div><Label>Giá tiền / 1 tiết</Label><Input min="1" type="number" value={rateForm.ratePerPeriod} onChange={(event) => setRateForm((current) => ({ ...current, ratePerPeriod: event.target.value }))} placeholder="Ví dụ: 150000" /></div>
-              {rateError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{rateError}</div> : null}
+              <div>
+                <Label>Giáo viên</Label>
+                <select
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                  value={rateForm.teacherId}
+                  onChange={(e) => setRateForm((prev) => ({ ...prev, teacherId: e.target.value }))}
+                >
+                  <option value="">Chọn giáo viên</option>
+                  {teachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.fullName || teacher.email || teacher.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label>Môn học</Label>
+                <select
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+                  value={rateForm.subjectId}
+                  onChange={(e) => setRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}
+                >
+                  <option value="">Chọn môn học</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name || subject.code || subject.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label>Đơn giá / 1 tiết (VND)</Label>
+                <Input
+                  min="1"
+                  type="number"
+                  value={rateForm.ratePerPeriod}
+                  onChange={(e) => setRateForm((prev) => ({ ...prev, ratePerPeriod: e.target.value }))}
+                  placeholder="Ví dụ: 150000"
+                />
+              </div>
+
+              {rateError ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700">
+                  {rateError}
+                </div>
+              ) : null}
             </div>
+
             <div className="overflow-hidden rounded-xl border border-border">
-              <div className="border-b border-border bg-muted px-4 py-3"><p className="font-semibold">Đơn giá đã cấu hình</p><p className="text-xs text-muted-foreground">{visibleRateRows.length} mức đơn giá</p></div>
+              <div className="border-b border-border bg-muted px-4 py-3">
+                <p className="font-semibold text-sm">Đơn giá đã cấu hình</p>
+                <p className="text-xs text-muted-foreground">{visibleRateRows.length} mức đơn giá</p>
+              </div>
               <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                {visibleRateRows.length === 0 ? <div className="px-4 py-8 text-center text-sm text-muted-foreground">Chưa có đơn giá.</div> : visibleRateRows.map((row) => <button key={row.id} className="grid w-full gap-1 px-4 py-3 text-left text-sm hover:bg-muted" onClick={() => setRateForm({ teacherId: String(row.teacherId || ""), subjectId: String(row.subjectId || ""), ratePerPeriod: String(row.ratePerPeriod || "") })}><span className="font-semibold">{row.teacherName || teacherById.get(String(row.teacherId))?.fullName || row.teacherId}</span><span className="text-xs text-muted-foreground">{row.subjectName || subjectById.get(String(row.subjectId))?.name || row.subjectId} · {formatCurrency(Number(row.ratePerPeriod || 0))}/tiết</span></button>)}
+                {visibleRateRows.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+                    Chưa có cấu hình đơn giá.
+                  </div>
+                ) : (
+                  visibleRateRows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="grid w-full gap-1 px-4 py-3 text-left text-xs transition hover:bg-muted"
+                      onClick={() =>
+                        setRateForm({
+                          teacherId: String(row.teacherId || ""),
+                          subjectId: String(row.subjectId || ""),
+                          ratePerPeriod: String(row.ratePerPeriod || ""),
+                        })
+                      }
+                    >
+                      <span className="font-semibold text-foreground">
+                        {row.teacherName || teacherById.get(String(row.teacherId))?.fullName || row.teacherId}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {row.subjectName || subjectById.get(String(row.subjectId))?.name || row.subjectId} ·{" "}
+                        <strong className="text-primary">{formatCurrency(Number(row.ratePerPeriod || 0))}</strong>/tiết
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>
