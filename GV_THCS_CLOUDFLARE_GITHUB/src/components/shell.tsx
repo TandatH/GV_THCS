@@ -40,6 +40,7 @@ import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
 import { cn, formatDate, initials } from "@/lib/utils";
 
+import { AppLogo } from "./app-logo";
 import { Button } from "./ui";
 
 type MenuItem = { href: string; label: string; icon: LucideIcon };
@@ -146,7 +147,7 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
     >
       <div className="flex h-[74px] items-center gap-3 border-b border-slate-800 px-5">
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-md shadow-blue-950/30">
-          <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+          <AppLogo className="h-full w-full object-contain" />
         </div>
         {!collapsed || mobile ? (
           <div className="min-w-0 flex-1">
@@ -242,6 +243,11 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
             </button>
           ) : null}
         </div>
+        {!collapsed || mobile ? (
+          <p className="mt-2.5 text-center text-[11px] text-slate-500">
+            Phát triển bởi <span className="font-semibold text-slate-400">TanDat_HCMUTE</span>
+          </p>
+        ) : null}
       </div>
     </aside>
   );
@@ -317,7 +323,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Button>
           <div className="flex items-center lg:hidden">
             <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm border border-border">
-              <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+              <AppLogo className="h-full w-full object-contain" />
             </div>
           </div>
           <Button className="hidden lg:inline-flex" variant="ghost" size="sm" onClick={() => setCollapsed((value) => !value)} aria-label="Thu gọn menu">
