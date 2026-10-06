@@ -104,3 +104,19 @@
     @apply cursor-pointer rounded-md border-0 px-1 py-0.5 shadow-sm;
   }
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, nav, aside, .no-print {
+    display: none !important;
+  }
+
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+}
