@@ -4,6 +4,7 @@ import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
+import { AppLogo } from "@/components/app-logo";
 import { Button, Input, Label } from "@/components/ui";
 import { dashboardPathForRole } from "@/features/auth/auth-provider";
 import { useAuth } from "@/features/auth/use-auth";
@@ -76,7 +77,7 @@ export default function LoginPage() {
           <div>
             <div className="inline-flex items-center gap-3 rounded-2xl bg-white/12 px-4 py-3 backdrop-blur">
               <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-md">
-                <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+                <AppLogo className="h-full w-full object-contain" />
               </div>
               <div>
                 <p className="font-bold">GV Manager</p>
@@ -90,18 +91,24 @@ export default function LoginPage() {
               Quản lý hồ sơ, thời khóa biểu, đơn nghỉ phép, đánh giá chuyên môn, chấm công và thù lao trong một nền tảng đồng bộ và bảo mật.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              "Phân quyền chặt chẽ theo vai trò",
-              "Bảo mật và an toàn dữ liệu",
-              "Tự động hóa xếp lịch thông minh",
-              "Tương thích đa nền tảng thiết bị",
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-3 text-sm backdrop-blur">
-                <ShieldCheck className="h-4 w-4 shrink-0 text-cyan-200" />
-                {item}
-              </div>
-            ))}
+          <div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                "Phân quyền chặt chẽ theo vai trò",
+                "Bảo mật và an toàn dữ liệu",
+                "Tự động hóa xếp lịch thông minh",
+                "Tương thích đa nền tảng thiết bị",
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-3 text-sm backdrop-blur">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-cyan-200" />
+                  {item}
+                </div>
+              ))}
+            </div>
+            <div className="mt-8 flex items-center justify-between border-t border-white/15 pt-4 text-xs text-blue-100/80">
+              <span>Hệ thống quản lý giáo viên</span>
+              <span>Phát triển bởi <strong className="font-semibold text-white">TanDat_HCMUTE</strong></span>
+            </div>
           </div>
         </section>
 
@@ -110,7 +117,7 @@ export default function LoginPage() {
             <div className="mb-8 lg:hidden">
               <div className="inline-flex items-center gap-3">
                 <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-sm border border-slate-200">
-                  <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+                  <AppLogo className="h-full w-full object-contain" />
                 </div>
                 <div>
                   <span className="text-lg font-bold text-slate-900 block leading-tight">GV Manager</span>
@@ -172,6 +179,9 @@ export default function LoginPage() {
 
             <p className="mt-8 text-center text-xs leading-5 text-muted-foreground">
               Khi đăng nhập, bạn đồng ý tuân thủ quy định bảo mật và sử dụng dữ liệu của nhà trường.
+            </p>
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Phát triển bởi <span className="font-semibold text-slate-800">TanDat_HCMUTE</span>
             </p>
           </div>
         </section>
