@@ -451,13 +451,20 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
   ${worksheets}
 </Workbook>`;
 
+  const schoolNameLower = (input.schoolName || "").toLowerCase();
+  const prefix = schoolNameLower.includes("tiểu học") || schoolNameLower.includes("tieu hoc")
+    ? "TKB_Tieu_Hoc"
+    : (schoolNameLower.includes("thcs") || schoolNameLower.includes("trung học cơ sở"))
+      ? "TKB_THCS"
+      : "TKB_hoc_sinh";
+
   const suffix = input.classId
     ? (catalogName(input.classes, input.classId) || input.classId).replace(/[^\p{L}\p{N}_-]+/gu, "_")
     : "tat_ca_lop";
 
   return {
     xml: workbookXml,
-    fileName: `TKB_hoc_sinh_${input.weekStart}_${suffix}.xml`,
+    fileName: `${prefix}_${input.weekStart}_${suffix}.xml`,
     worksheetCount: classIds.length,
     scheduleCount: activeSchedules.length,
     classNames,
