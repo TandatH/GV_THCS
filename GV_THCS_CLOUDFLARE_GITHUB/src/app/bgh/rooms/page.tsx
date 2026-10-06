@@ -76,9 +76,9 @@ export default function BghRoomsPage() {
     <RoleGuard allowedRoles={["bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Ban Giám Hiệu theo dõi"
-          title="Danh sách Phòng học & Cơ sở vật chất"
-          description="Nắm bắt tình hình các phòng học, phòng chức năng và sức chứa phục vụ công tác xếp lịch dạy."
+          eyebrow="Ban Giám hiệu"
+          title="Phòng học & Cơ sở vật chất"
+          description="Theo dõi hiện trạng phòng học, phòng chức năng và sức chứa phục vụ công tác xếp thời khóa biểu."
         />
 
         {error ? (
@@ -110,7 +110,7 @@ export default function BghRoomsPage() {
             <EmptyState
               icon={<DoorOpen className="h-6 w-6" />}
               title="Không tìm thấy phòng học"
-              description="Không có phòng học nào khớp tìm kiếm."
+              description="Không có phòng học nào khớp với điều kiện tìm kiếm."
             />
           ) : (
             <div className="overflow-x-auto">
@@ -141,7 +141,7 @@ export default function BghRoomsPage() {
                       <td>{r.capacity ? `${r.capacity} chỗ` : "Tiêu chuẩn"}</td>
                       <td>
                         <Badge tone={r.isActive !== false ? "success" : "danger"}>
-                          {r.isActive !== false ? "Khả dụng" : "Bảo trì/Khóa"}
+                          {r.isActive !== false ? "Khả dụng" : "Tạm khóa"}
                         </Badge>
                       </td>
                     </tr>

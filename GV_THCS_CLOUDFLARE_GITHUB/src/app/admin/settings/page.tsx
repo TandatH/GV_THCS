@@ -115,7 +115,7 @@ export default function AdminSettingsPage() {
         <PageHeader
           eyebrow="Cấu hình vận hành"
           title="Cài đặt hệ thống"
-          description="Các tham số này được Cloud Functions sử dụng khi kiểm tra tải dạy, di chuyển giữa cơ sở và tổng hợp tiết dạy."
+          description="Thiết lập các quy tắc vận hành về định mức giảng dạy, di chuyển giữa cơ sở và tổng hợp chuyên môn."
         />
 
         {error ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -124,7 +124,7 @@ export default function AdminSettingsPage() {
           <form className="space-y-5" onSubmit={save}>
             <div className="grid gap-5 lg:grid-cols-2">
               <Card className="p-5">
-                <div className="mb-5 flex gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700"><Settings2 className="h-5 w-5" /></div><div><h2 className="font-bold">Thông tin chung</h2><p className="mt-1 text-sm text-muted-foreground">Múi giờ được cố định theo Việt Nam để tránh lệch ngày.</p></div></div>
+                <div className="mb-5 flex gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700"><Settings2 className="h-5 w-5" /></div><div><h2 className="font-bold">Thông tin chung</h2><p className="mt-1 text-sm text-muted-foreground">Múi giờ hệ thống được thiết lập theo giờ Việt Nam (GMT+7).</p></div></div>
                 <Label>Tên trường</Label>
                 <Input required value={form.schoolName} onChange={(event) => setForm((current) => ({ ...current, schoolName: event.target.value }))} />
                 <div className="mt-4"><Label>Múi giờ</Label><Input disabled value="Asia/Ho_Chi_Minh" /></div>

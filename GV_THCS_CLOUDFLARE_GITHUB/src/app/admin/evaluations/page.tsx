@@ -269,9 +269,9 @@ export default function AdminEvaluationsPage() {
     <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow={role === "bgh" ? "Ban Giám Hiệu theo dõi" : role === "totruong" ? "Đánh giá trong tổ" : "Đánh giá giáo viên"}
-          title={role === "bgh" ? "Theo dõi Kết quả Đánh giá Giáo viên" : role === "totruong" ? "Đánh giá giáo viên trong tổ" : "Quản lý kỳ và kết quả đánh giá"}
-          description={role === "bgh" ? "Theo dõi kết quả đánh giá năng lực, chuyên môn giáo viên và phân tích biểu đồ tiêu chí (chế độ chỉ xem)." : "Tạo kỳ đánh giá, chuyển kỳ từ Nháp sang Chính thức, nhập điểm theo tiêu chí và công bố kết quả cho giáo viên."}
+          eyebrow={role === "bgh" ? "Ban Giám hiệu" : role === "totruong" ? "Đánh giá trong tổ" : "Đánh giá giáo viên"}
+          title={role === "bgh" ? "Đánh giá chuyên môn giáo viên" : role === "totruong" ? "Đánh giá giáo viên trong tổ" : "Quản lý kỳ và kết quả đánh giá"}
+          description={role === "bgh" ? "Theo dõi kết quả đánh giá năng lực, chuyên môn giáo viên và biểu đồ tiêu chí." : "Tổ chức các kỳ đánh giá, nhập điểm theo tiêu chí và công bố kết quả đánh giá chuyên môn."}
           actions={
             role !== "bgh" ? (
               <div className="flex flex-wrap gap-2">
@@ -293,7 +293,7 @@ export default function AdminEvaluationsPage() {
           <Card className="overflow-hidden">
             <div className="border-b border-border px-5 py-4 sm:px-6">
               <h2 className="text-lg font-bold">Kỳ đánh giá</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Admin có thể chuyển kỳ giữa Nháp và Chính thức hoặc xóa kỳ khi cần.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Quản lý trạng thái các kỳ đánh giá và công bố kết quả chuyên môn.</p>
             </div>
             {loading ? (
               <div className="space-y-3 p-5">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16" />)}</div>
@@ -345,7 +345,7 @@ export default function AdminEvaluationsPage() {
                     {periods.map((period) => <option key={period.id} value={period.id}>{period.name || period.id}</option>)}
                   </select>
                   {role === "admin" ? <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
-                    <option value="all">Tất cả bộ môn</option>
+                    <option value="all">Tất cả tổ bộ môn</option>
                     {departments.map((department) => <option key={department} value={department}>{department}</option>)}
                   </select> : null}
                 </div>

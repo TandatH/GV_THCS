@@ -218,7 +218,7 @@ export default function TeacherLeaveRequestsPage() {
         updatedBy: user.uid,
         isActive: true,
       });
-      toast.success("Đã hủy đơn nghỉ.");
+      toast.success("Đã hủy đơn nghỉ phép.");
     } catch (cancelError) {
       toast.error(firebaseDataErrorMessage(cancelError));
     } finally {
@@ -235,12 +235,12 @@ export default function TeacherLeaveRequestsPage() {
     const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
     const invalid = files.find((file) => !allowedTypes.has(file.type) || file.size >= 10 * 1024 * 1024);
     if (invalid) {
-      setFormError("Minh chứng chỉ nhận PDF/JPG/PNG/WEBP và mỗi file phải dưới 10 MB.");
+      setFormError("Minh chứng chỉ chấp nhận định dạng PDF, JPG, PNG, WEBP và dung lượng dưới 10 MB.");
       event.target.value = "";
       return;
     }
     if (existingAttachmentPaths.length + files.length > 5) {
-      setFormError(`Đơn đã có ${existingAttachmentPaths.length} file; tổng số file không được vượt quá 5.`);
+      setFormError(`Đơn đã có ${existingAttachmentPaths.length} tệp đính kèm; tổng số không được vượt quá 5 tệp.`);
       event.target.value = "";
       return;
     }
@@ -251,11 +251,11 @@ export default function TeacherLeaveRequestsPage() {
   async function submitLeaveRequest(nextStatus: "nhap" | "cho_duyet") {
     if (!user || !teacherId) return;
     if (selectedSchedules.length === 0) {
-      setFormError("Vui lòng chọn ít nhất một lịch/tiết bị ảnh hưởng.");
+      setFormError("Vui lòng chọn ít nhất một tiết dạy bị ảnh hưởng.");
       return;
     }
     if (form.reason.trim().length < 5) {
-      setFormError("Vui lòng nhập lý do nghỉ rõ ràng hơn.");
+      setFormError("Vui lòng nhập lý do nghỉ phép chi tiết hơn.");
       return;
     }
     setSubmitting(true);
@@ -278,7 +278,7 @@ export default function TeacherLeaveRequestsPage() {
         }));
       const affectedDates = new Set(affectedSchedules.map((item) => item.date).filter(Boolean));
       if (affectedDates.size !== 1 || !affectedDates.has(form.leaveDate)) {
-        setFormError("Các lịch được chọn phải cùng ngày với ngày nghỉ.");
+        setFormError("Các tiết dạy được chọn phải thuộc cùng ngày với ngày nghỉ phép.");
         setSubmitting(false);
         return;
       }
@@ -333,7 +333,7 @@ export default function TeacherLeaveRequestsPage() {
         await Promise.allSettled(uploadedPaths.map((path) => deleteObject(storageRef(firebaseStorage, path))));
         throw uploadOrUpdateError;
       }
-      toast.success(nextStatus === "cho_duyet" ? "Đã tải minh chứng và gửi đơn nghỉ." : "Đã lưu nháp đơn nghỉ.");
+      toast.success(nextStatus === "cho_duyet" ? "Đã gửi đơn nghỉ phép thành công." : "Đã lưu nháp đơn nghỉ phép.");
       setOpen(false);
       resetForm();
     } catch (submitError) {
@@ -347,10 +347,10 @@ export default function TeacherLeaveRequestsPage() {
     <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
-          eyebrow="Đơn nghỉ"
-          title="Đơn nghỉ của tôi"
-          description="Tạo đơn nghỉ theo lịch dạy bị ảnh hưởng và theo dõi kết quả xử lý từ quản trị viên hoặc tổ trưởng."
-          actions={<Button onClick={openNewRequest} disabled={contextLoading || Boolean(error)}><CirclePlus className="h-4 w-4" />Tạo đơn nghỉ</Button>}
+          eyebrow="Nghỉ phép"
+          title="Đơn nghỉ phép"
+          description="Tạo đơn xin nghỉ phép theo tiết dạy và theo dõi kết quả phê duyệt của Ban Giám hiệu hoặc Tổ trưởng chuyên môn."
+          actions={<Button onClick={openNewRequest} disabled={contextLoading || Boolean(error)}><CirclePlus className="h-4 w-4" />Tạo đơn nghỉ phép</Button>}
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -374,11 +374,11 @@ export default function TeacherLeaveRequestsPage() {
           {loading || contextLoading ? (
             <div className="space-y-3 p-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-16" />)}</div>
           ) : error ? null : filteredRows.length === 0 ? (
-            <EmptyState icon={<CalendarClock className="h-6 w-6" />} title="Chưa có đơn nghỉ" description="Bạn chưa tạo đơn nghỉ nào phù hợp với bộ lọc hiện tại." action={<Button onClick={openNewRequest}>Tạo đơn nghỉ</Button>} />
+            <EmptyState icon={<CalendarClock className="h-6 w-6" />} title="Chưa có đơn nghỉ phép" description="Chưa có đơn nghỉ phép nào phù hợp với bộ lọc hiện tại." action={<Button onClick={openNewRequest}>Tạo đơn nghỉ phép</Button>} />
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[980px]">
-                <thead><tr><th>Ngày nghỉ</th><th>Lịch/tiết ảnh hưởng</th><th>Lý do</th><th>Minh chứng</th><th>Trạng thái</th><th>Ghi chú xử lý</th><th>Thời gian gửi</th><th>Thao tác</th></tr></thead>
+                <thead><tr><th>Ngày nghỉ</th><th>Tiết dạy ảnh hưởng</th><th>Lý do</th><th>Minh chứng</th><th>Trạng thái</th><th>Ghi chú xử lý</th><th>Thời gian gửi</th><th>Thao tác</th></tr></thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const attachments = Array.isArray(row.attachmentPaths) ? row.attachmentPaths : [];
@@ -386,9 +386,9 @@ export default function TeacherLeaveRequestsPage() {
                     return (
                       <tr key={row.id}>
                         <td>{formatDate(row.leaveDate)}</td>
-                        <td><div className="max-w-xs space-y-1">{scheduleLabels.length > 0 ? scheduleLabels.slice(0, 2).map((label) => <p key={label} className="line-clamp-1 text-sm">{label}</p>) : "—"}{scheduleLabels.length > 2 ? <p className="text-xs text-muted-foreground">+{scheduleLabels.length - 2} lịch/tiết khác</p> : null}</div></td>
+                        <td><div className="max-w-xs space-y-1">{scheduleLabels.length > 0 ? scheduleLabels.slice(0, 2).map((label) => <p key={label} className="line-clamp-1 text-sm">{label}</p>) : "—"}{scheduleLabels.length > 2 ? <p className="text-xs text-muted-foreground">+{scheduleLabels.length - 2} tiết khác</p> : null}</div></td>
                         <td><p className="max-w-sm line-clamp-2">{row.reason || "—"}</p></td>
-                        <td>{attachments.length > 0 ? `${attachments.length} file` : "—"}</td>
+                        <td>{attachments.length > 0 ? `${attachments.length} tệp` : "—"}</td>
                         <td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td>
                         <td><p className="max-w-xs truncate">{row.reviewNote || "—"}</p></td>
                         <td>{formatDate(row.submittedAt || row.createdAt)}</td>
@@ -402,20 +402,20 @@ export default function TeacherLeaveRequestsPage() {
           )}
         </Card>
 
-        <Modal open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) resetForm(); }} title={editingDraftId ? "Tiếp tục bản nháp" : "Tạo đơn nghỉ"} description="Chọn lịch bị ảnh hưởng, nhập lý do và gửi để admin hoặc tổ trưởng xử lý." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button variant="secondary" loading={submitting} onClick={() => submitLeaveRequest("nhap")}><Save className="h-4 w-4" />Lưu nháp</Button><Button loading={submitting} onClick={() => submitLeaveRequest("cho_duyet")}><Send className="h-4 w-4" />Gửi đơn</Button></div>}>
+        <Modal open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) resetForm(); }} title={editingDraftId ? "Tiếp tục bản nháp" : "Tạo đơn nghỉ phép"} description="Chọn các tiết dạy bị ảnh hưởng, nhập lý do và gửi phê duyệt." wide footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button variant="secondary" loading={submitting} onClick={() => submitLeaveRequest("nhap")}><Save className="h-4 w-4" />Lưu nháp</Button><Button loading={submitting} onClick={() => submitLeaveRequest("cho_duyet")}><Send className="h-4 w-4" />Gửi đơn</Button></div>}>
           <form className="space-y-5" onSubmit={(event: FormEvent<HTMLFormElement>) => event.preventDefault()}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div><Label>Giáo viên</Label><div className="h-11 rounded-xl border border-border bg-muted px-3 py-2 text-sm font-semibold">{teacherName || "—"}</div></div>
               <div><Label>Ngày nghỉ</Label><Input type="date" value={form.leaveDate} onChange={(event) => setForm((current) => ({ ...current, leaveDate: event.target.value }))} /></div>
             </div>
             <div>
-              <Label>Lịch/tiết bị ảnh hưởng</Label>
+              <Label>Tiết dạy bị ảnh hưởng</Label>
               <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-border p-3">
-                {upcomingSchedules.length === 0 ? <div className="flex items-center gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-700"><FileText className="h-4 w-4" />Chưa có lịch sắp tới để chọn. Admin cần xếp lịch trước khi giáo viên tạo đơn nghỉ theo tiết.</div> : upcomingSchedules.map((schedule) => <label key={schedule.id} className="flex cursor-pointer gap-3 rounded-xl border border-border p-3 text-sm hover:bg-muted"><input type="checkbox" checked={selectedSchedules.includes(schedule.id)} onChange={() => toggleSchedule(schedule.id)} /><span>{scheduleLabel(schedule)}</span></label>)}
+                {upcomingSchedules.length === 0 ? <div className="flex items-center gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-700"><FileText className="h-4 w-4" />Chưa có lịch dạy sắp tới. Thời khóa biểu cần được sắp xếp trước khi tạo đơn nghỉ phép theo tiết.</div> : upcomingSchedules.map((schedule) => <label key={schedule.id} className="flex cursor-pointer gap-3 rounded-xl border border-border p-3 text-sm hover:bg-muted"><input type="checkbox" checked={selectedSchedules.includes(schedule.id)} onChange={() => toggleSchedule(schedule.id)} /><span>{scheduleLabel(schedule)}</span></label>)}
               </div>
             </div>
-            <div><Label>Lý do nghỉ</Label><textarea className="min-h-28 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} /></div>
-            <div><Label>File minh chứng</Label><Input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" onChange={selectEvidenceFiles} /><p className="mt-1 text-xs text-muted-foreground">Tối đa 5 file; mỗi file dưới 10 MB. Sau khi gửi duyệt, file sẽ bị khóa.</p>{existingAttachmentPaths.length > 0 ? <p className="mt-2 text-sm text-muted-foreground">Đã có {existingAttachmentPaths.length} file trong bản nháp.</p> : null}{evidenceFiles.length > 0 ? <div className="mt-2 space-y-1 text-sm">{evidenceFiles.map((file) => <p key={`${file.name}-${file.size}`} className="truncate">• {file.name} ({Math.ceil(file.size / 1024)} KB)</p>)}</div> : null}</div>
+            <div><Label>Lý do nghỉ phép</Label><textarea className="min-h-28 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} /></div>
+            <div><Label>Tệp minh chứng đính kèm</Label><Input type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" onChange={selectEvidenceFiles} /><p className="mt-1 text-xs text-muted-foreground">Tối đa 5 tệp; mỗi tệp dưới 10 MB. Sau khi gửi duyệt, tệp đính kèm sẽ được cố định.</p>{existingAttachmentPaths.length > 0 ? <p className="mt-2 text-sm text-muted-foreground">Đã có {existingAttachmentPaths.length} tệp trong bản nháp.</p> : null}{evidenceFiles.length > 0 ? <div className="mt-2 space-y-1 text-sm">{evidenceFiles.map((file) => <p key={`${file.name}-${file.size}`} className="truncate">• {file.name} ({Math.ceil(file.size / 1024)} KB)</p>)}</div> : null}</div>
             {formError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
           </form>
         </Modal>

@@ -42,11 +42,11 @@ function periodCount(schedule: Row) {
 
 function statusLabel(status: unknown) {
   const labels: Record<string, string> = {
-    confirmed: "Đã chấm công",
-    adjusted: "Đã điều chỉnh",
-    absent: "Vắng",
+    confirmed: "Đã xác nhận",
+    adjusted: "Dạy thay / Điều chỉnh",
+    absent: "Vắng / Nghỉ phép",
   };
-  return typeof status === "string" ? labels[status] || status : "Chưa chấm công";
+  return typeof status === "string" ? labels[status] || status : "Chưa đối soát";
 }
 
 function statusTone(status: unknown) {
@@ -152,16 +152,16 @@ export default function TeacherAttendancePage() {
       <Shell>
         <PageHeader
           eyebrow="Chấm công"
-          title="Chấm công của tôi"
-          description="Theo dõi lịch trong tháng và tiết thực dạy. Chỉ chấm công ở trạng thái Đã chấm công/Đã điều chỉnh mới được tính vào thù lao; lịch phân công chưa tự động phát sinh tiền."
+          title="Chấm công giảng dạy"
+          description="Theo dõi tiết dạy thực tế theo thời khóa biểu. Thù lao giảng dạy được tính dựa trên các tiết đã được đối soát và xác nhận hoàn thành."
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
         <div className="mb-5 grid gap-4 md:grid-cols-3">
           <Card className="p-5"><p className="text-sm text-muted-foreground">Giáo viên</p><p className="mt-2 text-lg font-bold">{teacherName || "—"}</p></Card>
-          <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết đã chấm công</p><p className="mt-2 text-3xl font-extrabold">{confirmedPeriods}</p></Card>
-          <Card className="p-5"><p className="text-sm text-muted-foreground">Lịch chưa chấm công</p><p className="mt-2 text-3xl font-extrabold">{pendingSchedules}</p></Card>
+          <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết đã xác nhận</p><p className="mt-2 text-3xl font-extrabold">{confirmedPeriods}</p></Card>
+          <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết chưa đối soát</p><p className="mt-2 text-3xl font-extrabold">{pendingSchedules}</p></Card>
         </div>
 
         <Card className="mb-5 p-4">
@@ -181,12 +181,12 @@ export default function TeacherAttendancePage() {
             <EmptyState
               icon={<ClipboardCheck className="h-6 w-6" />}
               title="Chưa có dữ liệu chấm công trong tháng"
-              description="Nếu bạn đã có lịch dạy, admin cần xác nhận chấm công để bản ghi xuất hiện. Nếu chưa có lịch, vui lòng chờ admin xếp thời khóa biểu."
+              description="Hiện chưa có dữ liệu chấm công cho tháng được chọn. Bản ghi sẽ hiển thị sau khi tiết dạy được phân công và xác nhận hoàn thành."
             />
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[980px]">
-                <thead><tr><th>Ngày</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Tiết tính công</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
+                <thead><tr><th>Ngày</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Số tiết ghi nhận</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
                 <tbody>
                   {filteredRows.map(({ schedule, checkin }) => {
                     const date = checkin?.date || (schedule ? scheduleDate(schedule) : "");
@@ -201,7 +201,7 @@ export default function TeacherAttendancePage() {
                         <td>{schedule ? `${schedule.startPeriod || "?"}-${Math.max(Number(schedule.startPeriod || 1), Number(schedule.endPeriod || 1) - 1)}` : "—"}</td>
                         <td>{periods}</td>
                         <td><Badge tone={statusTone(status)}>{statusLabel(status)}</Badge></td>
-                        <td><p className="max-w-xs truncate">{checkin?.note || checkin?.adjustmentReason || (status ? "—" : "Đang chờ admin xác nhận")}</p></td>
+                        <td><p className="max-w-xs truncate">{checkin?.note || checkin?.adjustmentReason || (status ? "—" : "Chờ đối soát")}</p></td>
                       </tr>
                     );
                   })}
@@ -212,8 +212,8 @@ export default function TeacherAttendancePage() {
         </Card>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><CalendarDays className="h-5 w-5" /></div><div><p className="font-semibold">Lịch chưa chấm công</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Các dòng này lấy từ thời khóa biểu trong tháng nhưng chưa có bản ghi `checkins` tương ứng.</p></div></div></Card>
-          <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></div><div><p className="font-semibold">Đã chấm công</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Sau khi admin xác nhận tại `/admin/payroll`, bản ghi sẽ chuyển sang đã chấm công hoặc đã điều chỉnh.</p></div></div></Card>
+          <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><CalendarDays className="h-5 w-5" /></div><div><p className="font-semibold">Tiết chưa đối soát</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Các tiết dạy theo thời khóa biểu trong tháng đang chờ Ban Giám hiệu hoặc bộ phận quản lý rà soát và xác nhận hoàn thành.</p></div></div></Card>
+          <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></div><div><p className="font-semibold">Tiết đã xác nhận</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Tiết dạy đã được đối soát thành công (dạy theo lịch hoặc dạy thay), đủ điều kiện kết chuyển vào bảng tổng hợp thù lao tháng.</p></div></div></Card>
         </div>
       </Shell>
     </RoleGuard>

@@ -293,7 +293,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
     if (decision !== "da_duyet") return;
     const scheduleIds = targetScheduleIdsForReview(request, schedules);
     if (scheduleIds.length === 0) {
-      setReviewError("Đơn nghỉ chưa có lịch bị ảnh hưởng.");
+      setReviewError("Đơn nghỉ phép chưa có tiết dạy bị ảnh hưởng.");
       return;
     }
     setLoadingCandidates(true);
@@ -340,7 +340,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           ? scheduleIds.map((scheduleId) => ({ scheduleId, substituteTeacherId: substituteBySchedule[scheduleId] }))
           : undefined,
       });
-      toast.success(review.decision === "da_duyet" ? "Đã duyệt và bố trí dạy thay cho từng lịch." : "Đã từ chối đơn nghỉ.");
+      toast.success(review.decision === "da_duyet" ? "Đã duyệt và bố trí dạy thay thành công." : "Đã từ chối đơn nghỉ phép.");
       setReview(null);
       setDetail(null);
       setNote("");
@@ -358,10 +358,10 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
       <Shell>
         <PageHeader
           eyebrow={role === "bgh" ? "Ban Giám Hiệu phê duyệt" : role === "totruong" ? "Tổ trưởng phê duyệt" : "Phê duyệt nghiệp vụ"}
-          title="Đơn nghỉ dạy"
+          title="Đơn nghỉ phép"
           description={role === "bgh"
-            ? `Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và phê duyệt / bố trí dạy thay cho cấp ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "toàn trường"}.`
-            : "Xem chi tiết đơn nghỉ, lịch bị ảnh hưởng, minh chứng và xử lý bằng Cloud Function trong phạm vi được phân quyền."}
+            ? `Xem chi tiết đơn nghỉ phép, lịch bị ảnh hưởng, minh chứng đính kèm và phê duyệt hoặc bố trí dạy thay cho cấp ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "toàn trường"}.`
+            : "Xem chi tiết đơn nghỉ phép, lịch bị ảnh hưởng, minh chứng đính kèm và xử lý phê duyệt theo phân quyền."}
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
@@ -394,11 +394,11 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           {loading ? (
             <div className="space-y-3 p-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-20" />)}</div>
           ) : error ? null : filteredRows.length === 0 ? (
-            <EmptyState icon={<Clock3 className="h-6 w-6" />} title="Chưa có dữ liệu" description="Không có đơn nghỉ phù hợp với bộ lọc hiện tại." />
+            <EmptyState icon={<Clock3 className="h-6 w-6" />} title="Chưa có dữ liệu" description="Không có đơn nghỉ phép phù hợp với bộ lọc hiện tại." />
           ) : (
             <div className="overflow-x-auto">
               <table className="data-table min-w-[1120px]">
-                <thead><tr><th>Giáo viên</th><th>Bộ môn</th><th>Ngày nghỉ</th><th>Lịch/tiết bị ảnh hưởng</th><th>Lý do</th><th>File minh chứng</th><th>Trạng thái</th><th>Thời gian gửi</th><th>Thao tác</th></tr></thead>
+                <thead><tr><th>Giáo viên</th><th>Bộ môn</th><th>Ngày nghỉ</th><th>Lịch/tiết bị ảnh hưởng</th><th>Lý do</th><th>Minh chứng đính kèm</th><th>Trạng thái</th><th>Thời gian gửi</th><th>Thao tác</th></tr></thead>
                 <tbody>
                   {filteredRows.map((row) => {
                     const attachments = Array.isArray(row.attachmentPaths) ? row.attachmentPaths : [];
@@ -410,7 +410,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                         <td>{leaveDateText(row)}</td>
                         <td><div className="max-w-sm space-y-1">{scheduleLabels.length > 0 ? scheduleLabels.slice(0, 2).map((label, index) => <p key={`${label}-${index}`} className="line-clamp-1 text-sm">{label}</p>) : "Chưa liên kết lịch"}{scheduleLabels.length > 2 ? <p className="text-xs text-muted-foreground">+{scheduleLabels.length - 2} lịch/tiết khác</p> : null}</div></td>
                         <td><p className="max-w-sm line-clamp-2">{row.reason || "—"}</p></td>
-                        <td>{attachments.length > 0 ? `${attachments.length} file` : "—"}</td>
+                        <td>{attachments.length > 0 ? `${attachments.length} tệp` : "—"}</td>
                         <td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td>
                         <td>{formatDate(row.submittedAt || row.createdAt)}</td>
                         <td><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => setDetail(row)}><FileText className="h-4 w-4" />Chi tiết</Button>{!isReadOnly && row.status === "cho_duyet" ? <Button size="sm" onClick={() => openReview(row, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button> : !isReadOnly && row.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(row, schedules).length > 0 ? <Button size="sm" variant="secondary" onClick={() => openReview(row, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại</Button> : null}</div></td>
@@ -423,7 +423,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           )}
         </Card>
 
-        <Modal open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)} title="Chi tiết đơn nghỉ" description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ." wide footer={!isReadOnly && detail?.status === "cho_duyet" ? <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}><XCircle className="h-4 w-4" />Từ chối</Button><Button onClick={() => openReview(detail, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button></div> : !isReadOnly && detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? <div className="flex justify-end"><Button onClick={() => openReview(detail, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn</Button></div> : undefined}>
+        <Modal open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)} title="Chi tiết đơn nghỉ phép" description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ phép." wide footer={!isReadOnly && detail?.status === "cho_duyet" ? <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}><XCircle className="h-4 w-4" />Từ chối</Button><Button onClick={() => openReview(detail, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button></div> : !isReadOnly && detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? <div className="flex justify-end"><Button onClick={() => openReview(detail, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn</Button></div> : undefined}>
           {detail ? (
             <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
               <div className="space-y-3 text-sm">
@@ -438,14 +438,14 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                   ["Ghi chú xử lý", detail.reviewNote],
                 ].map(([label, value]) => <div key={label} className="border-b border-border pb-3"><p className="text-xs font-medium uppercase text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value || "—"}</p></div>)}
                 <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">File minh chứng</p>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Minh chứng đính kèm</p>
                   <div className="mt-2 space-y-2">
-                    {Array.isArray(detail.attachmentPaths) && detail.attachmentPaths.length > 0 ? detail.attachmentPaths.map((path: string) => <StorageFileLink key={path} path={path} />) : <p className="text-muted-foreground">Không có file minh chứng.</p>}
+                    {Array.isArray(detail.attachmentPaths) && detail.attachmentPaths.length > 0 ? detail.attachmentPaths.map((path: string) => <StorageFileLink key={path} path={path} />) : <p className="text-muted-foreground">Không có minh chứng đính kèm.</p>}
                   </div>
                 </div>
               </div>
               <div>
-                <h3 className="font-bold">Timeline xử lý</h3>
+                <h3 className="font-bold">Tiến trình xử lý</h3>
                 <div className="mt-3 space-y-3">
                   {timeline(detail).map((item, index) => <div key={`${item.label}-${index}`} className="rounded-xl border border-border p-3 text-sm"><p className="font-semibold">{item.label}</p><p className="mt-1 text-muted-foreground">{formatDate(item.at)} · {String(item.by || "—")}</p></div>)}
                 </div>
@@ -454,7 +454,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           ) : null}
         </Modal>
 
-        <Modal open={Boolean(review)} onOpenChange={(open) => !open && setReview(null)} title={review?.decision === "da_duyet" ? (review.request.status === "da_bo_tri_day_thay" ? "Bố trí lại giáo viên dạy thay" : "Duyệt đơn nghỉ") : "Từ chối đơn nghỉ"} description="Thao tác được thực hiện qua Cloud Function approveLeaveRequest và ghi audit log." footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setReview(null)}>Hủy</Button><Button form="review-form" variant={review?.decision === "tu_choi" ? "danger" : "primary"} loading={submitting} type="submit">Xác nhận</Button></div>}>
+        <Modal open={Boolean(review)} onOpenChange={(open) => !open && setReview(null)} title={review?.decision === "da_duyet" ? (review.request.status === "da_bo_tri_day_thay" ? "Bố trí lại giáo viên dạy thay" : "Duyệt đơn nghỉ phép") : "Từ chối đơn nghỉ phép"} description="Xác nhận phê duyệt và lưu thông tin vào hệ thống." footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setReview(null)}>Hủy</Button><Button form="review-form" variant={review?.decision === "tu_choi" ? "danger" : "primary"} loading={submitting} type="submit">Xác nhận</Button></div>}>
           <form id="review-form" className="space-y-4" onSubmit={submitReview}>
             {review?.decision === "da_duyet" ? (
               <div className="space-y-4">
@@ -470,7 +470,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                         <div className="space-y-2">
                           {scheduleCandidates.map((candidate) => <label key={`${scheduleId}-${candidate.teacherId}`} className="flex cursor-pointer gap-3 rounded-xl border border-border p-3 text-sm hover:bg-muted"><input type="radio" name={`substitute-${scheduleId}`} checked={substituteBySchedule[scheduleId] === candidate.teacherId} onChange={() => setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: candidate.teacherId }))} /><span><span className="font-semibold">{candidate.teacherName}</span><span className="ml-2 text-muted-foreground">{candidate.score} điểm</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.reasons.join(", ")}</span></span></label>)}
                         </div>
-                      ) : <Input value={substituteBySchedule[scheduleId] ?? ""} onChange={(event) => setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: event.target.value }))} placeholder="Nhập teacherId dạy thay cho lịch này" />}
+                      ) : <Input value={substituteBySchedule[scheduleId] ?? ""} onChange={(event) => setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: event.target.value }))} placeholder="Nhập mã giáo viên dạy thay cho lịch này" />}
                     </div>
                   );
                 })}
@@ -478,7 +478,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
             ) : null}
             <div><Label>{review?.decision === "tu_choi" ? "Lý do từ chối" : "Ghi chú xử lý"}</Label><textarea className="min-h-28 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Nhập lý do hoặc hướng dẫn cho giáo viên..." /></div>
             {reviewError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{reviewError}</div> : null}
-            {review?.decision === "da_duyet" ? <div className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-sm text-blue-700"><UserRoundCheck className="mt-0.5 h-4 w-4 shrink-0" />Danh sách gợi ý được tính riêng cho từng lịch, có kiểm tra môn dạy, khung giờ rảnh và thời gian di chuyển.</div> : null}
+            {review?.decision === "da_duyet" ? <div className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-sm text-blue-700"><UserRoundCheck className="mt-0.5 h-4 w-4 shrink-0" />Danh sách gợi ý được tính riêng cho từng lịch, có kiểm tra môn dạy, khung giờ trống và thời gian di chuyển.</div> : null}
           </form>
         </Modal>
       </Shell>

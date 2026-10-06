@@ -121,8 +121,8 @@ export default function BghClassesPage() {
     <RoleGuard allowedRoles={["bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Ban Giám Hiệu theo dõi"
-          title={`Danh sách Lớp học · ${levelName}`}
+          eyebrow="Ban Giám hiệu"
+          title={`Lớp học · ${levelName}`}
           description="Theo dõi quy mô lớp, khối lớp, giáo viên chủ nhiệm và phòng học thuộc phạm vi phụ trách."
         />
 
@@ -165,7 +165,7 @@ export default function BghClassesPage() {
               value={gradeFilter}
               onChange={(e) => setGradeFilter(e.target.value)}
             >
-              <option value="all">Tất cả các khối</option>
+              <option value="all">Tất cả khối</option>
               {availableGrades.map((g) => (
                 <option key={g} value={String(g)}>
                   Khối {g}
@@ -236,7 +236,7 @@ export default function BghClassesPage() {
                         <td>{c.studentCount ? `${c.studentCount} HS` : "—"}</td>
                         <td>
                           <Badge tone={c.isActive !== false ? "success" : "danger"}>
-                            {c.isActive !== false ? "Đang học" : "Ngừng HĐ"}
+                            {c.isActive !== false ? "Đang hoạt động" : "Ngừng hoạt động"}
                           </Badge>
                         </td>
                       </tr>

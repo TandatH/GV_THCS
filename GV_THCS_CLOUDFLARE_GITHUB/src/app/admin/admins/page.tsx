@@ -288,8 +288,8 @@ export default function AdminAccountsPage() {
             <div className="flex gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
               <div>
-                <p className="font-semibold text-amber-900">Bảo vệ Admin cuối cùng</p>
-                <p className="mt-1 text-sm leading-5 text-amber-800">Backend chặn khóa/xóa nếu thao tác làm hệ thống không còn Admin hoạt động.</p>
+                <p className="font-semibold text-amber-900">Bảo vệ quản trị viên</p>
+                <p className="mt-1 text-sm leading-5 text-amber-800">Hệ thống luôn duy trì tối thiểu một tài khoản quản trị viên hoạt động.</p>
               </div>
             </div>
           </Card>
@@ -317,7 +317,7 @@ export default function AdminAccountsPage() {
               icon={<UserRoundCog className="h-6 w-6" />}
               title="Chưa có quản trị viên phù hợp"
               description={search ? "Không có tài khoản nào khớp từ khóa tìm kiếm." : "Hãy tạo thêm quản trị viên để có tài khoản dự phòng."}
-              action={!search ? <Button onClick={openCreate}><CirclePlus className="h-4 w-4" />Thêm Admin</Button> : undefined}
+              action={!search ? <Button onClick={openCreate}><CirclePlus className="h-4 w-4" />Thêm quản trị viên</Button> : undefined}
             />
           ) : (
             <div className="overflow-x-auto">
@@ -327,7 +327,7 @@ export default function AdminAccountsPage() {
                     <th className="px-5 py-3">Quản trị viên</th>
                     <th className="px-5 py-3">Trạng thái</th>
                     <th className="px-5 py-3">Ngày tạo</th>
-                    <th className="px-5 py-3">Reset MK gần nhất</th>
+                    <th className="px-5 py-3">Đổi MK gần nhất</th>
                     <th className="px-5 py-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -365,7 +365,7 @@ export default function AdminAccountsPage() {
                               <KeyRound className="h-4 w-4" /> Đổi MK
                             </Button>
                             <Button variant="secondary" size="sm" disabled={busy} onClick={() => void handleReset(row)}>
-                              <RefreshCw className="h-4 w-4" /> Reset MK
+                              <RefreshCw className="h-4 w-4" /> Cấp lại MK
                             </Button>
                             <Button
                               variant="secondary"
@@ -401,11 +401,11 @@ export default function AdminAccountsPage() {
           open={createOpen}
           onOpenChange={setCreateOpen}
           title="Thêm quản trị viên"
-          description="Tài khoản được tạo đồng thời trong Firebase Authentication và collection users với quyền role=admin."
+          description="Khởi tạo tài khoản quản trị viên mới với đầy đủ quyền quản lý hệ thống."
           footer={
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setCreateOpen(false)}>Hủy</Button>
-              <Button form="create-admin-form" type="submit" loading={saving}>Tạo Admin</Button>
+              <Button form="create-admin-form" type="submit" loading={saving}>Lưu tài khoản</Button>
             </div>
           }
         >
@@ -431,7 +431,7 @@ export default function AdminAccountsPage() {
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">Mật khẩu không được lưu dạng rõ trong Firestore. Sau khi đóng hộp kết quả, hệ thống không thể đọc lại mật khẩu này.</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Vui lòng sao chép và bàn giao mật khẩu ngay. Vì lý do bảo mật, bạn sẽ không thể xem lại sau khi đóng hộp thoại.</p>
             </div>
           </form>
         </Modal>
@@ -466,7 +466,7 @@ export default function AdminAccountsPage() {
               <Input id="confirm-admin-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
-              Thao tác này đổi trực tiếp mật khẩu Firebase Authentication và thu hồi refresh token cũ của tài khoản được chọn.
+              Mật khẩu mới sẽ có hiệu lực ngay lập tức và các phiên đăng nhập trước đó sẽ tự động đăng xuất.
             </div>
           </form>
         </Modal>
@@ -494,7 +494,7 @@ export default function AdminAccountsPage() {
                 </div>
               </div>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
-                Hệ thống chỉ hiển thị mật khẩu này ở kết quả tạo/reset. Mật khẩu thật không được lưu dạng rõ trong Firestore hoặc audit log.
+                Mật khẩu tạm chỉ hiển thị một lần. Vui lòng bàn giao an toàn và yêu cầu người dùng đổi mật khẩu khi đăng nhập lần đầu.
               </div>
             </div>
           ) : null}

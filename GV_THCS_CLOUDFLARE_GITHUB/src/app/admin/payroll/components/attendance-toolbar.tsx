@@ -89,7 +89,7 @@ export function AttendanceToolbar({
                   : "border border-border bg-card text-muted-foreground hover:bg-muted",
             )}
           >
-            ⚠️ Cần xử lý
+            Chưa đối soát
             <span className={cn("rounded-full px-1.5 py-0.2 text-[10px]", statusFilter === "pending_past" ? "bg-amber-700 text-white" : "bg-amber-200 text-amber-900 font-bold")}>
               {counts.pendingPast}
             </span>
@@ -105,7 +105,7 @@ export function AttendanceToolbar({
                 : "border border-border bg-card text-muted-foreground hover:bg-emerald-50 hover:text-emerald-700",
             )}
           >
-            Đã dạy
+            Đã xác nhận
             <span className={cn("rounded-full px-1.5 py-0.2 text-[10px]", statusFilter === "confirmed" ? "bg-emerald-700 text-white" : "bg-emerald-100 text-emerald-800")}>
               {counts.confirmed}
             </span>
@@ -121,7 +121,7 @@ export function AttendanceToolbar({
                 : "border border-border bg-card text-muted-foreground hover:bg-blue-50 hover:text-blue-700",
             )}
           >
-            Dạy thay / Sửa
+            Dạy thay / Điều chỉnh
             <span className={cn("rounded-full px-1.5 py-0.2 text-[10px]", statusFilter === "adjusted" ? "bg-blue-700 text-white" : "bg-blue-100 text-blue-800")}>
               {counts.adjusted}
             </span>
@@ -137,7 +137,7 @@ export function AttendanceToolbar({
                 : "border border-border bg-card text-muted-foreground hover:bg-rose-50 hover:text-rose-700",
             )}
           >
-            Vắng / Nghỉ
+            Vắng / Nghỉ phép
             <span className={cn("rounded-full px-1.5 py-0.2 text-[10px]", statusFilter === "absent" ? "bg-rose-700 text-white" : "bg-rose-100 text-rose-800")}>
               {counts.absent}
             </span>
@@ -153,7 +153,7 @@ export function AttendanceToolbar({
                 : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            Chưa tới hạn
+            Sắp tới
             <span className={cn("rounded-full px-1.5 py-0.2 text-[10px]", statusFilter === "upcoming" ? "bg-slate-700 text-white" : "bg-muted text-muted-foreground")}>
               {counts.upcoming}
             </span>
@@ -227,7 +227,7 @@ export function AttendanceToolbar({
             value={selectedDate}
             onChange={(e) => onSelectedDateChange(e.target.value)}
           >
-            <option value="all">📅 Tất cả các ngày ({availableDates.length} ngày)</option>
+            <option value="all">Tất cả ngày ({availableDates.length} ngày)</option>
             {availableDates.map((item) => (
               <option key={item.date} value={item.date}>
                 {item.label} ({item.count} tiết)
@@ -243,7 +243,7 @@ export function AttendanceToolbar({
             value={selectedTeacherId}
             onChange={(e) => onSelectedTeacherIdChange(e.target.value)}
           >
-            <option value="all">👨‍🏫 Tất cả giáo viên ({teachers.length})</option>
+            <option value="all">Tất cả giáo viên ({teachers.length})</option>
             {teachers.map((teacher) => (
               <option key={teacher.id} value={teacher.id}>
                 {teacher.fullName || teacher.email || teacher.id}
@@ -259,7 +259,7 @@ export function AttendanceToolbar({
             value={selectedClassId}
             onChange={(e) => onSelectedClassIdChange(e.target.value)}
           >
-            <option value="all">🏫 Tất cả lớp học ({classes.length})</option>
+            <option value="all">Tất cả lớp học ({classes.length})</option>
             {classes.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {cls.name || cls.code || cls.id}
@@ -284,7 +284,7 @@ export function AttendanceToolbar({
       {/* Filter summary caption */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div>
-          Đang hiển thị <strong>{totalFilteredCount}</strong> lịch dạy
+          Đang hiển thị <strong>{totalFilteredCount}</strong> tiết dạy
           {hasActiveFilters ? " (đã áp dụng bộ lọc)" : ""}
         </div>
       </div>

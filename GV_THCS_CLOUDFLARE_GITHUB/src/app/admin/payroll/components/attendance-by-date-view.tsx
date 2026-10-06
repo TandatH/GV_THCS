@@ -128,10 +128,10 @@ export function AttendanceByDateView({
                     </span>
                     {group.pendingCount > 0 ? (
                       <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[11px] font-bold text-amber-800">
-                        ⚠️ Còn {group.pendingCount} tiết chờ duyệt
+                        Còn {group.pendingCount} tiết chờ duyệt
                       </span>
                     ) : (
-                      <span className="text-emerald-600 font-medium">✓ Đã duyệt xong</span>
+                      <span className="text-emerald-600 font-medium">Đã hoàn tất</span>
                     )}
                   </div>
                 </div>
@@ -201,7 +201,7 @@ export function AttendanceByDateView({
                           <div className="flex items-center gap-2 text-xs">
                             {schedule.effectiveStatus === "confirmed" ? (
                               <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
-                                <CheckCircle2 className="h-3 w-3" /> Đã dạy
+                                <CheckCircle2 className="h-3 w-3" /> Đã xác nhận
                               </span>
                             ) : schedule.effectiveStatus === "adjusted" ? (
                               <span className="inline-flex items-center gap-1 text-blue-700 font-semibold">
@@ -209,15 +209,15 @@ export function AttendanceByDateView({
                               </span>
                             ) : schedule.effectiveStatus === "absent" ? (
                               <span className="inline-flex items-center gap-1 text-rose-700 font-semibold">
-                                <XCircle className="h-3 w-3" /> Báo vắng
+                                <XCircle className="h-3 w-3" /> Vắng / Nghỉ phép
                               </span>
                             ) : schedule.effectiveStatus === "pending_past" ? (
                               <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
-                                <AlertCircle className="h-3 w-3 text-amber-600" /> Chờ duyệt (quá hạn)
+                                <AlertCircle className="h-3 w-3 text-amber-600" /> Chưa đối soát
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-slate-500">
-                                <Clock className="h-3 w-3" /> Chưa tới hạn
+                                <Clock className="h-3 w-3" /> Sắp tới
                               </span>
                             )}
 

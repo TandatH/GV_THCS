@@ -352,7 +352,7 @@ export default function TeacherSchedulePage() {
   const pendingCount = filteredSchedules.filter((schedule) => schedule.confirmationStatus === "cho_xac_nhan").length;
 
   async function respond(schedule: Row, response: "xac_nhan" | "tu_choi") {
-    const reason = response === "tu_choi" ? window.prompt("Nhập lý do từ chối lịch dạy")?.trim() : undefined;
+    const reason = response === "tu_choi" ? window.prompt("Nhập lý do từ chối lịch giảng dạy:")?.trim() : undefined;
     if (response === "tu_choi" && !reason) return;
     setRespondingId(schedule.id);
     setError("");
@@ -419,18 +419,18 @@ export default function TeacherSchedulePage() {
       <Shell>
         <PageHeader
           eyebrow="Thời khóa biểu"
-          title="Lịch dạy của tôi"
-          description="Lịch dạy theo tuần, hiển thị trực quan với màu sắc riêng cho từng môn học, lớp, phòng, tiết và trạng thái xác nhận."
+          title="Lịch giảng dạy"
+          description="Thời khóa biểu theo tuần, hiển thị chi tiết theo môn học, lớp học, phòng học và trạng thái xác nhận phân công."
           actions={<Button variant="secondary" onClick={() => setSelectedWeek(currentMonday())}><RefreshCcw className="h-4 w-4" />Tuần hiện tại</Button>}
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
-        {lookupError ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">Không thể tải đầy đủ tên môn/lớp/phòng: {lookupError}</div> : null}
+        {lookupError ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">Không thể tải danh mục liên quan: {lookupError}</div> : null}
 
         <div className="mb-5 grid gap-4 md:grid-cols-3">
           <Card className="p-4"><p className="text-sm text-muted-foreground">Giáo viên</p><p className="mt-2 truncate text-lg font-bold">{teacherName || "—"}</p></Card>
           <Card className="p-4"><p className="text-sm text-muted-foreground">Lịch trong tuần</p><p className="mt-2 text-3xl font-extrabold">{filteredSchedules.length}</p></Card>
-          <Card className="p-4"><p className="text-sm text-muted-foreground">Số tiết / chờ xác nhận</p><p className="mt-2 text-3xl font-extrabold">{totalPeriods}<span className="ml-2 text-base font-semibold text-amber-700">/{pendingCount}</span></p></Card>
+          <Card className="p-4"><p className="text-sm text-muted-foreground">Tổng tiết / Chờ xác nhận</p><p className="mt-2 text-3xl font-extrabold">{totalPeriods}<span className="ml-2 text-base font-semibold text-amber-700">/{pendingCount}</span></p></Card>
         </div>
 
         <Card className="mb-5 p-4">
@@ -448,7 +448,7 @@ export default function TeacherSchedulePage() {
           {loading || contextLoading ? (
             <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">{weekdays.map((day) => <Skeleton key={day} className="h-72" />)}</div>
           ) : error ? null : filteredSchedules.length === 0 ? (
-            <EmptyState icon={<CalendarDays className="h-6 w-6" />} title="Không có lịch dạy trong tuần này" description="Nếu bạn vừa được xếp lịch, hãy kiểm tra lại tuần đang chọn hoặc liên hệ admin để xác nhận lịch đã được phân công đúng hồ sơ giáo viên." />
+            <EmptyState icon={<CalendarDays className="h-6 w-6" />} title="Không có lịch dạy trong tuần này" description="Không có tiết dạy trong tuần được chọn. Vui lòng kiểm tra tuần khác hoặc liên hệ bộ phận xếp lịch." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {weekdays.map((day) => {

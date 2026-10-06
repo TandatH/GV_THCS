@@ -1,7 +1,7 @@
 "use client";
 
 import type { Role } from "@school/shared";
-import { Loader2, LogOut, ShieldAlert } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -31,9 +31,14 @@ export function RoleGuard({
   if (loading || !user) {
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
-        <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          Đang kiểm tra phiên đăng nhập…
+        <div className="flex flex-col items-center gap-3 text-sm font-medium text-muted-foreground">
+          <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-md border border-slate-100">
+            <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span>Đang kiểm tra phiên làm việc…</span>
+          </div>
         </div>
       </main>
     );
@@ -43,12 +48,12 @@ export function RoleGuard({
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
         <Card className="w-full max-w-lg p-8 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-amber-50 text-amber-600">
-            <ShieldAlert className="h-7 w-7" />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-sm border border-slate-100">
+            <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
           </div>
-          <h1 className="mt-5 text-xl font-bold">Tài khoản chưa được cấp quyền</h1>
+          <h1 className="mt-5 text-xl font-bold">Tài khoản chưa được phân quyền</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Tài khoản đã đăng nhập thành công nhưng chưa có Custom Claim phù hợp. Vui lòng liên hệ quản trị viên để được cấp quyền.
+            Tài khoản đã đăng nhập thành công nhưng chưa được phân quyền vai trò trong hệ thống. Vui lòng liên hệ quản trị viên để được kích hoạt tài khoản.
           </p>
           <Button
             className="mt-6"

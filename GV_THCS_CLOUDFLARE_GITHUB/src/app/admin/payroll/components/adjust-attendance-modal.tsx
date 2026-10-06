@@ -145,7 +145,7 @@ export function AdjustAttendanceModal({
               )}
             >
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              <span className="text-xs">Đã dạy</span>
+              <span className="text-xs">Đã xác nhận</span>
             </button>
 
             <button
@@ -173,7 +173,7 @@ export function AdjustAttendanceModal({
               )}
             >
               <XCircle className="h-5 w-5 text-rose-600" />
-              <span className="text-xs">Vắng / Nghỉ</span>
+              <span className="text-xs">Vắng / Nghỉ phép</span>
             </button>
           </div>
         </div>
@@ -193,13 +193,13 @@ export function AdjustAttendanceModal({
                 return (
                   <option key={teacher.id} value={teacher.id} disabled={isAssigned}>
                     {teacher.fullName || teacher.email || teacher.id}
-                    {isAssigned ? " (Giáo viên được phân công gốc)" : ""}
+                    {isAssigned ? " (Giáo viên phân công ban đầu)" : ""}
                   </option>
                 );
               })}
             </select>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Thù lao tiết dạy sẽ được tính cho giáo viên dạy thay này.
+              Thù lao tiết dạy sẽ được ghi nhận cho giáo viên dạy thay.
             </p>
           </div>
         ) : null}
@@ -210,18 +210,18 @@ export function AdjustAttendanceModal({
           <Input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Ví dụ: Dạy thay do nghỉ ốm, Xác nhận đã dạy..."
+            placeholder="Ví dụ: Dạy thay theo phân công, Báo vắng có phép..."
           />
         </div>
 
         {/* Note */}
         <div>
-          <Label>Ghi chú thêm</Label>
+          <Label>Ghi chú</Label>
           <textarea
             className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Nhập thông tin bổ sung nếu có..."
+            placeholder="Nhập thông tin bổ sung (nếu có)..."
           />
         </div>
 

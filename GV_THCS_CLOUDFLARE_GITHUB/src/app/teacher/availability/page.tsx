@@ -203,7 +203,7 @@ export default function AvailabilityPage() {
           .map((document) => ({ id: document.id, ...document.data() }))
           .filter(isActiveSemester);
         if (activeSemesters.length === 0) {
-          throw new FirebaseUiError("FAILED_PRECONDITION", "Chưa có học kỳ đang hoạt động để đăng ký khung giờ rảnh.");
+          throw new FirebaseUiError("FAILED_PRECONDITION", "Chưa có học kỳ đang hoạt động để đăng ký khung giờ trống.");
         }
         const nextTimeSlots: TimeSlotRow[] = timeSlotSnapshot.docs
           .map((document) => ({ id: document.id, ...document.data() } as TimeSlotRow))
@@ -277,7 +277,7 @@ export default function AvailabilityPage() {
   async function save(nextStatus: "draft" | "submitted") {
     if (!availabilityId || !teacherId || !semesterId || !user) return;
     if (teacherType !== "thinh_giang") {
-      setError("Chức năng đăng ký khung giờ rảnh chỉ áp dụng cho giáo viên thỉnh giảng.");
+      setError("Chức năng đăng ký khung giờ trống chỉ áp dụng cho giáo viên thỉnh giảng.");
       return;
     }
     if (nextStatus === "submitted" && slots.length === 0) {
@@ -285,7 +285,7 @@ export default function AvailabilityPage() {
       return;
     }
     if (deadlinePassed) {
-      setError("Thời hạn đăng ký khung giờ rảnh cho học kỳ này đã kết thúc.");
+      setError("Thời hạn đăng ký khung giờ trống cho học kỳ này đã kết thúc.");
       return;
     }
     setSaving(true);
@@ -296,11 +296,11 @@ export default function AvailabilityPage() {
       setReviewStatus(nextStatus === "submitted" ? "pending" : "not_submitted");
       setReviewNote("");
       const message = nextStatus === "submitted"
-        ? "Đã gửi đăng ký khung giờ rảnh và đang chờ quản trị viên duyệt."
+        ? "Đã gửi đăng ký khung giờ trống và đang chờ duyệt."
         : "Đã lưu bản nháp.";
       toast.success(message);
     } catch (saveError) {
-      setError(firebaseErrorMessage(saveError) || "Không thể lưu khung giờ rảnh.");
+      setError(firebaseErrorMessage(saveError) || "Không thể lưu khung giờ trống.");
     } finally {
       setSaving(false);
     }
@@ -322,8 +322,8 @@ export default function AvailabilityPage() {
       <Shell>
         <PageHeader
           eyebrow="Lịch cá nhân"
-          title="Đăng ký khung giờ rảnh"
-          description="Dành cho giáo viên thỉnh giảng. Nhiều giáo viên có thể cùng đăng ký một khung giờ rảnh; hệ thống chỉ dùng các ô đã được duyệt để xếp lịch và vẫn kiểm tra trùng lịch khi phân công."
+          title="Đăng ký khung giờ trống"
+          description="Dành cho giáo viên thỉnh giảng. Hệ thống sử dụng các khung giờ đã được phê duyệt để xếp lịch giảng dạy và đảm bảo không trùng lịch."
           actions={<Badge tone={reviewTone}>{reviewLabel}</Badge>}
         />
 
@@ -333,13 +333,13 @@ export default function AvailabilityPage() {
           <Card>
             <EmptyState
               icon={<Clock3 className="h-6 w-6" />}
-              title="Không cần đăng ký khung giờ rảnh"
-              description="Chức năng này chỉ áp dụng cho giáo viên thỉnh giảng. Giáo viên cơ hữu được xếp theo thời khóa biểu và quy định phân công chung của nhà trường."
+              title="Không áp dụng cho tài khoản này"
+              description="Chức năng này chỉ áp dụng cho giáo viên thỉnh giảng. Giáo viên cơ hữu được phân công theo thời khóa biểu chung của nhà trường."
             />
           </Card>
         ) : semesters.length === 0 ? (
           <Card>
-            <EmptyState icon={<Clock3 className="h-6 w-6" />} title="Chưa có học kỳ đang hoạt động" description="Vui lòng liên hệ quản trị viên để mở học kỳ đăng ký khung giờ rảnh." />
+            <EmptyState icon={<Clock3 className="h-6 w-6" />} title="Chưa có học kỳ đang hoạt động" description="Vui lòng liên hệ quản trị viên để mở đợt đăng ký khung giờ cho học kỳ mới." />
           </Card>
         ) : (
           <Card className="overflow-hidden">
@@ -374,7 +374,7 @@ export default function AvailabilityPage() {
 
             {deadline ? (
               <div className={cn("mx-4 mt-4 rounded-xl border px-4 py-3 text-sm", deadlinePassed ? "border-rose-200 bg-rose-50 text-rose-700" : "border-blue-200 bg-blue-50 text-blue-700")}>
-                {deadlinePassed ? "Thời hạn đăng ký khung giờ rảnh cho học kỳ này đã kết thúc." : `Hạn đăng ký: ${formatDate(deadline)}`}
+                {deadlinePassed ? "Thời hạn đăng ký khung giờ trống cho học kỳ này đã kết thúc." : `Hạn đăng ký: ${formatDate(deadline)}`}
               </div>
             ) : null}
             {status === "submitted" ? (
@@ -385,9 +385,9 @@ export default function AvailabilityPage() {
                 reviewStatus === "pending" && "border-amber-200 bg-amber-50 text-amber-800",
               )}>
                 {reviewStatus === "approved"
-                  ? "Quản trị viên đã duyệt. AI và người xếp lịch chỉ được dùng đúng các ô Tiểu học/THCS đã chọn."
+                  ? "Quản trị viên đã duyệt. Hệ thống xếp lịch sẽ sử dụng đúng các khung giờ bạn đã đăng ký."
                   : reviewStatus === "rejected"
-                    ? `Đăng ký bị từ chối${reviewNote ? `: ${reviewNote}` : ". Hãy điều chỉnh và gửi lại."}`
+                    ? `Đăng ký chưa được duyệt${reviewNote ? `: ${reviewNote}` : ". Vui lòng điều chỉnh và gửi lại."}`
                     : "Đăng ký đang chờ quản trị viên duyệt."}
               </div>
             ) : null}
@@ -410,11 +410,11 @@ export default function AvailabilityPage() {
               ) : (
                 <div className="min-w-[820px]">
                   <div className="mb-4 flex flex-wrap gap-2 text-xs font-semibold">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />Khung giờ bạn có thể dạy</span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-blue-700"><span className="h-2.5 w-2.5 rounded-full bg-blue-600" />Khung giờ có thể dạy</span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5 text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />Chưa chọn</span>
                   </div>
                   <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                    Đang xem bộ tiết <strong>{schoolLevelLabel(selectedSchoolLevel)}</strong>. Nhiều giáo viên thỉnh giảng được phép cùng chọn một ô rảnh. Mỗi ô vẫn được lưu theo <strong>cấp học + thứ + mã tiết</strong>.
+                    Đang xem danh mục tiết <strong>{schoolLevelLabel(selectedSchoolLevel)}</strong>. Vui lòng chọn các tiết bạn có thể nhận lớp giảng dạy trong tuần.
                   </div>
                   <div className="grid grid-cols-[150px_repeat(5,minmax(96px,1fr))] gap-2">
                     <div className="grid place-items-center rounded-xl bg-muted p-3 text-sm font-semibold"><Clock3 className="mr-2 inline h-4 w-4" />Tiết / giờ</div>

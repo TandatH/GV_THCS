@@ -810,7 +810,7 @@ export default function SchedulesPage() {
         setAvailabilityLoading(false);
       },
       (snapshotError) => {
-        setAvailabilityError(`Không thể tải đăng ký giờ rảnh: ${firebaseDataErrorMessage(snapshotError)}`);
+        setAvailabilityError(`Không thể tải đăng ký khung giờ trống: ${firebaseDataErrorMessage(snapshotError)}`);
         setAvailabilityLoading(false);
       },
     );
@@ -1053,11 +1053,11 @@ export default function SchedulesPage() {
   );
   const selectedAvailabilityIssue = selectedTeacherIsAdjunct
     ? !selectedAvailability
-      ? "Giáo viên chưa gửi đăng ký khung giờ rảnh cho học kỳ này."
+      ? "Giáo viên chưa gửi đăng ký khung giờ trống cho học kỳ này."
       : selectedAvailabilityReviewStatus === "pending"
-        ? "Đăng ký khung giờ rảnh đang chờ quản trị viên duyệt."
+        ? "Đăng ký khung giờ trống đang chờ duyệt."
         : selectedAvailabilityReviewStatus === "rejected"
-          ? `Đăng ký khung giờ rảnh đã bị từ chối${selectedAvailability.reviewNote ? `: ${selectedAvailability.reviewNote}` : "."}`
+          ? `Đăng ký khung giờ trống chưa được duyệt${selectedAvailability.reviewNote ? `: ${selectedAvailability.reviewNote}` : "."}`
           : !selectedAvailabilityCovers
             ? "Thứ và tiết đang chọn không nằm trong khung giờ đã được duyệt của giáo viên."
             : ""
@@ -1223,7 +1223,7 @@ export default function SchedulesPage() {
     setAvailabilityError("");
     try {
       await reviewTeacherAvailability({ availabilityId: row.id, decision, note });
-      toast.success(decision === "approved" ? "Đã duyệt khung giờ rảnh." : "Đã từ chối đăng ký và gửi lý do cho giáo viên.");
+      toast.success(decision === "approved" ? "Đã duyệt khung giờ trống." : "Đã từ chối đăng ký và gửi lý do cho giáo viên.");
     } catch (reviewError) {
       setAvailabilityError(firebaseErrorMessage(reviewError));
     } finally {
@@ -1662,7 +1662,7 @@ export default function SchedulesPage() {
               onClick={() => setShowAvailabilitySection((prev) => !prev)}
               className="text-xs font-semibold text-primary hover:underline"
             >
-              {showAvailabilitySection ? "Ẩn khung giờ rảnh" : `Xem ${adjunctAvailabilityRows.length} đăng ký giờ rảnh`}
+              {showAvailabilitySection ? "Ẩn khung giờ trống" : `Xem ${adjunctAvailabilityRows.length} đăng ký giờ trống`}
             </button>
           ) : null}
         </div>
@@ -1679,7 +1679,7 @@ export default function SchedulesPage() {
               <div>
                 <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
                   <CalendarClock className="h-5 w-5 text-indigo-600" />
-                  Đăng ký khung giờ rảnh của giáo viên thỉnh giảng
+                  Đăng ký khung giờ trống của giáo viên thỉnh giảng
                 </h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Duyệt đăng ký trước, sau đó bấm trực tiếp vào ô khung giờ đã duyệt để mở biểu mẫu xếp lịch nhanh.
@@ -2135,8 +2135,8 @@ export default function SchedulesPage() {
                       {/* BUỔI SÁNG HEADER */}
                       <tr className="bg-gradient-to-r from-blue-50/80 via-blue-50/40 to-transparent font-bold text-xs text-blue-900 border-t-2 border-t-blue-200">
                         <td colSpan={6} className="px-4 py-2.5 uppercase tracking-wider">
-                          <span className="inline-flex items-center gap-1.5">
-                            ☀️ BUỔI SÁNG (Tiết 1 — 5)
+                          <span className="inline-flex items-center gap-1.5 font-bold">
+                            BUỔI SÁNG (Tiết 1 — 5)
                           </span>
                         </td>
                       </tr>
@@ -2246,12 +2246,12 @@ export default function SchedulesPage() {
                                           ? "border-emerald-300 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-100/60"
                                           : "border-border/60 bg-transparent text-muted-foreground/35 hover:border-primary/60 hover:bg-primary/5 hover:text-primary",
                                       )}
-                                      title={isTeacherAvailable ? "Khung giờ rảnh đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
+                                      title={isTeacherAvailable ? "Khung giờ trống đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
                                     >
                                       {isTeacherAvailable ? (
                                         <div className="flex flex-col items-center text-center px-1">
                                           <Zap className="h-3.5 w-3.5 text-emerald-600 mb-0.5" />
-                                          <span className="text-[10px] font-bold text-emerald-700">Giờ rảnh đã duyệt</span>
+                                          <span className="text-[10px] font-bold text-emerald-700">Giờ trống đã duyệt</span>
                                           <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition">+ Xếp lịch</span>
                                         </div>
                                       ) : (
@@ -2272,8 +2272,8 @@ export default function SchedulesPage() {
                       {/* BUỔI CHIỀU HEADER */}
                       <tr className="bg-gradient-to-r from-amber-50/80 via-amber-50/40 to-transparent font-bold text-xs text-amber-900 border-t-2 border-t-amber-200">
                         <td colSpan={6} className="px-4 py-2.5 uppercase tracking-wider">
-                          <span className="inline-flex items-center gap-1.5">
-                            🌤️ BUỔI CHIỀU (Tiết 6 — 10)
+                          <span className="inline-flex items-center gap-1.5 font-bold">
+                            BUỔI CHIỀU (Tiết 6 — 10)
                           </span>
                         </td>
                       </tr>
@@ -2383,12 +2383,12 @@ export default function SchedulesPage() {
                                           ? "border-emerald-300 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-100/60"
                                           : "border-border/60 bg-transparent text-muted-foreground/35 hover:border-primary/60 hover:bg-primary/5 hover:text-primary",
                                       )}
-                                      title={isTeacherAvailable ? "Khung giờ rảnh đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
+                                      title={isTeacherAvailable ? "Khung giờ trống đã duyệt của GV này. Bấm để xếp lịch." : "Bấm để xếp lịch vào tiết này"}
                                     >
                                       {isTeacherAvailable ? (
                                         <div className="flex flex-col items-center text-center px-1">
                                           <Zap className="h-3.5 w-3.5 text-emerald-600 mb-0.5" />
-                                          <span className="text-[10px] font-bold text-emerald-700">Giờ rảnh đã duyệt</span>
+                                          <span className="text-[10px] font-bold text-emerald-700">Giờ trống đã duyệt</span>
                                           <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition">+ Xếp lịch</span>
                                         </div>
                                       ) : (
@@ -2670,7 +2670,7 @@ export default function SchedulesPage() {
                   <span className="text-xs font-bold">
                     {applySchoolLevel === "primary" ? "Toàn bộ Cấp 1" : applySchoolLevel === "secondary" ? "Toàn bộ Cấp 2" : "Toàn bộ trường"}
                   </span>
-                  <span className="text-[11px] text-muted-foreground mt-0.5">Tất cả các lớp thuộc phạm vi</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5">Tất cả lớp thuộc phạm vi</span>
                 </button>
 
                 <button
@@ -2905,7 +2905,7 @@ export default function SchedulesPage() {
           open={open}
           onOpenChange={(next) => { setOpen(next); if (!next) setEditingSchedule(null); }}
           title={editingSchedule ? "Sửa lịch dạy" : "Tạo lịch dạy"}
-          description="Chọn dữ liệu nền. Tiết cuối được tính là tiết có học, hệ thống sẽ tự chuyển sang định dạng lưu trữ nội bộ."
+          description="Chọn thông tin phân công giảng dạy. Tiết cuối được tính là tiết kết thúc của buổi học."
           wide
           footer={(
             <div className="flex justify-end gap-2">
@@ -2924,7 +2924,7 @@ export default function SchedulesPage() {
                   <option value="">Chọn {label.toLocaleLowerCase("vi")}</option>
                   {options.map((row) => <option key={row.id} value={row.id}>{catalogOptionLabel(row)}</option>)}
                 </select>
-                {options.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">Chưa có dữ liệu nền phù hợp.</p> : null}
+                {options.length === 0 ? <p className="mt-1 text-xs text-muted-foreground">Chưa có dữ liệu phù hợp.</p> : null}
               </div>
             ))}
             <div>
@@ -2986,7 +2986,7 @@ export default function SchedulesPage() {
           open={Boolean(detail)}
           onOpenChange={(next) => !next && setDetail(null)}
           title="Chi tiết lịch dạy"
-          description="Lịch sử hủy được giữ lại để đối chiếu; thao tác hủy sẽ giải phóng toàn bộ khóa tài nguyên."
+          description="Thông tin chi tiết về buổi học, phân công giáo viên và phòng học."
           footer={detail && (
             role === "admin" ||
             (role === "totruong" && detail.departmentId === managerDepartmentId) ||
@@ -3022,7 +3022,7 @@ export default function SchedulesPage() {
               ))}
               <div className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-blue-700">
                 <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>Mọi thay đổi đi qua Cloud Function để kiểm tra xung đột và ghi nhật ký.</p>
+                <p>Hệ thống tự động kiểm tra trùng lịch giáo viên, lớp học và phòng học khi cập nhật.</p>
               </div>
             </div>
           ) : null}

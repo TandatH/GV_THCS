@@ -133,9 +133,9 @@ export default function BghDashboardPage() {
     <RoleGuard allowedRoles={["bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Ban Giám Hiệu"
+          eyebrow="Ban Giám hiệu"
           title={`Bảng điều khiển · ${bghPosition}`}
-          description={`Theo dõi tình hình hoạt động, nhân sự và thời khóa biểu cấp ${levelLabel}. Quyền tài khoản: Chỉ xem và xuất báo cáo.`}
+          description={`Theo dõi tình hình hoạt động, nhân sự và thời khóa biểu cấp ${levelLabel}.`}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" asChild>
@@ -177,12 +177,12 @@ export default function BghDashboardPage() {
                 Vai trò: {bghPosition} · Phạm vi phụ trách: {levelLabel}
               </p>
               <p className="text-xs text-blue-800/80">
-                Chế độ giám sát chỉ xem (View-only) · Mọi số liệu được tự động lọc theo cấp học của bạn.
+                Chế độ theo dõi chuyên môn · Số liệu được tổng hợp tự động theo cấp học phụ trách.
               </p>
             </div>
           </div>
           <div>
-            <Badge tone="info">Quyền BGH</Badge>
+            <Badge tone="info">Ban Giám hiệu</Badge>
           </div>
         </div>
 
@@ -269,7 +269,7 @@ export default function BghDashboardPage() {
               </div>
               <div>
                 <h3 className="font-bold group-hover:text-blue-600 transition">Thời khóa biểu</h3>
-                <p className="text-xs text-muted-foreground">Xem lịch theo lớp, giáo viên, phòng & xuất file Excel XML.</p>
+                <p className="text-xs text-muted-foreground">Xem lịch theo lớp, giáo viên, phòng và xuất báo cáo.</p>
               </div>
             </div>
           </Link>
@@ -292,7 +292,7 @@ export default function BghDashboardPage() {
                 <GraduationCap className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold group-hover:text-violet-600 transition">Danh sách Lớp</h3>
+                <h3 className="font-bold group-hover:text-violet-600 transition">Lớp học</h3>
                 <p className="text-xs text-muted-foreground">Khối lớp, giáo viên chủ nhiệm, phòng học và ca học.</p>
               </div>
             </div>
@@ -316,8 +316,8 @@ export default function BghDashboardPage() {
                 <CalendarClock className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold group-hover:text-rose-600 transition">Đơn xin nghỉ</h3>
-                <p className="text-xs text-muted-foreground">Theo dõi tình hình giáo viên xin nghỉ dạy và người dạy thay.</p>
+                <h3 className="font-bold group-hover:text-rose-600 transition">Đơn nghỉ phép</h3>
+                <p className="text-xs text-muted-foreground">Theo dõi tình hình giáo viên nghỉ phép và bố trí dạy thay.</p>
               </div>
             </div>
           </Link>
@@ -328,7 +328,7 @@ export default function BghDashboardPage() {
                 <Star className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold group-hover:text-yellow-600 transition">Đánh giá Chuyên môn</h3>
+                <h3 className="font-bold group-hover:text-yellow-600 transition">Đánh giá chuyên môn</h3>
                 <p className="text-xs text-muted-foreground">Tổng hợp kết quả đánh giá chất lượng giảng dạy giáo viên.</p>
               </div>
             </div>
@@ -338,7 +338,7 @@ export default function BghDashboardPage() {
         <div className="mt-6 flex items-start gap-2 rounded-xl bg-slate-50 p-4 text-xs text-slate-600 border border-slate-200">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
           <p>
-            Tài khoản Ban Giám Hiệu được bảo vệ ở chế độ xem an toàn. Để điều chỉnh cấu hình hệ thống, tạo giáo viên mới hoặc xếp thời khóa biểu, vui lòng sử dụng tài khoản Quản trị viên (Admin).
+            Tài khoản Ban Giám hiệu được cấp quyền theo dõi và giám sát chuyên môn. Để cấu hình hệ thống hoặc tạo tài khoản mới, vui lòng liên hệ Quản trị viên hệ thống.
           </p>
         </div>
       </Shell>

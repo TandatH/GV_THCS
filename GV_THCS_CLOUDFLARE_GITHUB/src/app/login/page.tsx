@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, GraduationCap, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
@@ -75,8 +75,8 @@ export default function LoginPage() {
         <section className="relative hidden overflow-hidden bg-gradient-to-br from-blue-700 via-slate-800 to-cyan-600 p-12 text-white lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-3 rounded-2xl bg-white/12 px-4 py-3 backdrop-blur">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-white text-blue-700">
-                <GraduationCap className="h-6 w-6" />
+              <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-md">
+                <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
               </div>
               <div>
                 <p className="font-bold">GV Manager</p>
@@ -87,15 +87,15 @@ export default function LoginPage() {
               Không gian làm việc thống nhất cho nhà trường.
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-blue-100">
-              Quản lý hồ sơ, thời khóa biểu, đơn nghỉ, đánh giá, chấm công và bảng lương trong một hệ thống Firebase bảo mật.
+              Quản lý hồ sơ, thời khóa biểu, đơn nghỉ phép, đánh giá chuyên môn, chấm công và thù lao trong một nền tảng đồng bộ và bảo mật.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              "Phân quyền bằng Custom Claims",
-              "Dữ liệu bảo vệ bởi Firebase Rules",
-              "Xếp lịch qua Cloud Functions",
-              "Tương thích máy tính và điện thoại",
+              "Phân quyền chặt chẽ theo vai trò",
+              "Bảo mật và an toàn dữ liệu",
+              "Tự động hóa xếp lịch thông minh",
+              "Tương thích đa nền tảng thiết bị",
             ].map((item) => (
               <div key={item} className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-3 text-sm backdrop-blur">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-cyan-200" />
@@ -108,9 +108,14 @@ export default function LoginPage() {
         <section className="flex items-center justify-center bg-background px-5 py-10 sm:px-12">
           <div className="w-full max-w-md">
             <div className="mb-8 lg:hidden">
-              <div className="inline-flex items-center gap-2 text-blue-600">
-                <GraduationCap className="h-7 w-7" />
-                <span className="text-lg font-bold">GV Manager</span>
+              <div className="inline-flex items-center gap-3">
+                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-sm border border-slate-200">
+                  <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+                </div>
+                <div>
+                  <span className="text-lg font-bold text-slate-900 block leading-tight">GV Manager</span>
+                  <span className="text-xs text-muted-foreground block">Quản lý giáo viên</span>
+                </div>
               </div>
             </div>
             <p className="text-sm font-bold uppercase tracking-[0.2em] text-primary">Chào mừng trở lại</p>

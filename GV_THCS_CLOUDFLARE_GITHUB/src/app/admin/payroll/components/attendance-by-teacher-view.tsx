@@ -138,17 +138,17 @@ export function AttendanceByTeacherView({
                   <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                     <span>Tổng {group.totalPeriods} tiết</span>
                     <span>·</span>
-                    <span className="text-emerald-700 font-medium">Đã dạy: {group.confirmedPeriods} tiết</span>
+                    <span className="text-emerald-700 font-medium">Đã xác nhận: {group.confirmedPeriods} tiết</span>
                     {group.pendingPastPeriods > 0 ? (
                       <>
                         <span>·</span>
-                        <span className="font-bold text-amber-800">⚠️ Chờ duyệt: {group.pendingPastPeriods} tiết</span>
+                        <span className="font-bold text-amber-800">Chờ đối soát: {group.pendingPastPeriods} tiết</span>
                       </>
                     ) : null}
                     {group.absentPeriods > 0 ? (
                       <>
                         <span>·</span>
-                        <span className="text-rose-700">Vắng: {group.absentPeriods} tiết</span>
+                        <span className="text-rose-700">Vắng / Nghỉ phép: {group.absentPeriods} tiết</span>
                       </>
                     ) : null}
                   </div>
@@ -165,7 +165,7 @@ export function AttendanceByTeacherView({
                     className="h-8 gap-1.5 bg-amber-600 px-3 text-xs text-white hover:bg-amber-700"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Duyệt tất cả {group.pendingItems.length} lịch chờ
+                    Xác nhận tất cả {group.pendingItems.length} tiết chờ
                   </Button>
                 ) : null}
               </div>
@@ -209,7 +209,7 @@ export function AttendanceByTeacherView({
 
                         {schedule.effectiveStatus === "confirmed" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-semibold">
-                            <CheckCircle2 className="h-3 w-3" /> Đã dạy
+                            <CheckCircle2 className="h-3 w-3" /> Đã xác nhận
                           </span>
                         ) : schedule.effectiveStatus === "adjusted" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-semibold">
@@ -217,15 +217,15 @@ export function AttendanceByTeacherView({
                           </span>
                         ) : schedule.effectiveStatus === "absent" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-rose-700 font-semibold">
-                            <XCircle className="h-3 w-3" /> Báo vắng
+                            <XCircle className="h-3 w-3" /> Vắng / Nghỉ phép
                           </span>
                         ) : schedule.effectiveStatus === "pending_past" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-amber-800 font-bold">
-                            <AlertCircle className="h-3 w-3 text-amber-600" /> Chờ duyệt
+                            <AlertCircle className="h-3 w-3 text-amber-600" /> Chưa đối soát
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                            <Clock className="h-3 w-3" /> Tương lai
+                            <Clock className="h-3 w-3" /> Sắp tới
                           </span>
                         )}
                       </div>

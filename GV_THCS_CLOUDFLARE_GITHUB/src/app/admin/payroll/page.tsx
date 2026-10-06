@@ -703,7 +703,7 @@ export default function AdminPayrollPage() {
     setError("");
     if (unconfirmedPastSchedules.length > 0) {
       setError(
-        `Còn ${unconfirmedPastSchedules.length} lịch dạy đã qua chưa được xác nhận chấm công. Bấm "Duyệt nhanh tất cả lịch đã qua" để mở khóa tính bảng lương ngay.`
+        `Còn ${unconfirmedPastSchedules.length} tiết dạy đã qua chưa được đối soát chấm công. Vui lòng xác nhận trước khi tính bảng lương.`
       );
       setTab("attendance");
       return;
@@ -765,9 +765,9 @@ export default function AdminPayrollPage() {
     <RoleGuard allowedRoles={["admin"]}>
       <Shell>
         <PageHeader
-          eyebrow="Chấm công và bảng lương"
-          title="Quản lý chấm công, tổng hợp tháng và bảng lương"
-          description="Hệ thống chấm công chuẩn hóa: theo dõi lịch phân công, điểm danh tiết dạy, xử lý dạy thay và tự động chốt số liệu tính thù lao."
+          eyebrow="Nghiệp vụ thù lao"
+          title="Chấm công & Bảng lương"
+          description="Theo dõi lịch phân công, điểm danh tiết dạy, xử lý dạy thay và tự động chốt số liệu tính thù lao."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" onClick={exportPayrollCsv} disabled={filteredPayrollRows.length === 0}>
@@ -1040,7 +1040,7 @@ export default function AdminPayrollPage() {
             <div className="border-b border-border px-5 py-4 sm:px-6">
               <h2 className="text-lg font-bold">Bảng lương & Thù lao tháng</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Dữ liệu được tính tự động từ collection payroll qua Cloud Function dựa trên số tiết thực dạy.
+                Dữ liệu được hệ thống tổng hợp tự động dựa trên số tiết thực dạy đã đối soát.
               </p>
             </div>
             {filteredPayrollRows.length === 0 ? (

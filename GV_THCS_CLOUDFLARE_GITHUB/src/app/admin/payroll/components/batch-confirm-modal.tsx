@@ -41,12 +41,12 @@ export function BatchConfirmModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title="⚡ Duyệt chấm công hàng loạt theo phân công"
-      description="Xác nhận trạng thái 'Đã dạy' cho các lịch dạy đã diễn ra nhưng chưa có bản ghi chấm công."
+      title="Xác nhận chấm công hàng loạt"
+      description="Xác nhận hoàn thành các tiết dạy đã qua để hoàn tất đối soát dữ liệu."
       footer={
         <div className="flex justify-end gap-2.5">
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={loading}>
-            Hủy bỏ
+            Hủy
           </Button>
           <Button
             loading={loading}
@@ -54,7 +54,7 @@ export function BatchConfirmModal({
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             <CheckCircle2 className="h-4 w-4" />
-            Xác nhận {stats.totalCount} lịch dạy
+            Xác nhận {stats.totalCount} tiết dạy
           </Button>
         </div>
       }
@@ -66,10 +66,10 @@ export function BatchConfirmModal({
             <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
             <div className="space-y-1">
               <p className="font-semibold text-amber-950">
-                Bạn sắp xác nhận {stats.totalCount} lịch dạy quá hạn
+                Xác nhận đối soát {stats.totalCount} tiết dạy
               </p>
               <p className="text-xs text-amber-800 leading-relaxed">
-                Hệ thống sẽ tự động tạo bản ghi chấm công với trạng thái <strong>“Đã dạy”</strong> cho giáo viên được phân công. Sau khi duyệt xong, bảng lương tháng sẽ được <strong>mở khóa tính toán</strong> ngay lập tức.
+                Hệ thống sẽ ghi nhận trạng thái đã dạy cho giáo viên theo thời khóa biểu. Dữ liệu sau đó sẽ sẵn sàng cho việc tổng hợp thù lao.
               </p>
             </div>
           </div>
@@ -78,7 +78,7 @@ export function BatchConfirmModal({
         {/* Metric Cards */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl border border-border bg-muted/40 p-3 text-center">
-            <span className="text-xs text-muted-foreground block">Số lịch dạy</span>
+            <span className="text-xs text-muted-foreground block">Số buổi dạy</span>
             <span className="text-xl font-bold text-foreground mt-0.5 block">{stats.totalCount}</span>
           </div>
 

@@ -118,8 +118,8 @@ export default function BghTeachersPage() {
     <RoleGuard allowedRoles={["bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Ban Giám Hiệu theo dõi"
-          title={`Danh bạ Giáo viên · ${levelName}`}
+          eyebrow="Ban Giám hiệu"
+          title={`Hồ sơ Giáo viên · ${levelName}`}
           description="Tra cứu hồ sơ cán bộ, chuyên môn đào tạo, môn/khối được phân công và định mức tiết của giáo viên thuộc cấp học phụ trách."
         />
 
@@ -160,7 +160,7 @@ export default function BghTeachersPage() {
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
             >
-              <option value="all">Tất cả loại giáo viên</option>
+              <option value="all">Tất cả hình thức</option>
               <option value="co_huu">Cơ hữu</option>
               <option value="thinh_giang">Thỉnh giảng</option>
             </select>
@@ -169,7 +169,7 @@ export default function BghTeachersPage() {
               value={departmentFilter}
               onChange={(e) => setDepartmentFilter(e.target.value)}
             >
-              <option value="all">Tất cả bộ môn</option>
+              <option value="all">Tất cả tổ bộ môn</option>
               {departments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {catalogName(departments, d.id)}
@@ -201,7 +201,7 @@ export default function BghTeachersPage() {
                     <th>Bộ môn</th>
                     <th>Cấp học</th>
                     <th>Môn giảng dạy</th>
-                    <th>Loại</th>
+                    <th>Hình thức</th>
                     <th>Chuyên môn</th>
                     <th>Định mức</th>
                     <th>Trạng thái</th>
@@ -262,7 +262,7 @@ export default function BghTeachersPage() {
                         </td>
                         <td>
                           <Badge tone={row.status === "active" ? "success" : "danger"}>
-                            {row.status === "active" ? "Đang công tác" : "Ngừng HĐ"}
+                            {row.status === "active" ? "Đang công tác" : "Ngừng hoạt động"}
                           </Badge>
                         </td>
                       </tr>

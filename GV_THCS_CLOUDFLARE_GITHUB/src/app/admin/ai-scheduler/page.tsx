@@ -680,7 +680,7 @@ export default function AiSchedulerPage() {
       const result = await generateScheduleWithCpSat(request);
       setProposal(result);
       if (result.status === "OPTIMAL" || result.status === "FEASIBLE") {
-        toast.success(`CP-SAT đã tạo phương án ${result.schedules.length} tiết.`);
+        toast.success(`Hệ thống đã tạo phương án xếp ${result.schedules.length} tiết giảng dạy.`);
       }
     } catch (error) {
       setProposalError(firebaseErrorMessage(error));
@@ -737,7 +737,7 @@ export default function AiSchedulerPage() {
       startPeriod: Number(row.startPeriod),
       endPeriod: Number(row.endPeriod),
       status: "cancelled",
-      cancellationReason: "Điều chỉnh khi xếp lại thời khóa biểu bằng CP-SAT.",
+      cancellationReason: "Điều chỉnh khi xếp lại thời khóa biểu tự động.",
     });
 
     let completed = 0;
@@ -867,7 +867,7 @@ export default function AiSchedulerPage() {
       );
     } catch (error) {
       setProposalError(
-        `Đã xử lý một phần phương án. Backend dừng vì: ${firebaseErrorMessage(error)}. ` +
+        `Đã xử lý một phần phương án. Hệ thống dừng vì: ${firebaseErrorMessage(error)}. ` +
         "Hãy tải lại trang để xem trạng thái thực tế trước khi thao tác tiếp.",
       );
     } finally {
@@ -879,9 +879,9 @@ export default function AiSchedulerPage() {
     <RoleGuard allowedRoles={["admin"]}>
       <Shell>
         <PageHeader
-          eyebrow="OR-Tools CP-SAT"
-          title="AI hỗ trợ xếp thời khóa biểu"
-          description="Solver chỉ đề xuất Thứ/Tiết. Khi áp dụng, từng lịch vẫn đi qua createOrUpdateSchedule hiện tại để backend kiểm tra xung đột và lưu dữ liệu."
+          eyebrow="Tối ưu hóa thời khóa biểu"
+          title="Tự động xếp thời khóa biểu"
+          description="Thuật toán tự động đề xuất thứ và tiết dạy tối ưu theo ràng buộc phòng học, giáo viên và định mức chuyên môn."
           actions={(
             <Button variant="secondary" asChild>
               <a href="/admin/schedules/"><CalendarCheck2 className="h-4 w-4" />Quay lại TKB</a>
@@ -900,7 +900,7 @@ export default function AiSchedulerPage() {
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><BrainCircuit className="h-6 w-6" /></div>
                 <div>
                   <h2 className="font-bold">1. Chọn cấp học, tuần và chế độ xếp</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Mỗi lần CP-SAT chỉ xếp một cấp học để dùng đúng bộ tiết Tiểu học hoặc THCS. Sau đó chọn cách AI xử lý lịch hiện có.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Mỗi lần xếp lịch áp dụng cho một cấp học để tương thích với bộ tiết chuẩn của cấp đó.</p>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -951,11 +951,11 @@ export default function AiSchedulerPage() {
                 <div><Label>Tuần bắt đầu</Label><Input type="date" value={weekStart} onChange={(event) => { setWeekStart(event.target.value); setProposal(null); }} /></div>
               </div>
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <p className="mb-1"><strong>{aiSchoolLevel === "primary" ? "Tiểu học" : "THCS"}</strong> đang có <strong>{levelTimeSlots.length}</strong> tiết được cấu hình. CP-SAT chỉ dùng bộ tiết này.</p>
+                <p className="mb-1"><strong>{aiSchoolLevel === "primary" ? "Tiểu học" : "THCS"}</strong> đang có <strong>{levelTimeSlots.length}</strong> tiết được cấu hình. Thuật toán xếp lịch tự động sẽ sử dụng khung tiết này.</p>
                 {scheduleMode === "fill_missing" ? (
-                  <><strong>{weekExistingSchedules.length}</strong> lịch hiện có trong tuần đang được khóa. AI chỉ bổ sung số tiết còn thiếu.</>
+                  <><strong>{weekExistingSchedules.length}</strong> lịch hiện có trong tuần đang được khóa. Hệ thống chỉ xếp bổ sung số tiết còn thiếu.</>
                 ) : (
-                  <><strong>{selectedExistingScheduleIds.size}</strong> lịch thuộc các phân công đã chọn có thể được bố trí lại; <strong>{lockedExistingSchedules.length}</strong> lịch còn lại vẫn là ràng buộc cứng.</>
+                  <><strong>{selectedExistingScheduleIds.size}</strong> lịch thuộc các phân công đã chọn có thể được bố trí lại; <strong>{lockedExistingSchedules.length}</strong> lịch còn lại vẫn là ràng buộc cố định.</>
                 )}
               </div>
             </Card>
@@ -1005,7 +1005,7 @@ export default function AiSchedulerPage() {
               ) : (
                 <div className="overflow-x-auto border-t border-border">
                   <table className="data-table min-w-[900px]">
-                    <thead><tr><th>Giáo viên</th><th>Môn</th><th>Lớp</th><th>Phòng</th><th>Tổng tiết/tuần</th><th>Đang có</th><th>AI cần xếp</th><th>Solver đã xếp</th><th /></tr></thead>
+                    <thead><tr><th>Giáo viên</th><th>Môn</th><th>Lớp</th><th>Phòng</th><th>Tổng tiết/tuần</th><th>Đang có</th><th>Cần xếp</th><th>Đã xếp</th><th /></tr></thead>
                     <tbody>{requirements.map((item) => {
                       const existingPeriods = existingPeriodsByRequirement.get(item.id) ?? 0;
                       const needToSchedule = scheduleMode === "reoptimize_selected"
@@ -1032,30 +1032,29 @@ export default function AiSchedulerPage() {
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm"><input className="mt-1" type="checkbox" checked={spreadAcrossDays} onChange={(event) => setSpreadAcrossDays(event.target.checked)} /><span><strong>Dàn đều cùng môn/lớp trong tuần</strong><span className="mt-1 block text-xs text-muted-foreground">Hạn chế dồn nhiều tiết của cùng một phân công vào một ngày.</span></span></label>
                 <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm"><input className="mt-1" type="checkbox" checked={preferEarlierPeriods} onChange={(event) => setPreferEarlierPeriods(event.target.checked)} /><span><strong>Ưu tiên tiết sớm</strong><span className="mt-1 block text-xs text-muted-foreground">Chỉ là tiêu chí mềm; không làm sai ràng buộc cứng.</span></span></label>
-                <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm"><input className="mt-1" type="checkbox" checked={enforceStandardPeriods} onChange={(event) => setEnforceStandardPeriods(event.target.checked)} /><span><strong>Không vượt định mức GV cơ hữu</strong><span className="mt-1 block text-xs text-muted-foreground">Nếu bật, số tiết hiện có + tiết mới không vượt standardPeriodsPerWeek.</span></span></label>
+                <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm"><input className="mt-1" type="checkbox" checked={enforceStandardPeriods} onChange={(event) => setEnforceStandardPeriods(event.target.checked)} /><span><strong>Không vượt định mức GV cơ hữu</strong><span className="mt-1 block text-xs text-muted-foreground">Nếu bật, tổng số tiết hiện có và tiết xếp mới không vượt quá định mức tuần.</span></span></label>
                 <div className="rounded-xl border border-border p-3"><Label>Tối đa tiết liên tiếp/GV</Label><Input min="1" max="8" type="number" value={maxConsecutivePeriods} onChange={(event) => setMaxConsecutivePeriods(event.target.value)} /></div>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button size="lg" loading={generating} disabled={requirements.length === 0 || !semesterId} onClick={() => void generateProposal()}><Sparkles className="h-5 w-5" />AI xếp lịch bằng CP-SAT</Button>
-                <span className="text-xs text-muted-foreground">Không có Gemini/OpenAI API. OR-Tools chỉ tính toán ràng buộc.</span>
+                <Button size="lg" loading={generating} disabled={requirements.length === 0 || !semesterId} onClick={() => void generateProposal()}><Sparkles className="h-5 w-5" />Tự động xếp lịch</Button>
               </div>
               {proposalError ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{proposalError}</div> : null}
             </Card>
 
             {generating ? (
-              <Card className="flex min-h-48 items-center justify-center gap-3 p-8 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-primary" />CP-SAT đang tìm phương án tối ưu…</Card>
+              <Card className="flex min-h-48 items-center justify-center gap-3 p-8 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-primary" />Hệ thống đang tìm phương án tối ưu…</Card>
             ) : proposal ? (
               <Card className="overflow-hidden">
                 <div className="flex flex-col gap-3 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="font-bold">4. Phương án đề xuất</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Trạng thái solver: {proposal.status}{proposal.solveSeconds != null ? ` · ${proposal.solveSeconds.toFixed(2)} giây` : ""}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Kết quả thuật toán: {proposal.status === "OPTIMAL" ? "Tối ưu hoàn toàn" : proposal.status === "FEASIBLE" ? "Khả thi" : proposal.status}{proposal.solveSeconds != null ? ` · ${proposal.solveSeconds.toFixed(2)} giây` : ""}</p>
                   </div>
                   <Badge tone={proposal.status === "OPTIMAL" ? "success" : proposal.status === "FEASIBLE" ? "info" : "danger"}>{proposal.status}</Badge>
                 </div>
                 {proposal.diagnostics.length > 0 ? <div className="border-b border-border bg-amber-50 p-4 text-sm text-amber-800">{proposal.diagnostics.map((message) => <p key={message}>• {message}</p>)}</div> : null}
                 {proposal.schedules.length === 0 ? (
-                  <EmptyState icon={<Info className="h-6 w-6" />} title="Chưa có phương án khả thi" description="Kiểm tra chẩn đoán phía trên, tăng khung giờ rảnh hoặc điều chỉnh nhu cầu tiết." />
+                  <EmptyState icon={<Info className="h-6 w-6" />} title="Chưa có phương án khả thi" description="Vui lòng kiểm tra thông báo chẩn đoán, mở rộng khung giờ trống hoặc điều chỉnh nhu cầu phân công." />
                 ) : (
                   <>
                     <div className="overflow-x-auto">
@@ -1068,8 +1067,8 @@ export default function AiSchedulerPage() {
                         })}</tbody></table>
                     </div>
                     <div className="flex flex-col gap-3 border-t border-border bg-muted/30 p-5 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm"><strong>{proposal.schedules.length}</strong> tiết đề xuất. {appliedCount > 0 ? <span className="text-emerald-700">Đã áp dụng {appliedCount} tiết.</span> : <span className="text-muted-foreground">Chưa ghi Firestore.</span>}</div>
-                      <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={applying} onClick={() => void generateProposal()}><Play className="h-4 w-4" />Xếp lại</Button><Button loading={applying} disabled={appliedCount === proposal.schedules.length} onClick={() => void applyProposal()}><Save className="h-4 w-4" />Áp dụng qua backend hiện tại</Button></div>
+                      <div className="text-sm"><strong>{proposal.schedules.length}</strong> tiết đề xuất. {appliedCount > 0 ? <span className="text-emerald-700">Đã áp dụng {appliedCount} tiết.</span> : <span className="text-muted-foreground">Chưa lưu vào hệ thống.</span>}</div>
+                      <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={applying} onClick={() => void generateProposal()}><Play className="h-4 w-4" />Xếp lại</Button><Button loading={applying} disabled={appliedCount === proposal.schedules.length} onClick={() => void applyProposal()}><Save className="h-4 w-4" />Áp dụng phương án này</Button></div>
                     </div>
                   </>
                 )}
@@ -1078,7 +1077,7 @@ export default function AiSchedulerPage() {
 
             <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
               <Info className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>CP-SAT không ghi Firestore trực tiếp. Chế độ <strong>Bổ sung</strong> chỉ tạo phần thiếu; chế độ <strong>Xếp lại</strong> chỉ cập nhật/hủy/tạo các lịch thuộc phân công đã chọn. Mọi thao tác vẫn gọi <code>createOrUpdateSchedule</code> hiện tại, nên Auth, App Check, xung đột, giờ rảnh thỉnh giảng và các quy tắc backend vẫn là lớp quyết định cuối cùng.</p>
+              <p>Hệ thống tự động kiểm tra tính hợp lệ và không ghi đè dữ liệu ngoài phạm vi đã chọn. Khi áp dụng phương án, các ràng buộc về phòng học, trùng tiết và khung giờ trống của giáo viên luôn được xác thực chặt chẽ.</p>
             </div>
           </div>
         )}

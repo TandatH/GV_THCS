@@ -109,8 +109,8 @@ export default function BghSubjectsPage() {
     <RoleGuard allowedRoles={["bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Ban Giám Hiệu theo dõi"
-          title={`Danh mục Môn học · ${levelName}`}
+          eyebrow="Ban Giám hiệu"
+          title={`Môn học · ${levelName}`}
           description="Theo dõi danh mục môn học, tổ bộ môn chuyên môn và khối lớp áp dụng."
         />
 
@@ -190,7 +190,7 @@ export default function BghSubjectsPage() {
                             {lvl === "primary" ? "Tiểu học" : "THCS"}
                           </Badge>
                         </td>
-                        <td>{grade ? `Khối ${grade}` : "Tất cả các khối"}</td>
+                        <td>{grade ? `Khối ${grade}` : "Tất cả khối"}</td>
                         <td>
                           <Badge tone={s.isActive !== false ? "success" : "danger"}>
                             {s.isActive !== false ? "Đang áp dụng" : "Ngừng áp dụng"}

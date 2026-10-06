@@ -76,7 +76,7 @@ export function AttendanceKpiRibbon({
         >
           <div className="flex items-center justify-between">
             <span className={cn("text-xs font-bold uppercase tracking-wider", pendingPast > 0 ? "text-amber-800" : "text-muted-foreground")}>
-              Cần xử lý gấp
+              Chưa đối soát
             </span>
             <AlertTriangle className={cn("h-4 w-4", pendingPast > 0 ? "text-amber-600 animate-pulse" : "text-slate-400")} />
           </div>
@@ -85,11 +85,11 @@ export function AttendanceKpiRibbon({
               {pendingPast}
             </span>
             <span className={cn("text-xs", pendingPast > 0 ? "text-amber-700 font-semibold" : "text-muted-foreground")}>
-              tiết quá hạn
+              tiết chưa đối soát
             </span>
           </div>
           <div className="mt-1 text-[11px] font-medium text-amber-700">
-            {pendingPast > 0 ? "⚠️ Đang khóa tính lương" : "✓ Đã xử lý hết"}
+            {pendingPast > 0 ? "Cần xác nhận trước khi tính lương" : "Đã hoàn tất đối soát"}
           </div>
         </button>
 
@@ -105,7 +105,7 @@ export function AttendanceKpiRibbon({
           )}
         >
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium uppercase tracking-wider text-emerald-800">Đã dạy (Hợp lệ)</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-emerald-800">Đã xác nhận</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
@@ -129,7 +129,7 @@ export function AttendanceKpiRibbon({
           )}
         >
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium uppercase tracking-wider text-blue-800">Dạy thay / Sửa</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-blue-800">Dạy thay / Điều chỉnh</span>
             <UserCheck className="h-4 w-4 text-blue-600" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
@@ -185,7 +185,7 @@ export function AttendanceKpiRibbon({
             <span className="text-xs text-muted-foreground">tiết sắp tới</span>
           </div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            Lịch tương lai
+            Lịch sắp tới
           </div>
         </button>
       </div>
@@ -202,7 +202,7 @@ export function AttendanceKpiRibbon({
               ({confirmed + adjusted}/{pastTotal} tiết)
             </span>
             <span className="text-muted-foreground">
-              {pendingPast > 0 ? `Còn ${pendingPast} tiết chờ xác nhận` : "✓ Đầy đủ dữ liệu"}
+              {pendingPast > 0 ? `Còn ${pendingPast} tiết chờ xác nhận` : "Đã hoàn thành đối soát"}
             </span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -226,7 +226,7 @@ export function AttendanceKpiRibbon({
             onClick={onOpenBatchModal}
             className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
           >
-            ⚡ Duyệt nhanh {pendingPast} lịch đã qua
+            Xác nhận nhanh {pendingPast} tiết đã qua
           </button>
         ) : null}
       </Card>

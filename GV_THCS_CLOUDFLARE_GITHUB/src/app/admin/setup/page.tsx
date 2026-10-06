@@ -71,8 +71,8 @@ export default function AdminSetupPage() {
       <Shell>
         <PageHeader
           eyebrow="Thiết lập ban đầu"
-          title="Checklist dữ liệu nền"
-          description="Hoàn thành dữ liệu nền theo đúng thứ tự trước khi xếp thời khóa biểu và vận hành các nghiệp vụ chính."
+          title="Tiến độ cấu hình hệ thống"
+          description="Hoàn thành cấu hình các danh mục theo thứ tự trước khi xếp thời khóa biểu và vận hành các nghiệp vụ giảng dạy."
           actions={
             <Button variant="secondary" onClick={() => setReloadKey((value) => value + 1)}>
               <RefreshCcw className="h-4 w-4" />
@@ -89,14 +89,14 @@ export default function AdminSetupPage() {
 
         {!error && !loading && incompleteCount > 0 ? (
           <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Hệ thống chưa được thiết lập đầy đủ. Vui lòng hoàn thành dữ liệu nền trước khi xếp lịch.
+            Hệ thống chưa hoàn tất thiết lập. Vui lòng hoàn thành các danh mục trước khi xếp thời khóa biểu.
           </div>
         ) : null}
 
         <Card className="overflow-hidden">
           <div className="border-b border-border px-5 py-4 sm:px-6">
-            <h2 className="text-lg font-bold">Thứ tự dữ liệu cần thiết lập</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Không tự seed dữ liệu demo vào production.</p>
+            <h2 className="text-lg font-bold">Danh mục thiết lập theo quy trình</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Danh mục các thành phần cần khởi tạo trước khi vận hành giảng dạy.</p>
           </div>
           <div className="divide-y divide-border">
             {setupItems.map((item, index) => {
@@ -135,22 +135,22 @@ export default function AdminSetupPage() {
                 <Database className="h-5 w-5" />
               </div>
               <div>
-                <p className="font-semibold">Quy trình dữ liệu nền</p>
+                <p className="font-semibold">Quy trình thiết lập chuẩn</p>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Tạo năm học trước, sau đó bộ môn, môn học, cơ sở, phòng, lớp, học kỳ, tiết học và cuối cùng là hồ sơ giáo viên.
+                  Khởi tạo năm học trước, sau đó thiết lập bộ môn, môn học, cơ sở, phòng học, lớp học, học kỳ, tiết học và hồ sơ giáo viên.
                 </p>
               </div>
             </div>
           </Card>
           <Card className="p-5">
             <div className="flex gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-700">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
                 <Settings2 className="h-5 w-5" />
               </div>
               <div>
-                <p className="font-semibold">Không dùng dữ liệu demo</p>
+                <p className="font-semibold">Lưu ý khi vận hành</p>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Trang này chỉ kiểm tra số lượng bản ghi hiện có và dẫn đến màn hình quản lý tương ứng, không tự tạo dữ liệu production.
+                  Khi tất cả danh mục hiển thị trạng thái đã có dữ liệu, hệ thống sẽ sẵn sàng cho việc phân công chuyên môn và xếp thời khóa biểu.
                 </p>
               </div>
             </div>

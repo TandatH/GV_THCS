@@ -180,7 +180,7 @@ export function AttendanceTableView({
                       ) : schedule.isPast ? (
                         <span className="text-[11px] text-slate-500">Đã qua</span>
                       ) : (
-                        <span className="text-[11px] text-slate-400">Tương lai</span>
+                        <span className="text-[11px] text-slate-400">Sắp tới</span>
                       )}
                     </div>
                   </td>
@@ -230,7 +230,7 @@ export function AttendanceTableView({
                     {schedule.effectiveStatus === "confirmed" ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        Đã dạy
+                        Đã xác nhận
                       </span>
                     ) : schedule.effectiveStatus === "adjusted" ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
@@ -240,17 +240,17 @@ export function AttendanceTableView({
                     ) : schedule.effectiveStatus === "absent" ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
                         <XCircle className="h-3.5 w-3.5" />
-                        Vắng / Nghỉ
+                        Vắng / Nghỉ phép
                       </span>
                     ) : schedule.effectiveStatus === "pending_past" ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 animate-pulse">
                         <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                        Chờ duyệt (Quá hạn)
+                        Chưa đối soát
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                         <Clock className="h-3.5 w-3.5 text-slate-400" />
-                        Chưa tới hạn
+                        Sắp tới
                       </span>
                     )}
                   </td>
@@ -344,7 +344,7 @@ export function AttendanceTableView({
             <option value={500}>500 dòng/trang</option>
           </select>
           <span>
-            từ {startIndex + 1} đến {Math.min(startIndex + pageSize, schedules.length)} trong tổng số {schedules.length} lịch
+            từ {startIndex + 1} đến {Math.min(startIndex + pageSize, schedules.length)} trong tổng số {schedules.length} tiết
           </span>
         </div>
 

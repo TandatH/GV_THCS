@@ -118,13 +118,13 @@ export default function DashboardPage() {
     }
     if (role === "totruong") {
       return [
-        { href: "/totruong/leave-requests", label: "Duyệt đơn nghỉ", icon: CalendarClock },
-        { href: "/totruong/schedules", label: "Xem lịch trong tổ", icon: CalendarDays },
+        { href: "/totruong/leave-requests", label: "Duyệt đơn nghỉ phép", icon: CalendarClock },
+        { href: "/totruong/schedules", label: "Thời khóa biểu tổ", icon: CalendarDays },
       ];
     }
     return [
       { href: "/teacher/schedule", label: "Xem lịch dạy", icon: CalendarDays },
-      { href: "/teacher/availability", label: "Khung giờ rảnh", icon: ClipboardCheck },
+      { href: "/teacher/availability", label: "Đăng ký giờ trống", icon: ClipboardCheck },
       { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
     ];
   }, [role]);
@@ -216,7 +216,7 @@ export default function DashboardPage() {
         <PageHeader
           eyebrow="Bảng điều khiển"
           title={title}
-          description="Theo dõi nhanh hồ sơ, lịch dạy, đơn nghỉ và các nghiệp vụ cần xử lý trong phạm vi quyền hiện tại."
+          description="Theo dõi nhanh hồ sơ, lịch dạy, đơn nghỉ phép và các nghiệp vụ cần xử lý trong phạm vi quyền hiện tại."
           actions={quickActions.map((action, index) => {
             const Icon = action.icon;
             return (
@@ -232,7 +232,7 @@ export default function DashboardPage() {
 
         {setupIncomplete ? (
           <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Hệ thống chưa được thiết lập đầy đủ. Vui lòng hoàn thành dữ liệu nền trước khi xếp lịch.
+            Hệ thống chưa hoàn tất cấu hình ban đầu. Vui lòng hoàn thành các danh mục thiết lập trước khi xếp thời khóa biểu.
           </div>
         ) : null}
 
@@ -258,7 +258,6 @@ export default function DashboardPage() {
                     ) : (
                       <p className="mt-2 text-3xl font-extrabold tracking-tight">{stat?.value ?? 0}</p>
                     )}
-                    <p className="mt-2 text-xs text-muted-foreground">Dữ liệu theo phạm vi quyền hiện tại</p>
                   </div>
                   <div className={`grid h-11 w-11 place-items-center rounded-xl ${definition.tone}`}>
                     <Icon className="h-5 w-5" />
@@ -305,10 +304,10 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-4 p-5 sm:p-6">
               {[
-                "Quyền lấy từ Firebase Custom Claims",
-                "Giáo viên đọc hồ sơ qua users/{uid}.teacherId",
-                "Payroll và audit log không ghi trực tiếp từ trình duyệt",
-                "Firestore và Storage Rules mặc định từ chối",
+                "Kiểm soát truy cập chặt chẽ theo vai trò và quyền hạn",
+                "Bảo mật thông tin nhân sự và dữ liệu bảng lương",
+                "Đồng bộ dữ liệu thời khóa biểu theo thời gian thực",
+                "Lưu trữ nhật ký hệ thống và sao lưu định kỳ",
               ].map((item) => (
                 <div key={item} className="flex gap-3">
                   <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-600">

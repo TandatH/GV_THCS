@@ -12,7 +12,11 @@ export const metadata: Metadata = {
   },
   description: "Hệ thống quản lý giáo viên cơ hữu và thỉnh giảng",
   applicationName: "GV Manager",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export const viewport: Viewport = {

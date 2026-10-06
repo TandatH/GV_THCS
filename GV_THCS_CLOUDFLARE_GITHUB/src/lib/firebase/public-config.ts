@@ -1,20 +1,21 @@
 import type { FirebaseOptions } from "firebase/app";
 
-const requiredConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || "",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
-};
+const isServerBuild = typeof window === "undefined";
 
+const requiredConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || (isServerBuild ? "build-placeholder" : ""),
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || (isServerBuild ? "build-placeholder.firebaseapp.com" : ""),
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || (isServerBuild ? "build-placeholder" : ""),
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || (isServerBuild ? "build-placeholder.appspot.com" : ""),
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || (isServerBuild ? "1234567890" : ""),
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || (isServerBuild ? "1:1234567890:web:buildplaceholder" : ""),
+};
 
 const missing = Object.entries(requiredConfig)
   .filter(([, value]) => !value)
   .map(([key]) => key);
 
-if (missing.length > 0) {
+if (!isServerBuild && missing.length > 0) {
   throw new Error(
     `Thiếu Firebase Web config: ${missing.join(", ")}. Hãy kiểm tra Cloudflare Build Variables.`,
   );

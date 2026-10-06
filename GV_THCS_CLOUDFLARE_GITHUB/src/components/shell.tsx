@@ -58,11 +58,11 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/admin/campuses", label: "Cơ sở", icon: Building2 },
     { href: "/admin/school-years", label: "Năm học", icon: CalendarDays },
     { href: "/admin/semesters", label: "Học kỳ", icon: CalendarClock },
-    { href: "/admin/time-slots", label: "Danh sách tiết", icon: Clock3 },
+    { href: "/admin/time-slots", label: "Tiết học", icon: Clock3 },
     { href: "/admin/schedules", label: "Thời khóa biểu", icon: CalendarDays },
-    { href: "/admin/leave-requests", label: "Đơn nghỉ", icon: CalendarClock },
-    { href: "/admin/evaluations", label: "Đánh giá", icon: Star },
-    { href: "/admin/payroll", label: "Chấm công và bảng lương", icon: WalletCards },
+    { href: "/admin/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
+    { href: "/admin/evaluations", label: "Đánh giá chuyên môn", icon: Star },
+    { href: "/admin/payroll", label: "Chấm công & Lương", icon: WalletCards },
     { href: "/admin/settings", label: "Cài đặt", icon: Settings },
   ],
   bgh: [
@@ -72,24 +72,24 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/bgh/classes", label: "Lớp học", icon: GraduationCap },
     { href: "/bgh/subjects", label: "Môn học", icon: BookOpen },
     { href: "/bgh/rooms", label: "Phòng học", icon: DoorOpen },
-    { href: "/bgh/leave-requests", label: "Đơn nghỉ", icon: CalendarClock },
-    { href: "/bgh/evaluations", label: "Đánh giá", icon: Star },
+    { href: "/bgh/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
+    { href: "/bgh/evaluations", label: "Đánh giá chuyên môn", icon: Star },
   ],
   totruong: [
     { href: "/totruong/dashboard", label: "Tổng quan", icon: LayoutDashboard },
-    { href: "/totruong/teachers", label: "Giáo viên trong tổ", icon: UsersRound },
+    { href: "/totruong/teachers", label: "Giáo viên tổ bộ môn", icon: UsersRound },
     { href: "/totruong/schedules", label: "Thời khóa biểu", icon: CalendarDays },
-    { href: "/totruong/leave-requests", label: "Đơn nghỉ", icon: CalendarClock },
-    { href: "/totruong/evaluations", label: "Đánh giá", icon: ClipboardCheck },
+    { href: "/totruong/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
+    { href: "/totruong/evaluations", label: "Đánh giá chuyên môn", icon: ClipboardCheck },
   ],
   giaovien: [
     { href: "/teacher/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/teacher/schedule", label: "Lịch dạy", icon: CalendarDays },
-    { href: "/teacher/availability", label: "Khung giờ rảnh", icon: BookOpenCheck },
-    { href: "/teacher/leave-requests", label: "Đơn nghỉ của tôi", icon: CalendarClock },
+    { href: "/teacher/availability", label: "Đăng ký giờ trống", icon: BookOpenCheck },
+    { href: "/teacher/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/teacher/evaluations", label: "Kết quả đánh giá", icon: Star },
     { href: "/teacher/attendance", label: "Chấm công", icon: ClipboardCheck },
-    { href: "/teacher/payroll", label: "Thu nhập", icon: WalletCards },
+    { href: "/teacher/payroll", label: "Bảng thù lao", icon: WalletCards },
     { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ],
@@ -105,7 +105,7 @@ const roleLabel: Record<Role, string> = {
 function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | null) {
   if (!role) return "Chưa cấp quyền";
   const isTeaching = Boolean(claims?.teacherId);
-  const teachingSuffix = isTeaching && role !== "giaovien" ? " • Có đi dạy" : "";
+  const teachingSuffix = isTeaching && role !== "giaovien" ? " • Kiêm giảng dạy" : "";
 
   if (role === "bgh") {
     const position = claims?.bghPosition === "hieutruong" ? "Hiệu trưởng" : "Phó Hiệu trưởng";
@@ -126,9 +126,9 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
   const items = role ? menuByRole[role] : [];
   const hasTeachingProfile = Boolean(claims?.teacherId) && role !== "giaovien";
   const teachingItems = [
-    { href: "/teacher/schedule", label: "Lịch dạy của tôi", icon: CalendarDays },
-    { href: "/teacher/availability", label: "Khung giờ rảnh", icon: BookOpenCheck },
-    { href: "/teacher/leave-requests", label: "Đơn nghỉ của tôi", icon: CalendarClock },
+    { href: "/teacher/schedule", label: "Lịch giảng dạy", icon: CalendarDays },
+    { href: "/teacher/availability", label: "Đăng ký giờ trống", icon: BookOpenCheck },
+    { href: "/teacher/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
   ];
 
   async function logout() {
@@ -145,8 +145,8 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
       )}
     >
       <div className="flex h-[74px] items-center gap-3 border-b border-slate-800 px-5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600 shadow-lg shadow-blue-950/40">
-          <GraduationCap className="h-6 w-6" />
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-md shadow-blue-950/30">
+          <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
         </div>
         {!collapsed || mobile ? (
           <div className="min-w-0 flex-1">
@@ -260,9 +260,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (!role) return null;
     const baseItems = menuByRole[role] || [];
     const teachingItems = claims?.teacherId ? [
-      { href: "/teacher/schedule", label: "Lịch dạy của tôi" },
-      { href: "/teacher/availability", label: "Khung giờ rảnh" },
-      { href: "/teacher/leave-requests", label: "Đơn nghỉ của tôi" },
+      { href: "/teacher/schedule", label: "Lịch giảng dạy" },
+      { href: "/teacher/availability", label: "Đăng ký giờ trống" },
+      { href: "/teacher/leave-requests", label: "Đơn nghỉ phép" },
     ] : [];
     return [...baseItems, ...teachingItems].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
   }, [pathname, role, claims?.teacherId]);
@@ -315,6 +315,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Button className="lg:hidden" variant="ghost" size="sm" onClick={() => setMobileOpen(true)} aria-label="Mở menu">
             <Menu className="h-5 w-5" />
           </Button>
+          <div className="flex items-center lg:hidden">
+            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm border border-border">
+              <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" />
+            </div>
+          </div>
           <Button className="hidden lg:inline-flex" variant="ghost" size="sm" onClick={() => setCollapsed((value) => !value)} aria-label="Thu gọn menu">
             {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
           </Button>

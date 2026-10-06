@@ -706,7 +706,7 @@ export default function TeachersPage() {
             </div>
             <div>
               <h2 className="font-bold">Phân quyền</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Cập nhật Custom Claims cho admin, Ban Giám Hiệu, tổ trưởng hoặc giáo viên qua Cloud Function setUserRole.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Phân công vai trò quản trị viên, Ban Giám Hiệu, tổ trưởng bộ môn hoặc giáo viên.</p>
             </div>
           </div>
           <form className="space-y-4" onSubmit={submitRoleAssignment}>
@@ -773,7 +773,7 @@ export default function TeachersPage() {
 
             <div className="grid gap-4 lg:grid-cols-[2fr_auto] lg:items-end pt-2 border-t border-border/60">
               <div>
-                <Label>Hồ sơ giáo viên (Tham gia giảng dạy / Đi dạy)</Label>
+                <Label>Hồ sơ giáo viên kiêm nhiệm giảng dạy</Label>
                 <select
                   className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
                   value={roleForm.teacherId}
@@ -792,7 +792,7 @@ export default function TeachersPage() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Nếu BGH, Quản trị viên hoặc Tổ trưởng có đi dạy: Chọn hồ sơ giáo viên để người này xem được lịch dạy cá nhân, gửi đơn nghỉ và được xếp thời khóa biểu.
+                  Nếu tài khoản quản lý có kiêm nhiệm giảng dạy: Chọn hồ sơ giáo viên để phân công thời khóa biểu, chấm công và gửi đơn nghỉ phép.
                 </p>
               </div>
               <Button loading={roleSubmitting} type="submit">Phân quyền</Button>
@@ -803,7 +803,7 @@ export default function TeachersPage() {
         </Card>
 
         <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <span className="font-semibold">Mật khẩu:</span> Firebase Authentication không cho đọc lại mật khẩu hiện tại. Bảng bên dưới chỉ hiển thị <span className="font-semibold">mật khẩu tạm vừa tạo/reset trong phiên Admin này</span>. Sau khi giáo viên tự đổi mật khẩu, Admin không thể xem mật khẩu mới; khi cần, dùng nút <span className="font-semibold">Reset MK</span>.
+          <span className="font-semibold">Lưu ý mật khẩu:</span> Bảng bên dưới chỉ hiển thị mật khẩu tạm vừa tạo trong phiên làm việc hiện tại. Sau khi giáo viên đổi mật khẩu lần đầu, quản trị viên có thể sử dụng nút <span className="font-semibold">Cấp lại MK</span> khi cần thiết.
         </div>
 
         <Card className="overflow-hidden">
@@ -868,8 +868,8 @@ export default function TeachersPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => copyTeacherId(teacherDisplayCode)}
-                              aria-label="Copy mã giáo viên"
-                              title="Copy mã giáo viên"
+                              aria-label="Sao chép mã giáo viên"
+                              title="Sao chép mã giáo viên"
                             >
                               <Copy className="h-4 w-4" />
                             </Button>
@@ -955,20 +955,20 @@ export default function TeachersPage() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => copyTemporaryPassword(temporaryPasswords[row.id])}
-                                aria-label="Copy mật khẩu tạm"
+                                aria-label="Sao chép mật khẩu tạm"
                               >
                                 <Copy className="h-4 w-4" />
                               </Button>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">Không thể đọc MK hiện tại</span>
+                            <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
 
                         {/* 10. Trạng thái đổi MK */}
                         <td>
                           <Badge tone={row.mustChangePassword === true ? "warning" : "success"}>
-                            {row.mustChangePassword === true ? "Phải đổi MK" : "Đã đổi / bình thường"}
+                            {row.mustChangePassword === true ? "Chưa đổi MK" : "Bình thường"}
                           </Badge>
                         </td>
 
@@ -1000,7 +1000,7 @@ export default function TeachersPage() {
                               onClick={() => resetPasswordForTeacher(row)}
                             >
                               <RotateCcw className="h-4 w-4" />
-                              Reset MK
+                              Cấp lại MK
                             </Button>
                             <Button
                               size="sm"
@@ -1098,12 +1098,12 @@ export default function TeachersPage() {
                       checked={form.isTeaching}
                       onChange={(e) => setField("isTeaching", e.target.checked)}
                     />
-                    <span>Tài khoản có tham gia giảng dạy (đi dạy)</span>
+                    <span>Tài khoản kiêm nhiệm giảng dạy</span>
                   </label>
                   <p className="mt-1 text-xs text-blue-800">
                     {form.isTeaching
-                      ? "✓ Hồ sơ giáo viên sẽ được tạo và liên kết trực tiếp với tài khoản. Thầy/Cô có thể được phân công TKB, chấm công và xem lịch dạy cá nhân."
-                      : "✕ Chỉ tạo tài khoản người dùng phục vụ công tác quản lý, không tạo hồ sơ giáo viên và không xếp lịch dạy."}
+                      ? "Hồ sơ giáo viên sẽ được tạo và liên kết trực tiếp với tài khoản; có thể phân công thời khóa biểu, đối soát chấm công và xem lịch giảng dạy."
+                      : "Chỉ tạo tài khoản người dùng phục vụ công tác quản lý, không tạo hồ sơ giáo viên và không tham gia phân công giảng dạy."}
                   </p>
                 </div>
               </div>
@@ -1112,7 +1112,7 @@ export default function TeachersPage() {
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>
             <div><Label>Số điện thoại</Label><Input required value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></div>
             <div><Label>Trạng thái</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.status} onChange={(e) => setField("status", e.target.value as FormState["status"])}><option value="active">Đang hoạt động</option><option value="inactive">Ngừng hoạt động</option></select></div>
-            <div><Label>URL hình đại diện</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
+            <div><Label>Đường dẫn ảnh đại diện</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
             {!editingTeacher ? <div><Label>Mật khẩu tạm ban đầu</Label><div className="flex gap-2"><Input minLength={8} type="text" value={form.password} onChange={(e) => setField("password", e.target.value)} /><Button type="button" variant="secondary" onClick={() => setField("password", generateTemporaryPassword())} aria-label="Tạo mật khẩu tạm mới"><KeyRound className="h-4 w-4" /></Button></div><p className="mt-1 text-xs text-muted-foreground">Người dùng sẽ phải đổi mật khẩu này sau khi đăng nhập lần đầu.</p></div> : null}
 
             {(form.isTeaching || editingTeacher) ? (
@@ -1191,8 +1191,8 @@ export default function TeachersPage() {
           open={Boolean(credentialResult)}
           onOpenChange={(next) => { if (!next) setCredentialResult(null); }}
           title="Mật khẩu tạm của giáo viên"
-          description="Chỉ gửi mật khẩu này trực tiếp cho giáo viên. Sau khi giáo viên tự đổi mật khẩu, Firebase không cho Admin đọc lại mật khẩu mới."
-          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setCredentialResult(null)}>Đóng</Button>{credentialResult ? <Button onClick={() => copyTemporaryPassword(credentialResult.temporaryPassword)}><Copy className="h-4 w-4" />Copy mật khẩu</Button> : null}</div>}
+          description="Vui lòng bàn giao mật khẩu này an toàn cho giáo viên. Mật khẩu chỉ hiển thị một lần."
+          footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setCredentialResult(null)}>Đóng</Button>{credentialResult ? <Button onClick={() => copyTemporaryPassword(credentialResult.temporaryPassword)}><Copy className="h-4 w-4" />Sao chép mật khẩu</Button> : null}</div>}
         >
           {credentialResult ? <div className="space-y-4">
             <div className="rounded-xl border border-border p-4">
@@ -1210,8 +1210,8 @@ export default function TeachersPage() {
         <Modal
           open={Boolean(avatarTarget)}
           onOpenChange={(next) => { if (!next) { setAvatarTarget(null); setAvatarFile(null); setAvatarError(""); } }}
-          title="Thêm hình giáo viên"
-          description="Chọn file JPEG, PNG hoặc WebP. Ảnh sẽ được lưu vào Firebase Storage và gắn vào hồ sơ giáo viên."
+          title="Cập nhật ảnh đại diện"
+          description="Hỗ trợ định dạng JPEG, PNG hoặc WebP để cập nhật vào hồ sơ giáo viên."
           footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setAvatarTarget(null)}>Hủy</Button><Button loading={avatarSubmitting} disabled={!avatarFile} onClick={uploadTeacherAvatar}><Upload className="h-4 w-4" />Tải ảnh lên</Button></div>}
         >
           <div className="space-y-4">
@@ -1223,7 +1223,7 @@ export default function TeachersPage() {
               </div>
             </div>
             <div>
-              <Label>File hình</Label>
+              <Label>Tệp hình ảnh</Label>
               <Input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)} />
             </div>
             {avatarError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{avatarError}</div> : null}

@@ -262,7 +262,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
   async function handleDelete(row: CatalogRow) {
     const label = String(row.name || row.code || row.id);
     const confirmation = window.prompt(
-      `Xóa vĩnh viễn “${label}”?\nNếu dữ liệu đang được lớp/TKB/GV sử dụng, backend sẽ chặn.\nNhập XOA để xác nhận.`,
+      `Xóa vĩnh viễn “${label}”?\nDữ liệu đang được sử dụng ở các mục khác sẽ không thể xóa.\nNhập XOA để xác nhận.`,
       "",
     );
     if (confirmation !== "XOA") return;
@@ -357,7 +357,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
         payload.isActive = payload.isActive ?? true;
       }
       await setDoc(reference, payload, { merge: Boolean(editingRow) });
-      toast.success(editingRow ? "Đã cập nhật dữ liệu nền." : "Đã tạo dữ liệu nền.");
+      toast.success(editingRow ? "Đã cập nhật dữ liệu." : "Đã tạo mới dữ liệu.");
       setOpen(false);
     } catch (submitError) {
       setFormError(firebaseDataErrorMessage(submitError));
@@ -405,7 +405,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
             <EmptyState
               icon={<Settings2 className="h-6 w-6" />}
               title="Chưa có dữ liệu"
-              description="Tạo bản ghi đầu tiên để hoàn thành checklist thiết lập hệ thống."
+              description="Tạo bản ghi đầu tiên để hoàn tất thiết lập danh mục."
               action={<Button onClick={openCreate}>Thêm {title.toLocaleLowerCase("vi")}</Button>}
             />
           ) : (
@@ -445,7 +445,7 @@ export function AdminCatalogPage({ title, description, collectionName, fields }:
           open={open}
           onOpenChange={setOpen}
           title={editingRow ? `Sửa ${title.toLocaleLowerCase("vi")}` : `Thêm ${title.toLocaleLowerCase("vi")}`}
-          description="Dữ liệu được ghi trực tiếp vào Cloud Firestore với audit fields bắt buộc theo Firestore Rules."
+          description="Nhập thông tin chi tiết để cập nhật bản ghi trong hệ thống."
           wide
           footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setOpen(false)}>Hủy</Button><Button form="catalog-form" loading={submitting} type="submit">Lưu</Button></div>}
         >

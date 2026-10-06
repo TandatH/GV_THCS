@@ -72,7 +72,7 @@ export default function ChangePasswordPage() {
         await refreshClaims();
       } catch (syncError) {
         console.error("Password changed but account flag sync failed", syncError);
-        setError("Mật khẩu đã đổi thành công nhưng trạng thái tài khoản chưa đồng bộ. Hãy đăng xuất, đăng nhập lại; nếu vẫn còn yêu cầu đổi mật khẩu, báo Admin.");
+        setError("Mật khẩu đã đổi thành công nhưng trạng thái tài khoản chưa đồng bộ. Vui lòng đăng xuất, đăng nhập lại hoặc liên hệ Quản trị viên để được hỗ trợ.");
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
@@ -82,8 +82,8 @@ export default function ChangePasswordPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setSuccess("Đã đổi mật khẩu thành công. Từ lần đăng nhập tiếp theo hãy dùng mật khẩu mới.");
-      toast.success("Đã đổi mật khẩu.");
+      setSuccess("Đã đổi mật khẩu thành công. Vui lòng sử dụng mật khẩu mới cho các lần đăng nhập tiếp theo.");
+      toast.success("Đã đổi mật khẩu thành công.");
     } catch (submitError) {
       const message = firebaseErrorMessage(submitError);
       if (message.includes("auth/wrong-password") || message.includes("invalid-credential")) {
@@ -100,15 +100,15 @@ export default function ChangePasswordPage() {
     <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
         <PageHeader
-          eyebrow="Tài khoản giáo viên"
+          eyebrow="Tài khoản"
           title="Đổi mật khẩu"
-          description="Xác thực lại bằng mật khẩu hiện tại rồi đặt mật khẩu mới cho tài khoản của bạn."
+          description="Xác thực mật khẩu hiện tại và thiết lập mật khẩu mới để bảo mật tài khoản."
         />
 
         <div className="mx-auto max-w-2xl">
           {mustChangePassword ? (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Admin vừa tạo/reset mật khẩu cho tài khoản này. Bạn cần đổi mật khẩu tạm trước khi tiếp tục sử dụng lâu dài.
+              Hệ thống vừa cấp lại mật khẩu tạm thời cho tài khoản này. Vui lòng đổi mật khẩu mới để tiếp tục sử dụng hệ thống.
             </div>
           ) : null}
 
@@ -119,7 +119,7 @@ export default function ChangePasswordPage() {
               </div>
               <div>
                 <h2 className="font-bold">Bảo mật tài khoản</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Mật khẩu mới tối thiểu 8 ký tự. Không chia sẻ mật khẩu với người khác.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Mật khẩu mới tối thiểu 8 ký tự. Vui lòng bảo mật thông tin tài khoản.</p>
               </div>
             </div>
 
@@ -168,7 +168,7 @@ export default function ChangePasswordPage() {
               {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
 
               <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4" />Firebase yêu cầu xác thực lại trước khi đổi mật khẩu.</div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4" />Hệ thống yêu cầu xác thực mật khẩu hiện tại để đảm bảo an toàn.</div>
                 <Button loading={submitting} type="submit"><KeyRound className="h-4 w-4" />Đổi mật khẩu</Button>
               </div>
             </form>
