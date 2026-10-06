@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Building2,
   Calendar,
+  BookOpen,
   CalendarClock,
   CalendarPlus,
   CalendarSync,
@@ -29,6 +30,7 @@ import {
   MapPin,
   PencilLine,
   Plus,
+  Printer,
   RotateCcw,
   Search,
   Sparkles,
@@ -38,7 +40,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
-import { collection, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
+import { collection, getDocs, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -393,7 +395,7 @@ function schoolLevelForGrade(grade: number) {
 
 function inferGradeFromName(name: unknown): number {
   const str = String(name ?? "").trim();
-  const match = /^([1-9])/.exec(str);
+  const match = /(?:khối|khoi|lớp|lop|g|cls[_-]\d{4}[_-]g)?\s*0?([1-9])(?:[.\-_a-z]|\b)/i.exec(str);
   if (match) return Number(match[1]);
   return 0;
 }
@@ -628,13 +630,16 @@ export default function SchedulesPage() {
   const [exportWeekStart, setExportWeekStart] = useState(currentMonday());
   const [exportClassId, setExportClassId] = useState("");
   const [exportSchoolName, setExportSchoolName] = useState("TRƯỜNG THCS");
+  const [exportSchoolLevel, setExportSchoolLevel] = useState<string>(""); // "primary" | "secondary" | ""
   const [exportOnlyReady, setExportOnlyReady] = useState(true);
   const [exportError, setExportError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [exportExtraRows, setExportExtraRows] = useState<ScheduleRow[]>([]);
 
   // Replicate / Apply Timetable to Next Weeks states
   const [applyModalOpen, setApplyModalOpen] = useState(false);
-  const [applyScope, setApplyScope] = useState<"all" | "class" | "teacher">("all");
+  const [applySchoolLevel, setApplySchoolLevel] = useState<string>(""); // "primary" | "secondary" | "all"
+  const [applyScope, setApplyScope] = useState<"level" | "all" | "class" | "teacher">("level");
   const [applyWeeksCount, setApplyWeeksCount] = useState<number>(1);
   const [applying, setApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState<{ current: number; total: number; message: string } | null>(null);
@@ -657,7 +662,7 @@ export default function SchedulesPage() {
     }
   }, [role, managerDepartmentId]);
 
-  // Query schedules
+  // Query schedules for selected week
   useEffect(() => {
     if (authLoading || !role) return;
     if (role === "totruong" && !managerDepartmentId) {
@@ -665,21 +670,54 @@ export default function SchedulesPage() {
       setLoading(false);
       return;
     }
+    setLoading(true);
     const schedulesQuery = role === "totruong"
-      ? query(collection(firestore, "schedules"), where("departmentId", "==", managerDepartmentId), limit(1000))
-      : query(collection(firestore, "schedules"), limit(1000));
+      ? query(
+          collection(firestore, "schedules"),
+          where("departmentId", "==", managerDepartmentId),
+          where("weekStart", "==", selectedWeek),
+        )
+      : query(
+          collection(firestore, "schedules"),
+          where("weekStart", "==", selectedWeek),
+        );
     return onSnapshot(
       schedulesQuery,
       (snapshot) => {
         setRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
         setLoading(false);
       },
-      () => {
-        setError("Không thể tải thời khóa biểu. Hãy kiểm tra Firestore Rules và tài khoản hiện tại.");
+      (snapshotError) => {
+        setError(`Không thể tải thời khóa biểu: ${firebaseDataErrorMessage(snapshotError)}`);
         setLoading(false);
       },
     );
-  }, [authLoading, managerDepartmentId, role]);
+  }, [authLoading, managerDepartmentId, role, selectedWeek]);
+
+  // Fetch extra schedules when exporting a week other than selectedWeek
+  useEffect(() => {
+    if (!exportOpen) return;
+    if (exportWeekStart === selectedWeek) {
+      setExportExtraRows([]);
+      return;
+    }
+    let active = true;
+    const fetchExportSchedules = async () => {
+      try {
+        const q = role === "totruong"
+          ? query(collection(firestore, "schedules"), where("departmentId", "==", managerDepartmentId), where("weekStart", "==", exportWeekStart))
+          : query(collection(firestore, "schedules"), where("weekStart", "==", exportWeekStart));
+        const snap = await getDocs(q);
+        if (active) {
+          setExportExtraRows(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        }
+      } catch (err) {
+        console.warn("Lỗi tải lịch tuần xuất:", err);
+      }
+    };
+    fetchExportSchedules();
+    return () => { active = false; };
+  }, [exportOpen, exportWeekStart, managerDepartmentId, role, selectedWeek]);
 
   // Query catalogs
   useEffect(() => {
@@ -1036,22 +1074,30 @@ export default function SchedulesPage() {
     [adjunctAvailabilityRows, teachers],
   );
 
+  const exportSourceRows = exportWeekStart === selectedWeek ? rows : exportExtraRows;
+
+  const exportFilteredClasses = useMemo(() => {
+    return classes.filter((cls) => {
+      if (exportSchoolLevel && catalogSchoolLevel(cls) !== exportSchoolLevel) return false;
+      return true;
+    });
+  }, [classes, exportSchoolLevel]);
+
   const exportCandidateRows = useMemo(
-    () => rows.filter((row) => {
+    () => exportSourceRows.filter((row) => {
       if (row.status === "cancelled") return false;
       if (textValue(row.weekStart) !== exportWeekStart) return false;
       if (exportClassId && textValue(row.classId) !== exportClassId) return false;
-      if (selectedSchoolLevel) {
-        const cls = classes.find((c) => c.id === row.classId);
-        const lvl = row.schoolLevel || catalogSchoolLevel(cls);
-        if (lvl && lvl !== selectedSchoolLevel) return false;
-      }
+      const cls = classes.find((c) => c.id === row.classId);
+      const lvl = row.schoolLevel || catalogSchoolLevel(cls);
+      if (exportSchoolLevel && lvl && lvl !== exportSchoolLevel) return false;
+      if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all" && lvl !== bghSchoolLevel) return false;
       if (!exportOnlyReady) return true;
       const confirmationStatus = textValue(row.confirmationStatus);
       return row.status !== "needs_attention"
         && !["cho_xac_nhan", "tu_choi", "qua_han", "da_huy"].includes(confirmationStatus);
     }),
-    [classes, exportClassId, exportOnlyReady, exportWeekStart, rows, selectedSchoolLevel],
+    [bghSchoolLevel, classes, exportClassId, exportOnlyReady, exportSchoolLevel, exportSourceRows, exportWeekStart, role],
   );
 
   const exportClassCount = useMemo(
@@ -1249,6 +1295,29 @@ export default function SchedulesPage() {
     }
   }
 
+  function openExport(level?: "primary" | "secondary" | "all") {
+    setExportError("");
+    const targetLevel = level === "all" ? "" : (level ?? (bghSchoolLevel !== "all" ? bghSchoolLevel : ""));
+    setExportSchoolLevel(targetLevel);
+    if (targetLevel === "primary") {
+      setExportSchoolName("TRƯỜNG TIỂU HỌC");
+    } else if (targetLevel === "secondary") {
+      setExportSchoolName("TRƯỜNG THCS");
+    } else {
+      setExportSchoolName("TRƯỜNG PHỔ THÔNG LIÊN CẤP");
+    }
+    setExportClassId("");
+    setExportOpen(true);
+  }
+
+  function openApply(level?: "primary" | "secondary" | "all") {
+    setApplyError("");
+    const targetLevel = level ?? (bghSchoolLevel !== "all" ? bghSchoolLevel : "all");
+    setApplySchoolLevel(targetLevel);
+    setApplyScope(targetLevel === "all" ? "all" : "level");
+    setApplyModalOpen(true);
+  }
+
   function exportStudentTimetable() {
     setExportError("");
     setExporting(true);
@@ -1318,23 +1387,24 @@ export default function SchedulesPage() {
     setApplying(true);
     setApplyError("");
     try {
-      // Filter candidate schedules to copy based on applyScope
+      // Filter candidate schedules to copy based on applyScope & applySchoolLevel
       const candidateSchedules = rows.filter((row) => {
         if (row.status === "cancelled") return false;
         if (textValue(row.weekStart) !== selectedWeek) return false;
+        const cls = classes.find((c) => c.id === row.classId);
+        const lvl = row.schoolLevel || catalogSchoolLevel(cls) || "secondary";
+
+        if (applySchoolLevel && applySchoolLevel !== "all" && lvl !== applySchoolLevel) return false;
         if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
         if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
         if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
-        if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
-          const cls = classes.find((c) => c.id === row.classId);
-          const lvl = row.schoolLevel || catalogSchoolLevel(cls);
-          if (lvl && lvl !== bghSchoolLevel) return false;
-        }
+        if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all" && lvl !== bghSchoolLevel) return false;
         return true;
       });
 
       if (candidateSchedules.length === 0) {
-        throw new Error("Không có tiết học nào trong tuần nguồn để áp dụng.");
+        const levelText = applySchoolLevel === "primary" ? "Tiểu học" : applySchoolLevel === "secondary" ? "THCS" : "";
+        throw new Error(`Không có tiết học nào${levelText ? ` thuộc cấp ${levelText}` : ""} trong tuần nguồn để áp dụng.`);
       }
 
       // Generate target weeks
@@ -1349,16 +1419,27 @@ export default function SchedulesPage() {
       let currentTask = 0;
 
       for (const targetW of targetWeeks) {
-        // Filter existing schedules in target week to skip duplicates
-        const existingInTarget = rows.filter((r) => r.status !== "cancelled" && textValue(r.weekStart) === targetW);
+        // Query target week existing schedules from database to ensure fresh check
+        let existingInTarget: Array<Record<string, any>> = [];
+        try {
+          const targetSnap = await getDocs(
+            query(collection(firestore, "schedules"), where("weekStart", "==", targetW))
+          );
+          existingInTarget = targetSnap.docs
+            .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, any>) }))
+            .filter((r: any) => r.status !== "cancelled");
+        } catch (fetchErr) {
+          console.warn("Không thể tải lịch tuần đích trước khi sao chép:", fetchErr);
+        }
 
         for (const schedule of candidateSchedules) {
           currentTask++;
           const subjName = catalogName(subjects, schedule.subjectId) || schedule.subjectId || "Môn";
+          const clsName = catalogName(classes, schedule.classId) || schedule.classId || "Lớp";
           setApplyProgress({
             current: currentTask,
             total: totalTasks,
-            message: `Đang sao chép (${currentTask}/${totalTasks}): ${subjName} (Thứ ${schedule.dayOfWeek})...`,
+            message: `Đang sao chép (${currentTask}/${totalTasks}): ${clsName} - ${subjName} (Thứ ${schedule.dayOfWeek})...`,
           });
 
           // Check if same class + day + startPeriod already exists in target week
@@ -1393,12 +1474,30 @@ export default function SchedulesPage() {
               : {}),
           };
 
-          await createOrUpdateSchedule(payload);
-          totalCopied++;
+          try {
+            await createOrUpdateSchedule(payload);
+            totalCopied++;
+            existingInTarget.push({
+              id: `temp-${Date.now()}-${currentTask}`,
+              classId: payload.classId,
+              dayOfWeek: payload.dayOfWeek,
+              startPeriod: payload.startPeriod,
+              teacherId: payload.teacherId,
+              status: "scheduled",
+            });
+          } catch (itemErr) {
+            totalSkipped++;
+            console.warn(`Bỏ qua tiết (${clsName} - ${subjName}):`, itemErr);
+          }
         }
       }
 
-      toast.success(`Đã áp dụng thành công ${totalCopied} tiết học sang ${targetWeeks.length} tuần tiếp theo!${totalSkipped > 0 ? ` (Bỏ qua ${totalSkipped} tiết đã có sẵn)` : ""}`);
+      const levelLabel = applySchoolLevel === "primary" ? "Cấp 1 (Tiểu học)" : applySchoolLevel === "secondary" ? "Cấp 2 (THCS)" : "";
+      toast.success(
+        `Đã đồng bộ thành công ${totalCopied} tiết học ${levelLabel} sang ${targetWeeks.length} tuần tiếp theo!${
+          totalSkipped > 0 ? ` (Bỏ qua ${totalSkipped} tiết đã có sẵn hoặc bị xung đột)` : ""
+        }`
+      );
       setApplyModalOpen(false);
       // Automatically switch to the newly scheduled next week
       setSelectedWeek(targetWeeks[0]);
@@ -1435,17 +1534,17 @@ export default function SchedulesPage() {
     return rows.filter((row) => {
       if (row.status === "cancelled") return false;
       if (textValue(row.weekStart) !== selectedWeek) return false;
+      const cls = classes.find((c) => c.id === row.classId);
+      const lvl = row.schoolLevel || catalogSchoolLevel(cls) || "secondary";
+
+      if (applySchoolLevel && applySchoolLevel !== "all" && lvl !== applySchoolLevel) return false;
       if (applyScope === "class" && selectedClassId && row.classId !== selectedClassId) return false;
       if (applyScope === "teacher" && selectedTeacherId && (row.actualTeacherId || row.teacherId) !== selectedTeacherId) return false;
       if (role === "totruong" && row.departmentId !== managerDepartmentId) return false;
-      if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all") {
-        const cls = classes.find((c) => c.id === row.classId);
-        const lvl = row.schoolLevel || catalogSchoolLevel(cls);
-        if (lvl && lvl !== bghSchoolLevel) return false;
-      }
+      if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all" && lvl !== bghSchoolLevel) return false;
       return true;
     }).length;
-  }, [applyScope, bghSchoolLevel, classes, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
+  }, [applySchoolLevel, applyScope, bghSchoolLevel, classes, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
 
   return (
     <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
@@ -1456,27 +1555,73 @@ export default function SchedulesPage() {
           description={role === "bgh" ? `Quản lý và xếp thời khóa biểu dành cho Ban Giám Hiệu cấp ${bghSchoolLevel === "primary" ? "Tiểu học" : bghSchoolLevel === "secondary" ? "THCS" : "toàn trường"}.` : "Bố cục ma trận thời khóa biểu khoa học, phân tách Sáng/Chiều rõ ràng, hỗ trợ theo dõi tải tiết học, nhân bản tuần tiếp theo và xếp lịch 1-chạm."}
           actions={(
             <div className="flex flex-wrap items-center gap-2">
+              {/* Nút Đồng bộ Cấp 1 & Cấp 2 riêng */}
+              {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "primary" ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => openApply("primary")}
+                  className="border-blue-200 bg-blue-50/80 text-blue-800 hover:bg-blue-100 font-semibold gap-1.5 shadow-xs"
+                >
+                  <CalendarSync className="h-4 w-4 text-blue-600" />
+                  Đồng bộ Cấp 1
+                </Button>
+              ) : null}
+
+              {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "secondary" ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => openApply("secondary")}
+                  className="border-indigo-200 bg-indigo-50/80 text-indigo-800 hover:bg-indigo-100 font-semibold gap-1.5 shadow-xs"
+                >
+                  <CalendarSync className="h-4 w-4 text-indigo-600" />
+                  Đồng bộ Cấp 2
+                </Button>
+              ) : null}
+
+              {/* Nút In / Xuất TKB Cấp 1 & Cấp 2 riêng */}
+              {(role === "admin" || role === "bgh") && (
+                <>
+                  {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "primary" ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => openExport("primary")}
+                      className="border-teal-200 bg-teal-50/80 text-teal-800 hover:bg-teal-100 font-semibold gap-1.5 shadow-xs"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-teal-600" />
+                      In TKB Cấp 1
+                    </Button>
+                  ) : null}
+
+                  {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "secondary" ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => openExport("secondary")}
+                      className="border-emerald-200 bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100 font-semibold gap-1.5 shadow-xs"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                      In TKB Cấp 2
+                    </Button>
+                  ) : null}
+                </>
+              )}
+
+              {/* Nút In nhanh trang hiện tại */}
               <Button
                 variant="secondary"
-                onClick={() => {
-                  setApplyError("");
-                  setApplyModalOpen(true);
-                }}
-                className="border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 font-semibold"
+                onClick={() => window.print()}
+                className="gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-50 font-medium shadow-xs"
+                title="In trang thời khóa biểu hiện tại ra máy in hoặc lưu PDF"
               >
-                <CalendarSync className="h-4 w-4 text-indigo-600" />
-                Áp dụng cho tuần sau
+                <Printer className="h-4 w-4 text-slate-600" />
+                In nhanh
               </Button>
+
               {role === "admin" ? (
                 <Button variant="secondary" asChild>
                   <a href="/admin/ai-scheduler/"><Sparkles className="h-4 w-4 text-amber-500" />AI xếp lịch</a>
                 </Button>
               ) : null}
-              {(role === "admin" || role === "bgh") && (
-                <Button variant="secondary" onClick={() => { setExportError(""); setExportOpen(true); }}>
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />Xuất TKB học sinh
-                </Button>
-              )}
+
               <Button onClick={() => openCreate()}><CalendarPlus className="h-4 w-4" />Tạo lịch dạy</Button>
             </div>
           )}
@@ -2439,7 +2584,13 @@ export default function SchedulesPage() {
               if (!next) setApplyError("");
             }
           }}
-          title="Áp dụng thời khóa biểu cho tuần tiếp theo"
+          title={
+            applySchoolLevel === "primary"
+              ? "Đồng bộ thời khóa biểu Cấp 1 (Tiểu học)"
+              : applySchoolLevel === "secondary"
+                ? "Đồng bộ thời khóa biểu Cấp 2 (THCS)"
+                : "Đồng bộ thời khóa biểu cho tuần tiếp theo"
+          }
           description="Sao chép toàn bộ hoặc một phần thời khóa biểu của tuần hiện tại sang các tuần tiếp theo nếu kế hoạch giảng dạy không thay đổi."
           footer={(
             <div className="flex justify-end gap-2">
@@ -2452,6 +2603,47 @@ export default function SchedulesPage() {
           )}
         >
           <div className="space-y-4">
+            {/* Lựa chọn cấp học đồng bộ */}
+            <div>
+              <Label>Cấp học đồng bộ</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setApplySchoolLevel("primary")}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition",
+                    applySchoolLevel === "primary" ? "border-blue-600 bg-blue-50 text-blue-900 font-bold ring-1 ring-blue-600" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Cấp 1 (Tiểu học)</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Khối 1 – Khối 5</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApplySchoolLevel("secondary")}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition",
+                    applySchoolLevel === "secondary" ? "border-indigo-600 bg-indigo-50 text-indigo-900 font-bold ring-1 ring-indigo-600" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Cấp 2 (THCS)</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Khối 6 – Khối 9</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApplySchoolLevel("all")}
+                  disabled={role === "bgh" && bghSchoolLevel !== "all"}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition disabled:opacity-50",
+                    applySchoolLevel === "all" ? "border-primary bg-primary/5 text-primary font-bold ring-1 ring-primary" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Cả 2 cấp</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Toàn trường</span>
+                </button>
+              </div>
+            </div>
+
             {/* Source Week Box */}
             <div className="rounded-xl border border-border bg-muted/30 p-3.5">
               <div className="flex items-center justify-between">
@@ -2469,14 +2661,16 @@ export default function SchedulesPage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
                 <button
                   type="button"
-                  onClick={() => setApplyScope("all")}
+                  onClick={() => setApplyScope(applySchoolLevel === "all" ? "all" : "level")}
                   className={cn(
                     "flex flex-col items-start p-3 rounded-xl border text-left transition",
-                    applyScope === "all" ? "border-primary bg-primary/5 text-primary font-bold shadow-xs" : "border-border hover:bg-muted text-foreground",
+                    (applyScope === "level" || applyScope === "all") ? "border-primary bg-primary/5 text-primary font-bold shadow-xs" : "border-border hover:bg-muted text-foreground",
                   )}
                 >
-                  <span className="text-xs font-bold">Toàn bộ trường</span>
-                  <span className="text-[11px] text-muted-foreground mt-0.5">Tất cả các lớp và giáo viên</span>
+                  <span className="text-xs font-bold">
+                    {applySchoolLevel === "primary" ? "Toàn bộ Cấp 1" : applySchoolLevel === "secondary" ? "Toàn bộ Cấp 2" : "Toàn bộ trường"}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5">Tất cả các lớp thuộc phạm vi</span>
                 </button>
 
                 <button
@@ -2588,18 +2782,87 @@ export default function SchedulesPage() {
         <Modal
           open={exportOpen}
           onOpenChange={(next) => { setExportOpen(next); if (!next) setExportError(""); }}
-          title="Xuất thời khóa biểu cho học sinh"
-          description="Chọn tuần và lớp. Tệp Excel XML có một sheet cho mỗi lớp, hiển thị môn học, giáo viên và phòng học."
+          title={
+            exportSchoolLevel === "primary"
+              ? "In / Xuất thời khóa biểu Cấp 1 (Tiểu học)"
+              : exportSchoolLevel === "secondary"
+                ? "In / Xuất thời khóa biểu Cấp 2 (THCS)"
+                : "In / Xuất thời khóa biểu cho học sinh"
+          }
+          description="Chọn tuần, cấp học và lớp. Bạn có thể in trực tiếp hoặc xuất file Excel XML đầy đủ biểu mẫu ký duyệt."
           footer={(
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setExportOpen(false)}>Đóng</Button>
-              <Button loading={exporting} onClick={exportStudentTimetable}>
-                <FileSpreadsheet className="h-4 w-4" />Xuất Excel
+            <div className="flex flex-wrap justify-between items-center w-full gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => window.print()}
+                className="gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-50 font-medium"
+              >
+                <Printer className="h-4 w-4 text-slate-600" />
+                In trực tiếp
               </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => setExportOpen(false)}>Đóng</Button>
+                <Button loading={exporting} onClick={exportStudentTimetable} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                  <FileSpreadsheet className="h-4 w-4" />Xuất Excel
+                </Button>
+              </div>
             </div>
           )}
         >
           <div className="space-y-4">
+            {/* Lựa chọn cấp học xuất */}
+            <div>
+              <Label>Cấp học cần xuất / in</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportSchoolLevel("primary");
+                    setExportSchoolName("TRƯỜNG TIỂU HỌC");
+                    setExportClassId("");
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition",
+                    exportSchoolLevel === "primary" ? "border-teal-600 bg-teal-50 text-teal-900 font-bold ring-1 ring-teal-600" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Cấp 1 (Tiểu học)</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Khối 1 – Khối 5</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportSchoolLevel("secondary");
+                    setExportSchoolName("TRƯỜNG THCS");
+                    setExportClassId("");
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition",
+                    exportSchoolLevel === "secondary" ? "border-emerald-600 bg-emerald-50 text-emerald-900 font-bold ring-1 ring-emerald-600" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Cấp 2 (THCS)</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Khối 6 – Khối 9</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExportSchoolLevel("");
+                    setExportSchoolName("TRƯỜNG PHỔ THÔNG LIÊN CẤP");
+                    setExportClassId("");
+                  }}
+                  disabled={role === "bgh" && bghSchoolLevel !== "all"}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition disabled:opacity-50",
+                    !exportSchoolLevel ? "border-primary bg-primary/5 text-primary font-bold ring-1 ring-primary" : "border-border hover:bg-muted text-foreground",
+                  )}
+                >
+                  <span className="text-xs font-bold">Tất cả cấp</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">Toàn trường</span>
+                </button>
+              </div>
+            </div>
+
             <div>
               <Label>Tên trường hiển thị trên file</Label>
               <Input value={exportSchoolName} onChange={(event) => setExportSchoolName(event.target.value)} placeholder="TRƯỜNG THCS ..." />
@@ -2613,7 +2876,7 @@ export default function SchedulesPage() {
                 <Label>Lớp cần xuất</Label>
                 <select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={exportClassId} onChange={(event) => setExportClassId(event.target.value)}>
                   <option value="">Tất cả lớp có lịch</option>
-                  {(filteredCatalogClasses.length > 0 ? filteredCatalogClasses : classes).map((row) => <option key={row.id} value={row.id}>{catalogOptionLabel(row)}</option>)}
+                  {exportFilteredClasses.map((row) => <option key={row.id} value={row.id}>{catalogOptionLabel(row)}</option>)}
                 </select>
               </div>
             </div>
