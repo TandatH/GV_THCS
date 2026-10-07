@@ -11,6 +11,7 @@ export default function RoomsPage() {
       { value: "computer", label: "Phòng Tin học" },
       { value: "laboratory", label: "Phòng thực hành" },
       { value: "multi_function", label: "Phòng đa năng" },
+      { value: "playground", label: "Sân thể dục / Bãi tập" },
     ] },
     { name: "isActive", label: "Trạng thái", type: "checkbox" },
   ]} />;

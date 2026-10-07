@@ -916,19 +916,38 @@ export default function SchedulesPage() {
     const afternoonCount = totalPeriodsCount - morningCount;
 
     // Check for period conflicts in the currently filtered view
-    const conflictMap = new Map<string, number>();
-    let hasConflict = false;
+    const slotSchedulesMap = new Map<string, ScheduleRow[]>();
     currentWeekSchedules.forEach((curr) => {
       const day = Number(curr.dayOfWeek || 0);
       const start = Number(curr.startPeriod || 0);
       const end = Number(curr.endPeriod || start + 1);
       for (let p = start; p < end; p++) {
         const key = `${day}-${p}`;
-        const prev = conflictMap.get(key) || 0;
-        conflictMap.set(key, prev + 1);
-        if (prev >= 1) hasConflict = true;
+        const list = slotSchedulesMap.get(key) || [];
+        list.push(curr);
+        slotSchedulesMap.set(key, list);
       }
     });
+
+    let hasConflict = false;
+    for (const [, schedules] of slotSchedulesMap.entries()) {
+      if (schedules.length <= 1) continue;
+      // Allow combined GDTC classes (max 2, both are GDTC, different classes)
+      const isAllowedGdtcCombine = schedules.length === 2 && schedules.every((sch) => {
+        const subjectName = catalogName(subjects, sch.subjectId) || sch.subjectName || "";
+        const norm = subjectName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/\s+/g, "");
+        return norm.includes("theduc") || norm.includes("gdtc") || norm.includes("thechat") || norm === "td";
+      }) && schedules[0].classId !== schedules[1].classId && (
+        viewScope === "teacher" ||
+        viewScope === "room" ||
+        (schedules[0].actualTeacherId || schedules[0].teacherId) === (schedules[1].actualTeacherId || schedules[1].teacherId)
+      );
+
+      if (!isAllowedGdtcCombine) {
+        hasConflict = true;
+        break;
+      }
+    }
 
     const activeDaysCount = new Set(currentWeekSchedules.map((r) => Number(r.dayOfWeek))).size;
 
@@ -939,7 +958,7 @@ export default function SchedulesPage() {
       activeDays: activeDaysCount,
       hasConflict,
     };
-  }, [currentWeekSchedules]);
+  }, [currentWeekSchedules, subjects, viewScope]);
 
   // Teacher availability slots for quick visual scheduling
   const selectedTeacherAvailabilitySlots = useMemo(() => {
@@ -2158,6 +2177,14 @@ export default function SchedulesPage() {
                                 <td key={`slot-${day}-${p}`} className="p-2 align-top h-28">
                                   {matches.length > 0 ? (
                                     <div className="flex flex-col gap-1.5 h-full">
+                                      {matches.length > 1 ? (
+                                        <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 text-[10px] font-extrabold text-emerald-800 shadow-2xs">
+                                          <span>👥 Dạy ghép ({matches.length} lớp)</span>
+                                          <span className="text-[9px] bg-emerald-200/80 px-1 rounded font-bold">
+                                            {matches.map((m) => catalogName(classes, m.classId) || m.className || "").filter(Boolean).join(" & ")}
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       {matches.map((schedule) => {
                                         const subjectName = catalogName(subjects, schedule.subjectId) || schedule.subjectName || schedule.subjectId || "Môn học";
                                         const teacherName = catalogName(teachers, schedule.actualTeacherId || schedule.teacherId) || schedule.actualTeacherId || schedule.teacherId || "Giáo viên";
@@ -2295,6 +2322,14 @@ export default function SchedulesPage() {
                                 <td key={`slot-${day}-${p}`} className="p-2 align-top h-28">
                                   {matches.length > 0 ? (
                                     <div className="flex flex-col gap-1.5 h-full">
+                                      {matches.length > 1 ? (
+                                        <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 text-[10px] font-extrabold text-emerald-800 shadow-2xs">
+                                          <span>👥 Dạy ghép ({matches.length} lớp)</span>
+                                          <span className="text-[9px] bg-emerald-200/80 px-1 rounded font-bold">
+                                            {matches.map((m) => catalogName(classes, m.classId) || m.className || "").filter(Boolean).join(" & ")}
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       {matches.map((schedule) => {
                                         const subjectName = catalogName(subjects, schedule.subjectId) || schedule.subjectName || schedule.subjectId || "Môn học";
                                         const teacherName = catalogName(teachers, schedule.actualTeacherId || schedule.teacherId) || schedule.actualTeacherId || schedule.teacherId || "Giáo viên";
