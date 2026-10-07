@@ -65,9 +65,9 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   );
 }
 
-export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+export function Label({ children, htmlFor, className }: { children: ReactNode; htmlFor?: string; className?: string }) {
   return (
-    <label className="mb-1.5 block text-sm font-medium text-foreground" htmlFor={htmlFor}>
+    <label className={cn("mb-1.5 block text-sm font-medium text-foreground", className)} htmlFor={htmlFor}>
       {children}
     </label>
   );
