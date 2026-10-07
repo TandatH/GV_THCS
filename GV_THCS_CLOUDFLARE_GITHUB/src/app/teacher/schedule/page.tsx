@@ -74,18 +74,37 @@ interface PeriodSlot {
   session: "morning" | "afternoon";
 }
 
-// Khung giờ tiết học chuẩn THCS Việt Nam (Trùng khớp 100% hình mẫu yêu cầu)
-const DEFAULT_PERIOD_SLOTS: PeriodSlot[] = [
+// Khung giờ tiết học chuẩn THCS Việt Nam (Dùng làm fallback nếu trường chưa cấu hình timeSlots cấp 2)
+const DEFAULT_SECONDARY_MORNING_SLOTS: PeriodSlot[] = [
   { period: 1, name: "Tiết 1", startTime: "07:00", endTime: "07:45", session: "morning" },
-  { period: 2, name: "Tiết 2", startTime: "07:55", endTime: "08:40", session: "morning" },
-  { period: 3, name: "Tiết 3", startTime: "08:50", endTime: "09:35", session: "morning" },
+  { period: 2, name: "Tiết 2", startTime: "07:50", endTime: "08:35", session: "morning" },
+  { period: 3, name: "Tiết 3", startTime: "08:55", endTime: "09:40", session: "morning" },
   { period: 4, name: "Tiết 4", startTime: "09:45", endTime: "10:30", session: "morning" },
-  { period: 5, name: "Tiết 5", startTime: "13:00", endTime: "13:45", session: "afternoon" },
-  { period: 6, name: "Tiết 6", startTime: "13:55", endTime: "14:40", session: "afternoon" },
-  { period: 7, name: "Tiết 7", startTime: "14:50", endTime: "15:35", session: "afternoon" },
-  { period: 8, name: "Tiết 8", startTime: "15:45", endTime: "16:30", session: "afternoon" },
-  { period: 9, name: "Tiết 9", startTime: "16:35", endTime: "17:20", session: "afternoon" },
-  { period: 10, name: "Tiết 10", startTime: "17:25", endTime: "18:10", session: "afternoon" },
+  { period: 5, name: "Tiết 5", startTime: "10:35", endTime: "11:20", session: "morning" },
+];
+
+const DEFAULT_SECONDARY_AFTERNOON_SLOTS: PeriodSlot[] = [
+  { period: 6, name: "Tiết 6", startTime: "13:00", endTime: "13:45", session: "afternoon" },
+  { period: 7, name: "Tiết 7", startTime: "13:50", endTime: "14:35", session: "afternoon" },
+  { period: 8, name: "Tiết 8", startTime: "14:50", endTime: "15:35", session: "afternoon" },
+  { period: 9, name: "Tiết 9", startTime: "15:40", endTime: "16:25", session: "afternoon" },
+  { period: 10, name: "Tiết 10", startTime: "16:30", endTime: "17:15", session: "afternoon" },
+];
+
+// Khung giờ tiết học chuẩn Tiểu học Việt Nam (Dùng làm fallback nếu trường chưa cấu hình timeSlots cấp 1)
+const DEFAULT_PRIMARY_MORNING_SLOTS: PeriodSlot[] = [
+  { period: 1, name: "Tiết 1", startTime: "07:15", endTime: "07:50", session: "morning" },
+  { period: 2, name: "Tiết 2", startTime: "07:55", endTime: "08:30", session: "morning" },
+  { period: 3, name: "Tiết 3", startTime: "08:50", endTime: "09:25", session: "morning" },
+  { period: 4, name: "Tiết 4", startTime: "09:35", endTime: "10:10", session: "morning" },
+  { period: 5, name: "Tiết 5", startTime: "10:15", endTime: "10:50", session: "morning" },
+];
+
+const DEFAULT_PRIMARY_AFTERNOON_SLOTS: PeriodSlot[] = [
+  { period: 6, name: "Tiết 6", startTime: "13:30", endTime: "14:05", session: "afternoon" },
+  { period: 7, name: "Tiết 7", startTime: "14:15", endTime: "14:50", session: "afternoon" },
+  { period: 8, name: "Tiết 8", startTime: "15:05", endTime: "15:40", session: "afternoon" },
+  { period: 9, name: "Tiết 9", startTime: "15:45", endTime: "16:20", session: "afternoon" },
 ];
 
 type ColorTheme = {
@@ -403,10 +422,51 @@ function scheduleStatusLabel(status: unknown) {
   return typeof status === "string" ? labels[status] || status : "Đã xếp lịch";
 }
 
+function primaryCatalogName(row: Row) {
+  return textValue(row.name) || textValue(row.fullName) || textValue(row.code) || row.id;
+}
+
+function periodNumber(row: Row) {
+  return Number(row.periodNumber ?? row.order ?? row.period ?? 0);
+}
+
+function numericGrade(value: unknown) {
+  const grade = Number(value);
+  return Number.isInteger(grade) && grade >= 1 && grade <= 9 ? grade : 0;
+}
+
+function schoolLevelForGrade(grade: number): "primary" | "secondary" | "" {
+  if (grade >= 1 && grade <= 5) return "primary";
+  if (grade >= 6 && grade <= 9) return "secondary";
+  return "";
+}
+
+function catalogSchoolLevel(row: Row | null | undefined): "primary" | "secondary" | "" {
+  const explicit = textValue(row?.schoolLevel);
+  if (explicit === "primary" || explicit === "secondary") return explicit;
+  const grade = numericGrade(row?.grade ?? row?.gradeLevel) || inferGradeFromName(row?.name ?? row?.code);
+  return schoolLevelForGrade(grade);
+}
+
+function timeSlotSchoolLevel(row: Row | null | undefined): "primary" | "secondary" {
+  const explicit = textValue(row?.schoolLevel);
+  if (explicit === "primary" || explicit === "secondary") return explicit;
+  const code = textValue(row?.code).toUpperCase();
+  if (code.startsWith("PRI") || code.startsWith("TH")) return "primary";
+  if (code.startsWith("SEC") || code.startsWith("THCS")) return "secondary";
+  return "secondary";
+}
+
+function timeSlotsForLevel(rows: Row[], level: string): Row[] {
+  if (level !== "primary" && level !== "secondary") return [] as Row[];
+  return rows.filter((row) => timeSlotSchoolLevel(row) === level && row.isActive !== false);
+}
+
 export default function TeacherSchedulePage() {
   const { loading: authLoading, user } = useAuth();
   const [teacherId, setTeacherId] = useState("");
   const [teacherName, setTeacherName] = useState("");
+  const [teacherProfile, setTeacherProfile] = useState<Row | null>(null);
   const [primarySchedules, setPrimarySchedules] = useState<Row[]>([]);
   const [legacySchedules, setLegacySchedules] = useState<Row[]>([]);
   const [subjects, setSubjects] = useState<Row[]>([]);
@@ -424,6 +484,7 @@ export default function TeacherSchedulePage() {
   const [selectedWeek, setSelectedWeek] = useState(currentMonday());
   const [selectedSemesterId, setSelectedSemesterId] = useState("");
   const [selectedClassId, setSelectedClassId] = useState("all");
+  const [selectedSchoolLevel, setSelectedSchoolLevel] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<"all" | "morning" | "afternoon">("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -452,6 +513,7 @@ export default function TeacherSchedulePage() {
         if (!active) return;
         setTeacherId(context.teacherId);
         setTeacherName(String(context.teacherProfile.fullName || context.userProfile.displayName || "Giáo viên"));
+        setTeacherProfile({ id: context.teacherId, ...context.teacherProfile });
       })
       .catch((loadError) => active && setError(firebaseDataErrorMessage(loadError)))
       .finally(() => active && setContextLoading(false));
@@ -504,25 +566,6 @@ export default function TeacherSchedulePage() {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
-  // Map of periods with exact start and end times (Configured in Firestore or default standard)
-  const activePeriods = useMemo<PeriodSlot[]>(() => {
-    return DEFAULT_PERIOD_SLOTS.map((defSlot) => {
-      const matchInDb = timeSlots.find(
-        (slot) => Number(slot.periodNumber ?? slot.order ?? slot.period ?? 0) === defSlot.period && slot.isActive !== false,
-      );
-      if (matchInDb && matchInDb.startTime && matchInDb.endTime) {
-        return {
-          period: defSlot.period,
-          name: String(matchInDb.name || defSlot.name),
-          startTime: String(matchInDb.startTime),
-          endTime: String(matchInDb.endTime),
-          session: defSlot.session,
-        };
-      }
-      return defSlot;
-    });
-  }, [timeSlots]);
-
   const allSchedules = useMemo(() => {
     const map = new Map<string, Row>();
     [...legacySchedules, ...primarySchedules].forEach((schedule) => map.set(schedule.id, schedule));
@@ -532,6 +575,98 @@ export default function TeacherSchedulePage() {
         textValue(schedule.actualTeacherId) ? schedule.actualTeacherId === teacherId : schedule.teacherId === teacherId,
       );
   }, [legacySchedules, primarySchedules, teacherId]);
+
+  // Cấp học áp dụng cho thời khóa biểu (Đồng bộ 100% với Admin)
+  const activeLevelForSlots = useMemo<"primary" | "secondary">(() => {
+    // 1. Nếu giáo viên chọn lọc một lớp cụ thể: lấy cấp học của lớp đó
+    if (selectedClassId && selectedClassId !== "all") {
+      const cls = classes.find((c) => c.id === selectedClassId);
+      const lvl = catalogSchoolLevel(cls);
+      if (lvl === "primary" || lvl === "secondary") return lvl;
+    }
+    // 2. Nếu giáo viên chủ động chọn cấp học trong bộ lọc
+    if (selectedSchoolLevel === "primary" || selectedSchoolLevel === "secondary") {
+      return selectedSchoolLevel;
+    }
+    // 3. Tự động nhận diện từ các lớp học trong lịch dạy của giáo viên
+    let primaryCount = 0;
+    let secondaryCount = 0;
+    allSchedules.forEach((sch) => {
+      const cls = classes.find((c) => c.id === sch.classId);
+      const lvl = sch.schoolLevel || catalogSchoolLevel(cls);
+      if (lvl === "primary") primaryCount++;
+      else if (lvl === "secondary") secondaryCount++;
+    });
+    if (secondaryCount > 0 && secondaryCount >= primaryCount) return "secondary";
+    if (primaryCount > 0) return "primary";
+
+    // 4. Kiểm tra hồ sơ phân công của giáo viên
+    if (teacherProfile) {
+      if (Array.isArray(teacherProfile.schoolLevels)) {
+        if (teacherProfile.schoolLevels.includes("secondary")) return "secondary";
+        if (teacherProfile.schoolLevels.includes("primary")) return "primary";
+      }
+      if (teacherProfile.schoolLevel === "primary") return "primary";
+    }
+
+    return "secondary";
+  }, [allSchedules, classes, selectedClassId, selectedSchoolLevel, teacherProfile]);
+
+  // Danh sách timeSlots do Admin cấu hình cho đúng cấp học hiện tại
+  const levelTimeSlots = useMemo(() => {
+    const slots = timeSlotsForLevel(timeSlots, activeLevelForSlots);
+    if (slots.length > 0) return slots;
+    return timeSlots.filter((slot) => slot.isActive !== false);
+  }, [activeLevelForSlots, timeSlots]);
+
+  // Khung tiết buổi sáng (Tiết 1 — 5) đồng bộ 100% từ cấu hình Admin
+  const morningPeriods = useMemo<PeriodSlot[]>(() => {
+    const configured = levelTimeSlots
+      .filter((slot) => periodNumber(slot) <= 5)
+      .sort((a, b) => periodNumber(a) - periodNumber(b));
+
+    if (configured.length > 0) {
+      return configured.map((slot) => {
+        const p = periodNumber(slot);
+        return {
+          period: p,
+          name: primaryCatalogName(slot) || `Tiết ${p}`,
+          startTime: String(slot.startTime || ""),
+          endTime: String(slot.endTime || ""),
+          session: "morning",
+        };
+      });
+    }
+
+    return activeLevelForSlots === "primary" ? DEFAULT_PRIMARY_MORNING_SLOTS : DEFAULT_SECONDARY_MORNING_SLOTS;
+  }, [activeLevelForSlots, levelTimeSlots]);
+
+  // Khung tiết buổi chiều (Tiết 6 — 10) đồng bộ 100% từ cấu hình Admin
+  const afternoonPeriods = useMemo<PeriodSlot[]>(() => {
+    const configured = levelTimeSlots
+      .filter((slot) => periodNumber(slot) > 5 && periodNumber(slot) <= 10)
+      .sort((a, b) => periodNumber(a) - periodNumber(b));
+
+    if (configured.length > 0) {
+      return configured.map((slot) => {
+        const p = periodNumber(slot);
+        return {
+          period: p,
+          name: primaryCatalogName(slot) || `Tiết ${p}`,
+          startTime: String(slot.startTime || ""),
+          endTime: String(slot.endTime || ""),
+          session: "afternoon",
+        };
+      });
+    }
+
+    return activeLevelForSlots === "primary" ? DEFAULT_PRIMARY_AFTERNOON_SLOTS : DEFAULT_SECONDARY_AFTERNOON_SLOTS;
+  }, [activeLevelForSlots, levelTimeSlots]);
+
+  // Toàn bộ các tiết đang hoạt động
+  const activePeriods = useMemo<PeriodSlot[]>(() => {
+    return [...morningPeriods, ...afternoonPeriods];
+  }, [morningPeriods, afternoonPeriods]);
 
   // Check if there are any Saturday schedules in general
   const hasSaturdayTeaching = useMemo(() => {
@@ -589,11 +724,11 @@ export default function TeacherSchedulePage() {
         if (selectedClassId !== "all" && textValue(schedule.classId) !== selectedClassId) return false;
         if (statusFilter !== "all" && schedule.confirmationStatus !== statusFilter) return false;
 
-        // Session filter
+        // Session filter (Sáng: Tiết 1 — 5, Chiều: Tiết 6 — 10)
         if (selectedSession !== "all") {
           const start = Number(schedule.startPeriod || 0);
-          if (selectedSession === "morning" && start > 4) return false;
-          if (selectedSession === "afternoon" && start <= 4) return false;
+          if (selectedSession === "morning" && start > 5) return false;
+          if (selectedSession === "afternoon" && start <= 5) return false;
         }
 
         if (!keyword) return true;
@@ -634,15 +769,15 @@ export default function TeacherSchedulePage() {
   const totalPeriods = filteredSchedules.reduce((sum, schedule) => sum + periodCount(schedule), 0);
   const pendingCount = filteredSchedules.filter((schedule) => schedule.confirmationStatus === "cho_xac_nhan").length;
 
-  // Max period to display: default 8 (matching the screenshot), but if there are classes at 9 or 10, show up to 10
-  const maxPeriodToDisplay = useMemo(() => {
-    const hasLatePeriod = filteredSchedules.some((s) => Number(s.endPeriod || 0) > 9);
-    return hasLatePeriod ? 10 : 8;
-  }, [filteredSchedules]);
-
-  const displayedPeriods = useMemo(() => {
-    return activePeriods.filter((p) => p.period <= maxPeriodToDisplay);
-  }, [activePeriods, maxPeriodToDisplay]);
+  // Khung tiết buổi chiều hiển thị: đầy đủ theo Admin cấu hình hoặc hiển thị tối thiểu đến tiết 8 (nếu có tiết 9-10 thì mở rộng)
+  const displayedAfternoonPeriods = useMemo(() => {
+    const hasConfiguredLate = levelTimeSlots.some((slot) => periodNumber(slot) > 8);
+    const hasScheduleLate = filteredSchedules.some((s) => Number(s.endPeriod || 0) > 9 || Number(s.startPeriod || 0) > 8);
+    if (hasConfiguredLate || hasScheduleLate) {
+      return afternoonPeriods;
+    }
+    return afternoonPeriods.filter((p) => p.period <= 8);
+  }, [afternoonPeriods, filteredSchedules, levelTimeSlots]);
 
   // Group schedules by day and start period for ultra-fast table lookup
   const scheduleMatrix = useMemo(() => {
@@ -793,6 +928,103 @@ export default function TeacherSchedulePage() {
           ) : null}
         </div>
       </div>
+    );
+  }
+
+  function renderPeriodRow(slot: PeriodSlot) {
+    const p = slot.period;
+    const isPeriodHovered = hoveredCoordinate?.period === p;
+
+    return (
+      <tr
+        key={p}
+        className={cn(
+          "divide-x divide-slate-200 transition-colors duration-100",
+          isPeriodHovered ? "bg-blue-50/20" : "",
+          p % 2 === 0 ? "bg-slate-50/30" : "bg-white",
+        )}
+      >
+        {/* CỘT TIẾT & GIỜ HỌC BÊN TRÁI (Chuẩn khoa học, đồng bộ 100% từ cấu hình Admin) */}
+        <td
+          className={cn(
+            "p-2.5 text-center border-r border-slate-200 align-middle transition-colors duration-150",
+            isPeriodHovered ? "bg-blue-100/60 text-primary ring-1 ring-primary/30" : "bg-slate-50/50",
+          )}
+        >
+          <div className="flex flex-col items-center justify-center">
+            <span
+              className={cn(
+                "text-base font-black tracking-tight",
+                isPeriodHovered ? "text-primary scale-110" : "text-slate-800",
+              )}
+            >
+              {p}
+            </span>
+            <span className="mt-0.5 text-[11px] font-semibold text-slate-500 font-mono tracking-tight">
+              {slot.startTime || "?"} – {slot.endTime || "?"}
+            </span>
+          </div>
+        </td>
+
+        {/* CÁC Ô LỊCH HỌC THEO THỨ */}
+        {activeWeekdays.map((day) => {
+          const dayDateStr = addDaysDateOnly(selectedWeek, day - 2);
+          const isToday = dayDateStr === todayStr;
+          const isCellHovered = hoveredCoordinate?.day === day && hoveredCoordinate?.period === p;
+          const occ = cellOccupancy.get(`${day}-${p}`);
+
+          // Nếu ô này thuộc về tiết kéo dài (rowSpan) và không phải ô bắt đầu, bỏ qua để không vỡ bảng
+          if (occ && !occ.isLead) {
+            return null;
+          }
+
+          return (
+            <td
+              key={day}
+              rowSpan={occ?.isLead ? occ.rowSpan : 1}
+              onMouseEnter={() => setHoveredCoordinate({ day, period: p })}
+              onMouseLeave={() => setHoveredCoordinate(null)}
+              className={cn(
+                "p-1.5 sm:p-2 align-top transition-all duration-150 border-r border-slate-200 last:border-r-0 relative",
+                isToday ? "bg-blue-50/25" : "",
+                isCellHovered ? "ring-2 ring-primary/40 ring-inset bg-blue-50/40" : "",
+              )}
+            >
+              {occ?.schedules && occ.schedules.length > 0 ? (
+                occ.schedules.length === 1 ? (
+                  renderScheduleCardContent(occ.schedules[0], occ.rowSpan === 1 && p > 8)
+                ) : (
+                  <div className="flex flex-col gap-1.5 h-full">
+                    <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-300 px-2 py-1 text-[11px] font-extrabold text-emerald-800 shadow-2xs">
+                      <span className="flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                        <span>Dạy ghép {occ.schedules.length} lớp</span>
+                      </span>
+                      <span className="text-[10px] bg-emerald-200/90 text-emerald-900 px-1.5 py-0.5 rounded font-black">
+                        {occ.schedules
+                          .map((s) => s.className || catalogName(classes, s.classId) || "")
+                          .filter(Boolean)
+                          .join(" & ")}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {occ.schedules.map((schedule) => (
+                        <div key={schedule.id}>
+                          {renderScheduleCardContent(schedule, true)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="h-full min-h-[72px] w-full rounded-xl border border-transparent p-2 text-center text-xs text-muted-foreground/30 flex items-center justify-center hover:border-slate-200/60 hover:bg-slate-50/40 transition">
+                  <span className="sr-only">Trống tiết {p}</span>
+                </div>
+              )}
+            </td>
+          );
+        })}
+      </tr>
     );
   }
 
@@ -966,6 +1198,19 @@ export default function TeacherSchedulePage() {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs">
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground font-medium">Khung giờ:</span>
+                <select
+                  value={selectedSchoolLevel}
+                  onChange={(e) => setSelectedSchoolLevel(e.target.value)}
+                  className="rounded-lg border border-border bg-background px-2 py-1 text-xs font-semibold"
+                >
+                  <option value="">Tự động ({activeLevelForSlots === "primary" ? "Tiểu học" : "THCS"})</option>
+                  <option value="secondary">THCS (Cấp 2)</option>
+                  <option value="primary">Tiểu học (Cấp 1)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground font-medium">Buổi dạy:</span>
                 <select
                   value={selectedSession}
@@ -973,8 +1218,8 @@ export default function TeacherSchedulePage() {
                   className="rounded-lg border border-border bg-background px-2 py-1 text-xs font-semibold"
                 >
                   <option value="all">Cả ngày (Sáng & Chiều)</option>
-                  <option value="morning">Chỉ buổi sáng (Tiết 1-4)</option>
-                  <option value="afternoon">Chỉ buổi chiều (Tiết 5-8)</option>
+                  <option value="morning">Chỉ buổi sáng (Tiết 1-5)</option>
+                  <option value="afternoon">Chỉ buổi chiều (Tiết 6-10)</option>
                 </select>
               </div>
 
@@ -1044,6 +1289,10 @@ export default function TeacherSchedulePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs">
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-1.5 font-bold text-blue-900">
+              <span className="text-blue-600 font-medium">Khung tiết: </span>
+              {activeLevelForSlots === "primary" ? "Tiểu học (Cấp 1)" : "THCS (Cấp 2)"}
+            </div>
             <div className="rounded-xl border border-border bg-muted/40 px-3 py-1.5">
               <span className="text-muted-foreground">Tiết trong tuần: </span>
               <strong className="text-foreground text-sm font-black">{totalPeriods}</strong> tiết
@@ -1147,105 +1396,29 @@ export default function TeacherSchedulePage() {
 
                   {/* TABLE BODY */}
                   <tbody className="divide-y divide-slate-200 text-sm">
-                    {displayedPeriods.map((slot, index) => {
-                      const p = slot.period;
-                      const isPeriodHovered = hoveredCoordinate?.period === p;
-                      const isLunchBreakBoundary = p === 5; // Dải phân cách nghỉ trưa giữa tiết 4 và tiết 5
-
-                      return (
-                        <tr
-                          key={p}
-                          className={cn(
-                            "divide-x divide-slate-200 transition-colors duration-100",
-                            isPeriodHovered ? "bg-blue-50/20" : "",
-                            // Phân biệt nhẹ giữa các dòng để chống nhìn nhầm (alternating striping)
-                            p % 2 === 0 ? "bg-slate-50/30" : "bg-white",
-                          )}
-                        >
-                          {/* CỘT TIẾT & GIỜ HỌC BÊN TRÁI (Chuẩn như hình chụp) */}
-                          <td
-                            className={cn(
-                              "p-2.5 text-center border-r border-slate-200 align-middle transition-colors duration-150",
-                              isPeriodHovered ? "bg-blue-100/60 text-primary ring-1 ring-primary/30" : "bg-slate-50/50",
-                            )}
-                          >
-                            <div className="flex flex-col items-center justify-center">
-                              <span
-                                className={cn(
-                                  "text-base font-black tracking-tight",
-                                  isPeriodHovered ? "text-primary scale-110" : "text-slate-800",
-                                )}
-                              >
-                                {p}
-                              </span>
-                              <span className="mt-0.5 text-[11px] font-semibold text-slate-400 font-sans tracking-tight">
-                                {slot.startTime} - {slot.endTime}
-                              </span>
-                            </div>
+                    {/* BUỔI SÁNG (Tiết 1 — 5) */}
+                    {selectedSession !== "afternoon" && morningPeriods.length > 0 ? (
+                      <>
+                        <tr className="bg-gradient-to-r from-blue-50/80 via-blue-50/40 to-transparent font-bold text-xs text-blue-900 border-t-2 border-t-blue-200">
+                          <td colSpan={activeWeekdays.length + 1} className="px-4 py-2 uppercase tracking-wider font-bold">
+                            BUỔI SÁNG (Tiết 1 — 5)
                           </td>
-
-                          {/* CÁC Ô LỊCH HỌC THEO THỨ */}
-                          {activeWeekdays.map((day) => {
-                            const dayDateStr = addDaysDateOnly(selectedWeek, day - 2);
-                            const isToday = dayDateStr === todayStr;
-                            const isCellHovered = hoveredCoordinate?.day === day && hoveredCoordinate?.period === p;
-                            const occ = cellOccupancy.get(`${day}-${p}`);
-
-                            // Nếu ô này thuộc về tiết kéo dài (rowSpan) và không phải ô bắt đầu, bỏ qua để không vỡ bảng
-                            if (occ && !occ.isLead) {
-                              return null;
-                            }
-
-                            return (
-                              <td
-                                key={day}
-                                rowSpan={occ?.isLead ? occ.rowSpan : 1}
-                                onMouseEnter={() => setHoveredCoordinate({ day, period: p })}
-                                onMouseLeave={() => setHoveredCoordinate(null)}
-                                className={cn(
-                                  "p-1.5 sm:p-2 align-top transition-all duration-150 border-r border-slate-200 last:border-r-0 relative",
-                                  isToday ? "bg-blue-50/25" : "",
-                                  isCellHovered ? "ring-2 ring-primary/40 ring-inset bg-blue-50/40" : "",
-                                )}
-                              >
-                                {occ?.schedules && occ.schedules.length > 0 ? (
-                                  occ.schedules.length === 1 ? (
-                                    renderScheduleCardContent(occ.schedules[0], occ.rowSpan === 1 && p > 8)
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5 h-full">
-                                      <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-300 px-2 py-1 text-[11px] font-extrabold text-emerald-800 shadow-2xs">
-                                        <span className="flex items-center gap-1">
-                                          <Users className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                          <span>Dạy ghép {occ.schedules.length} lớp</span>
-                                        </span>
-                                        <span className="text-[10px] bg-emerald-200/90 text-emerald-900 px-1.5 py-0.5 rounded font-black">
-                                          {occ.schedules
-                                            .map((s) => s.className || catalogName(classes, s.classId) || "")
-                                            .filter(Boolean)
-                                            .join(" & ")}
-                                        </span>
-                                      </div>
-                                      <div className="flex flex-col gap-1.5">
-                                        {occ.schedules.map((schedule) => (
-                                          <div key={schedule.id}>
-                                            {renderScheduleCardContent(schedule, true)}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )
-                                ) : (
-                                  // Ô trống: thiết kế tối giản, sạch sẽ, không rối mắt
-                                  <div className="h-full min-h-[72px] w-full rounded-xl border border-transparent p-2 text-center text-xs text-muted-foreground/30 flex items-center justify-center hover:border-slate-200/60 hover:bg-slate-50/40 transition">
-                                    <span className="sr-only">Trống tiết {p}</span>
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
                         </tr>
-                      );
-                    })}
+                        {morningPeriods.map((slot) => renderPeriodRow(slot))}
+                      </>
+                    ) : null}
+
+                    {/* BUỔI CHIỀU (Tiết 6 — 10) */}
+                    {selectedSession !== "morning" && displayedAfternoonPeriods.length > 0 ? (
+                      <>
+                        <tr className="bg-gradient-to-r from-amber-50/80 via-amber-50/40 to-transparent font-bold text-xs text-amber-900 border-t-2 border-t-amber-200">
+                          <td colSpan={activeWeekdays.length + 1} className="px-4 py-2 uppercase tracking-wider font-bold">
+                            BUỔI CHIỀU (Tiết 6 — 10)
+                          </td>
+                        </tr>
+                        {displayedAfternoonPeriods.map((slot) => renderPeriodRow(slot))}
+                      </>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
