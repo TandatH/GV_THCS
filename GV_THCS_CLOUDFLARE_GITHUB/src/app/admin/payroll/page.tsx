@@ -200,16 +200,20 @@ export default function AdminPayrollPage() {
         },
         (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
-      onSnapshot(
-        query(collection(firestore, "auditLogs"), limit(80)),
-        (snapshot) => {
-          setAuditRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        },
-        () => undefined
-      ),
+      ...(showAuditLog
+        ? [
+            onSnapshot(
+              query(collection(firestore, "auditLogs"), limit(80)),
+              (snapshot) => {
+                setAuditRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+              },
+              () => undefined
+            ),
+          ]
+        : []),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, []);
+  }, [showAuditLog]);
 
   useEffect(() => {
     const unsubscribers = [
@@ -462,13 +466,15 @@ export default function AdminPayrollPage() {
 
         // Rates
         const primaryRate = Number(
-          teacher.primaryRatePerPeriod ||
+          payrollDoc?.overridePrimaryRate ||
+            teacher.primaryRatePerPeriod ||
             teacher.ratePerPeriod ||
             (teachingLevel === "PRIMARY" ? teacher.ratePerPeriod : null) ||
             120000
         );
         const secondaryRate = Number(
-          teacher.secondaryRatePerPeriod ||
+          payrollDoc?.overrideSecondaryRate ||
+            teacher.secondaryRatePerPeriod ||
             teacher.ratePerPeriod ||
             (teachingLevel === "SECONDARY" ? teacher.ratePerPeriod : null) ||
             150000
@@ -1063,6 +1069,8 @@ export default function AdminPayrollPage() {
   async function handlePrincipalAdjustmentSubmit(data: {
     primaryActual: number;
     secondaryActual: number;
+    primaryRate: number;
+    secondaryRate: number;
     adjustmentAmount: number;
     adjustmentReason: string;
     status: PayrollApprovalStatus;
@@ -1071,12 +1079,17 @@ export default function AdminPayrollPage() {
     setActionLoading(true);
     try {
       const ref = doc(firestore, "payroll", principalEditRow.payrollDocId);
-      const newAmount = Math.max(
-        0,
-        (data.primaryActual * principalEditRow.primaryRate) +
-          (data.secondaryActual * principalEditRow.secondaryRate) +
-          data.adjustmentAmount
-      );
+      const isAdjunct = principalEditRow.teacherType === "thinh_giang";
+      const pOver = principalEditRow.primaryStandard !== null
+        ? Math.max(0, data.primaryActual - principalEditRow.primaryStandard)
+        : data.primaryActual;
+      const sOver = principalEditRow.secondaryStandard !== null
+        ? Math.max(0, data.secondaryActual - principalEditRow.secondaryStandard)
+        : data.secondaryActual;
+
+      const primarySubtotal = isAdjunct ? data.primaryActual * data.primaryRate : pOver * data.primaryRate;
+      const secondarySubtotal = isAdjunct ? data.secondaryActual * data.secondaryRate : sOver * data.secondaryRate;
+      const newAmount = Math.max(0, primarySubtotal + secondarySubtotal + data.adjustmentAmount);
 
       await setDoc(
         ref,
@@ -1085,6 +1098,8 @@ export default function AdminPayrollPage() {
           month: selectedMonth,
           overridePrimaryActual: data.primaryActual,
           overrideSecondaryActual: data.secondaryActual,
+          overridePrimaryRate: data.primaryRate,
+          overrideSecondaryRate: data.secondaryRate,
           actualPeriods: data.primaryActual + data.secondaryActual,
           adjustmentAmount: data.adjustmentAmount,
           adjustmentReason: data.adjustmentReason,
@@ -1100,6 +1115,23 @@ export default function AdminPayrollPage() {
         },
         { merge: true }
       );
+
+      // Cập nhật đơn giá vào hồ sơ giáo viên để đồng bộ lâu dài
+      try {
+        await setDoc(
+          doc(firestore, "teachers", principalEditRow.teacherId),
+          {
+            primaryRatePerPeriod: data.primaryRate,
+            secondaryRatePerPeriod: data.secondaryRate,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          },
+          { merge: true }
+        );
+      } catch {
+        // Teacher profile update is optional
+      }
+
       setPrincipalEditRow(null);
       toast.success(`Đã lưu điều chỉnh công & thù lao cho giáo viên ${principalEditRow.teacherName}.`);
     } catch (err) {
@@ -1211,28 +1243,28 @@ export default function AdminPayrollPage() {
                 </>
               )}
 
-              {/* Admin Specific Buttons */}
+              {/* Cấu hình đơn giá thù lao theo môn & giáo viên (Admin & BGH) */}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRateOpen(true);
+                  setRateError("");
+                }}
+              >
+                <CircleDollarSign className="h-4 w-4" />
+                Đơn giá thù lao
+              </Button>
+
+              {/* Admin Specific Calculator */}
               {isAdmin && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setRateOpen(true);
-                      setRateError("");
-                    }}
-                  >
-                    <CircleDollarSign className="h-4 w-4" />
-                    Đơn giá thù lao
-                  </Button>
-                  <Button
-                    loading={calculating}
-                    onClick={calculatePayroll}
-                    disabled={unconfirmedPastSchedules.length > 0}
-                  >
-                    <Calculator className="h-4 w-4" />
-                    Tính bảng lương
-                  </Button>
-                </>
+                <Button
+                  loading={calculating}
+                  onClick={calculatePayroll}
+                  disabled={unconfirmedPastSchedules.length > 0}
+                >
+                  <Calculator className="h-4 w-4" />
+                  Tính bảng lương
+                </Button>
               )}
             </div>
           }
