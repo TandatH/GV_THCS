@@ -162,7 +162,22 @@ export async function saveTeacherAvailability(
 }
 
 export async function approveLeaveRequest(input: ApproveLeaveInput) {
-  return (await approveLeaveRequestCallable(input)).data;
+  const payload: Record<string, unknown> = {
+    leaveRequestId: input.leaveRequestId,
+    decision: input.decision,
+  };
+  if (input.note && typeof input.note === "string" && input.note.trim()) {
+    payload.note = input.note.trim();
+  }
+  if (input.decision === "da_duyet") {
+    if (input.substituteTeacherId) {
+      payload.substituteTeacherId = input.substituteTeacherId;
+    }
+    if (Array.isArray(input.substitutions) && input.substitutions.length > 0) {
+      payload.substitutions = input.substitutions;
+    }
+  }
+  return (await approveLeaveRequestCallable(payload as ApproveLeaveInput)).data;
 }
 
 export async function setUserRole(input: SetUserRoleInput) {
