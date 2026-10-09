@@ -183,16 +183,29 @@ export const leaveRequestSchema = z.object({
 export const substitutionDecisionSchema = z.object({
   scheduleId: z.string().min(1),
   substituteTeacherId: z.string().min(1),
+  substituteSubjectId: z.preprocess(
+    (value) => value == null || value === "" ? undefined : value,
+    z.string().optional(),
+  ),
 });
 
 export const approveLeaveSchema = z.object({
   leaveRequestId: z.string().min(1),
   decision: z.enum(["da_duyet", "tu_choi"]),
-  note: z.string().trim().max(1000).optional(),
+  note: z.preprocess(
+    (value) => value == null || value === "" ? undefined : value,
+    z.string().trim().max(1000).optional(),
+  ),
   /** Legacy compatibility: apply one substitute to every affected schedule. */
-  substituteTeacherId: z.string().optional(),
+  substituteTeacherId: z.preprocess(
+    (value) => value == null || value === "" ? undefined : value,
+    z.string().optional(),
+  ),
   /** Preferred: one substitute decision per affected schedule. */
-  substitutions: z.array(substitutionDecisionSchema).max(50).optional(),
+  substitutions: z.preprocess(
+    (value) => value == null ? undefined : value,
+    z.array(substitutionDecisionSchema).max(50).optional(),
+  ),
 }).superRefine((value, ctx) => {
   if (value.decision === "da_duyet" && !value.substituteTeacherId && (!value.substitutions || value.substitutions.length === 0)) {
     ctx.addIssue({ code: "custom", path: ["substitutions"], message: "Cần chọn giáo viên dạy thay trước khi duyệt" });
@@ -228,6 +241,12 @@ export interface SubstituteCandidate {
   score: number;
   reasons: string[];
   weeklyPeriods: number;
+  departmentId?: string;
+  departmentName?: string;
+  primarySubjectId?: string;
+  primarySubjectName?: string;
+  subjectNames?: string[];
+  isSameSubject?: boolean;
 }
 
 export function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {

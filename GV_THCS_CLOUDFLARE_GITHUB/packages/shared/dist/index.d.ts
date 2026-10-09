@@ -194,6 +194,7 @@ export declare const leaveRequestSchema: z.ZodObject<{
 export declare const substitutionDecisionSchema: z.ZodObject<{
     scheduleId: z.ZodString;
     substituteTeacherId: z.ZodString;
+    substituteSubjectId: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
 }, z.core.$strip>;
 export declare const approveLeaveSchema: z.ZodObject<{
     leaveRequestId: z.ZodString;
@@ -201,12 +202,13 @@ export declare const approveLeaveSchema: z.ZodObject<{
         tu_choi: "tu_choi";
         da_duyet: "da_duyet";
     }>;
-    note: z.ZodOptional<z.ZodString>;
-    substituteTeacherId: z.ZodOptional<z.ZodString>;
-    substitutions: z.ZodOptional<z.ZodArray<z.ZodObject<{
+    note: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    substituteTeacherId: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    substitutions: z.ZodPreprocess<z.ZodOptional<z.ZodArray<z.ZodObject<{
         scheduleId: z.ZodString;
         substituteTeacherId: z.ZodString;
-    }, z.core.$strip>>>;
+        substituteSubjectId: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    }, z.core.$strip>>>, unknown>;
 }, z.core.$strip>;
 export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
 export declare const payrollSchema: z.ZodObject<{
@@ -252,6 +254,12 @@ export interface SubstituteCandidate {
     score: number;
     reasons: string[];
     weeklyPeriods: number;
+    departmentId?: string;
+    departmentName?: string;
+    primarySubjectId?: string;
+    primarySubjectName?: string;
+    subjectNames?: string[];
+    isSameSubject?: boolean;
 }
 export declare function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean;
 export declare function scheduleResourceSlotKeys(input: Pick<ScheduleInput, "semesterId" | "weekStart" | "dayOfWeek" | "startPeriod" | "endPeriod" | "classId" | "roomId">, teacherId: string): string[];
