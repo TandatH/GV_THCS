@@ -325,7 +325,7 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
         ${columnDefinitions}
         <Row ss:Height="28">${plainCell(schoolTitle, "School", colSpan)}</Row>
         <Row ss:Height="32">${plainCell("THỜI KHÓA BIỂU HỌC SINH", "Title", colSpan)}</Row>
-        <Row ss:Height="24">${plainCell(subtitleText, "Subtitle", colSpan)}</Row>
+        <Row ss:Height="30">${plainCell(subtitleText, "Subtitle", colSpan)}</Row>
         <Row ss:Height="38">${headerCells.join("")}</Row>
         ${rows.join("")}
         <Row ss:Height="24">${plainCell("Ghi chú: Học sinh có mặt tại phòng học trước giờ học 15 phút. Khi có thay đổi về lịch học, nhà trường sẽ thông báo qua GVCN.", "Note", colSpan)}</Row>
@@ -343,9 +343,19 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
         <DisplayGridlines/>
         <FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane>
         <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
-        <PageSetup><Layout x:Orientation="Landscape"/><Header x:Margin="0.3"/><Footer x:Margin="0.3"/><PageMargins x:Bottom="0.5" x:Left="0.3" x:Right="0.3" x:Top="0.5"/></PageSetup>
+        <PageSetup>
+          <Layout x:Orientation="Landscape" x:CenterHorizontal="1"/>
+          <Header x:Margin="0.3"/>
+          <Footer x:Margin="0.3"/>
+          <PageMargins x:Bottom="0.4" x:Left="0.3" x:Right="0.3" x:Top="0.4"/>
+        </PageSetup>
         <FitToPage/>
-        <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><ValidPrinterInfo/></Print>
+        <Print>
+          <FitWidth>1</FitWidth>
+          <FitHeight>1</FitHeight>
+          <PaperSizeIndex>9</PaperSizeIndex>
+          <ValidPrinterInfo/>
+        </Print>
       </WorksheetOptions>
     </Worksheet>`;
   }).join("");
@@ -379,8 +389,13 @@ export function buildStudentTimetableWorkbook(input: StudentTimetableExportInput
       <Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#0F172A"/>
     </Style>
     <Style ss:ID="Subtitle">
-      <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-      <Font ss:FontName="Segoe UI" ss:Size="10.5" ss:Italic="1" ss:Color="#334155"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EAB308"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#EAB308"/>
+      </Borders>
+      <Font ss:FontName="Segoe UI" ss:Size="16" ss:Bold="1" ss:Color="#000000"/>
+      <Interior ss:Color="#FFFF00" ss:Pattern="Solid"/>
     </Style>
     <Style ss:ID="Header">
       <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
