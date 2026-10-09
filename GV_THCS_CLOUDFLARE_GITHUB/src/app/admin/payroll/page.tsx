@@ -425,34 +425,28 @@ export default function AdminPayrollPage() {
             ? Number(payrollDoc.overrideSecondaryActual)
             : rawSecondaryActual;
 
-        // Standard periods (định mức)
+        // Standard periods (định mức tiết/tháng)
         const isAdjunct = teacher.teacherType === "thinh_giang";
         const standardWeeks = 4;
-        const totalStandardPeriods = isAdjunct
-          ? null
-          : Math.round(Number(teacher.standardPeriodsPerWeek || 19) * standardWeeks);
+        const teacherConfiguredWeekly = Number(teacher.standardPeriodsPerWeek || 0);
 
         let primaryStandard: number | null = null;
         let secondaryStandard: number | null = null;
 
-        if (!isAdjunct && totalStandardPeriods !== null) {
+        if (!isAdjunct) {
           if (teachingLevel === "PRIMARY") {
-            primaryStandard = totalStandardPeriods;
+            // Chuẩn Tiểu học: 20-23 tiết/tuần (mặc định 20 tiết * 4 tuần = 80 tiết)
+            primaryStandard = Math.round((teacherConfiguredWeekly || 20) * standardWeeks);
             secondaryStandard = null;
           } else if (teachingLevel === "SECONDARY") {
+            // Chuẩn THCS: 19 tiết/tuần (19 tiết * 4 tuần = 76 tiết)
             primaryStandard = null;
-            secondaryStandard = totalStandardPeriods;
+            secondaryStandard = Math.round((teacherConfiguredWeekly || 19) * standardWeeks);
           } else {
-            // BOTH: allocate based on actual ratio or 50/50
-            const totalActual = primaryActual + secondaryActual;
-            if (totalActual > 0) {
-              const ratio = primaryActual / totalActual;
-              primaryStandard = Math.round(totalStandardPeriods * ratio);
-              secondaryStandard = totalStandardPeriods - primaryStandard;
-            } else {
-              primaryStandard = Math.round(totalStandardPeriods / 2);
-              secondaryStandard = totalStandardPeriods - primaryStandard;
-            }
+            // LIÊN CẤP (Cả 2 cấp): C1: 40 tiết | C2: 40 tiết (tổng 80 tiết chuẩn)
+            const totalStandard = Math.round((teacherConfiguredWeekly || 20) * standardWeeks);
+            primaryStandard = Math.round(totalStandard / 2); // 40 tiết C1
+            secondaryStandard = totalStandard - primaryStandard; // 40 tiết C2
           }
         }
 
@@ -464,44 +458,37 @@ export default function AdminPayrollPage() {
           overtimePeriods = pOver + sOver;
         }
 
-        // Rates
+        // Rates (Đơn giá theo cấp học)
         const primaryRate = Number(
           payrollDoc?.overridePrimaryRate ||
             teacher.primaryRatePerPeriod ||
-            teacher.ratePerPeriod ||
             (teachingLevel === "PRIMARY" ? teacher.ratePerPeriod : null) ||
+            teacher.ratePerPeriod ||
             120000
         );
         const secondaryRate = Number(
           payrollDoc?.overrideSecondaryRate ||
             teacher.secondaryRatePerPeriod ||
-            teacher.ratePerPeriod ||
             (teachingLevel === "SECONDARY" ? teacher.ratePerPeriod : null) ||
+            teacher.ratePerPeriod ||
             150000
         );
 
-        // Amount calculation
-        let primaryAmount = 0;
-        let secondaryAmount = 0;
-        if (isAdjunct) {
-          primaryAmount = primaryActual * primaryRate;
-          secondaryAmount = secondaryActual * secondaryRate;
-        } else {
-          // Co huu: base pay or overtime pay
-          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
-          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
-          primaryAmount = pOver * primaryRate;
-          secondaryAmount = sOver * secondaryRate;
-        }
+        // Thù lao độc lập cho từng cấp:
+        // Thù lao C1 = Số tiết C1 × Đơn giá C1
+        // Thù lao C2 = Số tiết C2 × Đơn giá C2
+        const primaryAmount = primaryActual * primaryRate;
+        const secondaryAmount = secondaryActual * secondaryRate;
 
         const adjustmentAmount = Number(payrollDoc?.adjustmentAmount || 0);
         const adjustmentReason = String(payrollDoc?.adjustmentReason || "");
 
-        const baseTotal =
-          payrollDoc?.amount !== undefined && payrollDoc?.amount !== null
+        // Tổng thù lao/lương = Thù lao C1 + Thù lao C2 + Khoản điều chỉnh BGH
+        const calculatedTotal = Math.max(0, primaryAmount + secondaryAmount + adjustmentAmount);
+        const totalAmount =
+          payrollDoc?.amount !== undefined && payrollDoc?.amount !== null && Number(payrollDoc.amount) > 0
             ? Number(payrollDoc.amount)
-            : primaryAmount + secondaryAmount;
-        const totalAmount = Math.max(0, baseTotal + adjustmentAmount);
+            : calculatedTotal;
 
         const status: PayrollApprovalStatus = (payrollDoc?.status as PayrollApprovalStatus) || "pending_approval";
 
