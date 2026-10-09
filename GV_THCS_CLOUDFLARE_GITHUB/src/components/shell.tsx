@@ -75,6 +75,7 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/bgh/rooms", label: "Phòng học", icon: DoorOpen },
     { href: "/bgh/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/bgh/evaluations", label: "Đánh giá chuyên môn", icon: Star },
+    { href: "/admin/payroll", label: "Chấm công & Lương", icon: WalletCards },
   ],
   totruong: [
     { href: "/totruong/dashboard", label: "Tổng quan", icon: LayoutDashboard },
