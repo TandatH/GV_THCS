@@ -18,6 +18,8 @@ type SettingsForm = {
   enforceHardLimit: boolean;
   defaultTravelSlots: string;
   defaultTeachingWeeks: string;
+  primaryDefaultRate: string;
+  secondaryDefaultRate: string;
 };
 
 const initialForm: SettingsForm = {
@@ -25,6 +27,8 @@ const initialForm: SettingsForm = {
   enforceHardLimit: false,
   defaultTravelSlots: "1",
   defaultTeachingWeeks: "4",
+  primaryDefaultRate: "120000",
+  secondaryDefaultRate: "150000",
 };
 
 export default function AdminSettingsPage() {
@@ -50,6 +54,8 @@ export default function AdminSettingsPage() {
         enforceHardLimit: workload.data()?.enforceHardLimit === true,
         defaultTravelSlots: String(travel.data()?.defaultTravelSlots ?? initialForm.defaultTravelSlots),
         defaultTeachingWeeks: String(payroll.data()?.defaultTeachingWeeks ?? initialForm.defaultTeachingWeeks),
+        primaryDefaultRate: String(payroll.data()?.primaryDefaultRate ?? initialForm.primaryDefaultRate),
+        secondaryDefaultRate: String(payroll.data()?.secondaryDefaultRate ?? initialForm.secondaryDefaultRate),
       });
     }).catch((loadError) => {
       if (active) setError(firebaseDataErrorMessage(loadError));
@@ -67,6 +73,9 @@ export default function AdminSettingsPage() {
     try {
       const travelSlots = Number(form.defaultTravelSlots);
       const teachingWeeks = Number(form.defaultTeachingWeeks);
+      const primaryRate = Number(form.primaryDefaultRate || 120000);
+      const secondaryRate = Number(form.secondaryDefaultRate || 150000);
+
       if (!Number.isInteger(travelSlots) || travelSlots < 0 || travelSlots > 10) {
         throw new Error("Số tiết di chuyển mặc định phải từ 0 đến 10.");
       }
@@ -96,6 +105,8 @@ export default function AdminSettingsPage() {
         }, { merge: true }),
         setDoc(doc(firestore, "systemSettings", "payroll"), {
           defaultTeachingWeeks: teachingWeeks,
+          primaryDefaultRate: primaryRate,
+          secondaryDefaultRate: secondaryRate,
           ...audit,
           createdAt: serverTimestamp(),
           createdBy: user.uid,
@@ -138,7 +149,23 @@ export default function AdminSettingsPage() {
 
               <Card className="p-5 lg:col-span-2">
                 <div className="mb-5 flex gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><WalletCards className="h-5 w-5" /></div><div><h2 className="font-bold">Tổng hợp tiết dạy và thù lao</h2><p className="mt-1 text-sm text-muted-foreground">Giá trị mặc định chỉ dùng khi tháng chưa được cấu hình riêng trong lịch năm học.</p></div></div>
-                <div className="max-w-sm"><Label>Số tuần giảng dạy mặc định/tháng</Label><Input min="0" max="6" step="0.1" type="number" value={form.defaultTeachingWeeks} onChange={(event) => setForm((current) => ({ ...current, defaultTeachingWeeks: event.target.value }))} /><p className="mt-1 text-xs text-amber-700">Trước khi khóa kỳ thù lao, cần đối chiếu số tuần thực tế của tháng.</p></div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <Label>Số tuần giảng dạy mặc định/tháng</Label>
+                    <Input min="0" max="6" step="0.1" type="number" value={form.defaultTeachingWeeks} onChange={(event) => setForm((current) => ({ ...current, defaultTeachingWeeks: event.target.value }))} />
+                    <p className="mt-1 text-xs text-amber-700">Trước khi khóa kỳ thù lao, cần đối chiếu số tuần thực tế.</p>
+                  </div>
+                  <div>
+                    <Label>Đơn giá Cấp 1 mặc định (VND/tiết)</Label>
+                    <Input min="0" step="10000" type="number" value={form.primaryDefaultRate} onChange={(event) => setForm((current) => ({ ...current, primaryDefaultRate: event.target.value }))} placeholder="120000" />
+                    <p className="mt-1 text-xs text-muted-foreground">Áp dụng cho tiết Tiểu học khi chưa có đơn giá riêng.</p>
+                  </div>
+                  <div>
+                    <Label>Đơn giá Cấp 2 mặc định (VND/tiết)</Label>
+                    <Input min="0" step="10000" type="number" value={form.secondaryDefaultRate} onChange={(event) => setForm((current) => ({ ...current, secondaryDefaultRate: event.target.value }))} placeholder="150000" />
+                    <p className="mt-1 text-xs text-muted-foreground">Áp dụng cho tiết THCS khi chưa có đơn giá riêng.</p>
+                  </div>
+                </div>
               </Card>
             </div>
             <div className="flex justify-end"><Button loading={submitting} type="submit"><Save className="h-4 w-4" />Lưu cấu hình</Button></div>
