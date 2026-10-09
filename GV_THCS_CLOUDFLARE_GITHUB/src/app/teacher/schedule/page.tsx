@@ -866,7 +866,7 @@ export default function TeacherSchedulePage() {
   const handleNextWeek = () => setSelectedWeek(addDaysDateOnly(selectedWeek, 7));
   const handleCurrentWeek = () => setSelectedWeek(currentMonday());
 
-  function renderScheduleCardContent(schedule: Row, compact = false) {
+  function renderScheduleCardContent(schedule: Row, compact = false, fullHeight = false) {
     const subject = schedule.subjectName || catalogName(subjects, schedule.subjectId) || schedule.subjectId || "Môn học";
     const className = schedule.className || catalogName(classes, schedule.classId) || schedule.classId || "Lớp";
     const room = schedule.roomName || catalogName(rooms, schedule.roomId) || schedule.roomId || "Phòng";
@@ -874,6 +874,9 @@ export default function TeacherSchedulePage() {
     const SubjectIcon = getSubjectIcon(subject, schedule.subjectId);
     const isSubstitute = textValue(schedule.originalTeacherId) && schedule.originalTeacherId !== teacherId;
     const isPending = schedule.confirmationStatus === "cho_xac_nhan";
+    const count = periodCount(schedule);
+    const isMultiPeriod = count > 1;
+    const rangeText = periodText(schedule);
 
     return (
       <div
@@ -883,11 +886,12 @@ export default function TeacherSchedulePage() {
           setSelectedScheduleModal(schedule);
         }}
         className={cn(
-          "group relative flex flex-col justify-between rounded-xl border p-2.5 sm:p-3 text-left transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-md hover:-translate-y-0.5",
+          "group relative flex flex-col justify-between rounded-xl border text-left transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-md hover:-translate-y-0.5",
           theme.bg,
           theme.border,
           theme.accent,
-          compact ? "py-2" : "min-h-[82px]",
+          compact ? "p-2 py-1.5" : "p-2.5 sm:p-3",
+          fullHeight ? "h-full min-h-[82px]" : (compact ? "min-h-[60px]" : "min-h-[82px]"),
         )}
       >
         {/* Top: Icon + Class Name */}
@@ -909,22 +913,35 @@ export default function TeacherSchedulePage() {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
             ) : null}
+            {isMultiPeriod ? (
+              <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-black tracking-tight shadow-2xs", theme.badgeBg)}>
+                {count} tiết
+              </span>
+            ) : null}
           </div>
         </div>
 
-        {/* Middle: Subject Name */}
-        <div className="mt-1">
-          <p className={cn("truncate text-xs font-semibold text-slate-800", theme.text)}>{subject}</p>
+        {/* Middle: Subject Name & multi-period badge */}
+        <div className="mt-1 flex-1 flex flex-col justify-center">
+          <p className={cn("truncate text-xs font-bold sm:text-sm", theme.text)}>{subject}</p>
+          {isMultiPeriod ? (
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className={cn("inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold shadow-2xs", theme.badgeBg)}>
+                <Clock className="h-3 w-3 shrink-0" />
+                <span>{rangeText}</span>
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* Bottom: Room Name */}
-        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600 font-medium">
-          <div className="flex items-center gap-1 truncate">
+        <div className={cn("mt-1 flex items-center justify-between text-[11px] font-medium pt-1", isMultiPeriod && "border-t border-black/5")}>
+          <div className="flex items-center gap-1 truncate text-slate-600">
             <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
             <span className="truncate">{room}</span>
           </div>
-          {periodCount(schedule) > 1 ? (
-            <span className="text-[10px] font-bold text-slate-500">({periodCount(schedule)} tiết)</span>
+          {isMultiPeriod ? (
+            <span className="text-[10px] font-bold text-slate-500 shrink-0">({count} tiết liền)</span>
           ) : null}
         </div>
       </div>
@@ -933,7 +950,15 @@ export default function TeacherSchedulePage() {
 
   function renderPeriodRow(slot: PeriodSlot) {
     const p = slot.period;
-    const isPeriodHovered = hoveredCoordinate?.period === p;
+    let isPeriodHovered = hoveredCoordinate?.period === p;
+    if (!isPeriodHovered && hoveredCoordinate) {
+      const hOcc = cellOccupancy.get(`${hoveredCoordinate.day}-${hoveredCoordinate.period}`);
+      if (hOcc?.isLead && hOcc.rowSpan > 1) {
+        const startP = hoveredCoordinate.period;
+        const endP = startP + hOcc.rowSpan - 1;
+        isPeriodHovered = p >= startP && p <= endP;
+      }
+    }
 
     return (
       <tr
@@ -984,15 +1009,16 @@ export default function TeacherSchedulePage() {
               rowSpan={occ?.isLead ? occ.rowSpan : 1}
               onMouseEnter={() => setHoveredCoordinate({ day, period: p })}
               onMouseLeave={() => setHoveredCoordinate(null)}
+              style={{ height: "1px" }}
               className={cn(
-                "p-1.5 sm:p-2 align-top transition-all duration-150 border-r border-slate-200 last:border-r-0 relative",
+                "p-1.5 sm:p-2 align-top transition-all duration-150 border-r border-slate-200 last:border-r-0 relative h-px",
                 isToday ? "bg-blue-50/25" : "",
                 isCellHovered ? "ring-2 ring-primary/40 ring-inset bg-blue-50/40" : "",
               )}
             >
               {occ?.schedules && occ.schedules.length > 0 ? (
                 occ.schedules.length === 1 ? (
-                  renderScheduleCardContent(occ.schedules[0], occ.rowSpan === 1 && p > 8)
+                  renderScheduleCardContent(occ.schedules[0], occ.rowSpan === 1 && p > 8, true)
                 ) : (
                   <div className="flex flex-col gap-1.5 h-full">
                     <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-300 px-2 py-1 text-[11px] font-extrabold text-emerald-800 shadow-2xs">
@@ -1007,10 +1033,10 @@ export default function TeacherSchedulePage() {
                           .join(" & ")}
                       </span>
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 flex-1">
                       {occ.schedules.map((schedule) => (
-                        <div key={schedule.id}>
-                          {renderScheduleCardContent(schedule, true)}
+                        <div key={schedule.id} className="flex-1">
+                          {renderScheduleCardContent(schedule, true, true)}
                         </div>
                       ))}
                     </div>
