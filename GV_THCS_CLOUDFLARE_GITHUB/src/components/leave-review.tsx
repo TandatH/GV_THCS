@@ -1,7 +1,18 @@
 "use client";
 
 import type { Role, SubstituteCandidate } from "@school/shared";
-import { CheckCircle2, Clock3, FileText, Search, UserRoundCheck, XCircle } from "lucide-react";
+import {
+  ArrowRightLeft,
+  BookOpen,
+  CheckCircle2,
+  Clock3,
+  FileText,
+  Search,
+  Sparkles,
+  UserRoundCheck,
+  Users,
+  XCircle,
+} from "lucide-react";
 import { collection, limit, onSnapshot, query, where, type DocumentData, type QueryConstraint } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -193,13 +204,20 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
   const [subjects, setSubjects] = useState<CatalogRow[]>([]);
   const [classes, setClasses] = useState<CatalogRow[]>([]);
   const [rooms, setRooms] = useState<CatalogRow[]>([]);
+  const [teachers, setTeachers] = useState<CatalogRow[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [detail, setDetail] = useState<LeaveRow | null>(null);
+
+  // Review states
   const [review, setReview] = useState<ReviewState>(null);
   const [note, setNote] = useState("");
   const [substituteBySchedule, setSubstituteBySchedule] = useState<Record<string, string>>({});
+  const [subjectBySchedule, setSubjectBySchedule] = useState<Record<string, string>>({});
+  const [tabBySchedule, setTabBySchedule] = useState<Record<string, "suggest" | "manual">>({});
+  const [filterModeBySchedule, setFilterModeBySchedule] = useState<Record<string, "all" | "same" | "other">>({});
+  const [manualSearchBySchedule, setManualSearchBySchedule] = useState<Record<string, string>>({});
   const [candidatesBySchedule, setCandidatesBySchedule] = useState<Record<string, SubstituteCandidate[]>>({});
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -260,6 +278,7 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
       watchCatalog("subjects", setSubjects),
       watchCatalog("classes", setClasses),
       watchCatalog("rooms", setRooms),
+      watchCatalog("teachers", setTeachers),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
@@ -267,6 +286,8 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
   const departments = useMemo(() => Array.from(new Set(rows.map((row) => String(row.departmentId || "")).filter(Boolean))), [rows]);
   const schedulesMap = useMemo(() => new Map(schedules.map((s) => [s.id, s])), [schedules]);
   const classesMap = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
+  const subjectsMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
+  const activeTeachers = useMemo(() => teachers.filter((t) => t.status !== "inactive" && t.isActive !== false), [teachers]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
@@ -288,28 +309,51 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
     setReview({ request, decision });
     setNote("");
     setSubstituteBySchedule({});
+    setSubjectBySchedule({});
+    setTabBySchedule({});
+    setFilterModeBySchedule({});
+    setManualSearchBySchedule({});
     setReviewError("");
     setCandidatesBySchedule({});
+
     if (decision !== "da_duyet") return;
+
     const scheduleIds = targetScheduleIdsForReview(request, schedules);
     if (scheduleIds.length === 0) {
       setReviewError("Đơn nghỉ phép chưa có tiết dạy bị ảnh hưởng.");
       return;
     }
+
+    // Gán môn mặc định theo từng lịch
+    const initialSubjects: Record<string, string> = {};
+    for (const sid of scheduleIds) {
+      const sch = schedules.find((s) => s.id === sid);
+      if (sch?.subjectId) initialSubjects[sid] = String(sch.subjectId);
+    }
+    setSubjectBySchedule(initialSubjects);
+
     setLoadingCandidates(true);
     try {
       const results = await Promise.all(scheduleIds.map(async (scheduleId) => {
         const result = await suggestSubstituteTeachers(scheduleId);
-        return [scheduleId, result.candidates as SubstituteCandidate[]] as const;
+        return [scheduleId, (result.candidates || []) as SubstituteCandidate[]] as const;
       }));
       const nextCandidates: Record<string, SubstituteCandidate[]> = {};
       const nextSelections: Record<string, string> = {};
+      const nextTabs: Record<string, "suggest" | "manual"> = {};
+
       for (const [scheduleId, scheduleCandidates] of results) {
         nextCandidates[scheduleId] = scheduleCandidates;
-        if (scheduleCandidates[0]) nextSelections[scheduleId] = scheduleCandidates[0].teacherId;
+        if (scheduleCandidates.length > 0 && scheduleCandidates[0]) {
+          nextSelections[scheduleId] = scheduleCandidates[0].teacherId;
+          nextTabs[scheduleId] = "suggest";
+        } else {
+          nextTabs[scheduleId] = "manual";
+        }
       }
       setCandidatesBySchedule(nextCandidates);
       setSubstituteBySchedule(nextSelections);
+      setTabBySchedule(nextTabs);
     } catch (suggestError) {
       setReviewError(firebaseErrorMessage(suggestError));
     } finally {
@@ -320,27 +364,64 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
   async function submitReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!review) return;
-    if (review.decision === "tu_choi" && !note.trim()) {
-      setReviewError("Vui lòng nhập lý do từ chối.");
+
+    // 1. TỪ CHỐI ĐƠN NGHỈ PHÉP
+    if (review.decision === "tu_choi") {
+      if (!note.trim()) {
+        setReviewError("Vui lòng nhập lý do từ chối.");
+        return;
+      }
+      setSubmitting(true);
+      setReviewError("");
+      try {
+        await approveLeaveRequest({
+          leaveRequestId: review.request.id,
+          decision: "tu_choi",
+          note: note.trim(),
+        });
+        toast.success("Đã từ chối đơn nghỉ phép thành công.");
+        setReview(null);
+        setDetail(null);
+        setNote("");
+        setSubstituteBySchedule({});
+        setCandidatesBySchedule({});
+      } catch (submitError) {
+        setReviewError(firebaseErrorMessage(submitError));
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
+
+    // 2. PHÊ DUYỆT & BỐ TRÍ DẠY THAY
     const scheduleIds = targetScheduleIdsForReview(review.request, schedules);
-    if (review.decision === "da_duyet" && scheduleIds.some((scheduleId) => !substituteBySchedule[scheduleId])) {
+    if (scheduleIds.some((scheduleId) => !substituteBySchedule[scheduleId])) {
       setReviewError("Vui lòng chọn giáo viên dạy thay cho từng lịch bị ảnh hưởng.");
       return;
     }
+
     setSubmitting(true);
     setReviewError("");
     try {
+      const substitutions = scheduleIds.map((scheduleId) => {
+        const sch = schedules.find((s) => s.id === scheduleId);
+        const chosenSubjectId = subjectBySchedule[scheduleId];
+        const isDifferentSubject = chosenSubjectId && chosenSubjectId !== sch?.subjectId;
+        return {
+          scheduleId,
+          substituteTeacherId: substituteBySchedule[scheduleId],
+          ...(isDifferentSubject ? { substituteSubjectId: chosenSubjectId } : {}),
+        };
+      });
+
       await approveLeaveRequest({
         leaveRequestId: review.request.id,
-        decision: review.decision,
-        note: note || undefined,
-        substitutions: review.decision === "da_duyet"
-          ? scheduleIds.map((scheduleId) => ({ scheduleId, substituteTeacherId: substituteBySchedule[scheduleId] }))
-          : undefined,
+        decision: "da_duyet",
+        note: note.trim() || undefined,
+        substitutions,
       });
-      toast.success(review.decision === "da_duyet" ? "Đã duyệt và bố trí dạy thay thành công." : "Đã từ chối đơn nghỉ phép.");
+
+      toast.success("Đã duyệt và bố trí dạy thay thành công.");
       setReview(null);
       setDetail(null);
       setNote("");
@@ -368,12 +449,19 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
         {lookupError ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">Không thể tải đầy đủ thông tin lịch/tiết: {lookupError}</div> : null}
 
         <Card className="overflow-hidden">
-          <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo giáo viên, lý do..." />
+          <div className="flex flex-col gap-4 border-b border-border p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Tìm theo giáo viên, bộ môn, lý do..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3">
               <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="all">Tất cả trạng thái</option>
                 <option value="cho_duyet">Chờ duyệt</option>
@@ -413,7 +501,22 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
                         <td>{attachments.length > 0 ? `${attachments.length} tệp` : "—"}</td>
                         <td><Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge></td>
                         <td>{formatDate(row.submittedAt || row.createdAt)}</td>
-                        <td><div className="flex gap-2"><Button size="sm" variant="secondary" onClick={() => setDetail(row)}><FileText className="h-4 w-4" />Chi tiết</Button>{!isReadOnly && row.status === "cho_duyet" ? <Button size="sm" onClick={() => openReview(row, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button> : !isReadOnly && row.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(row, schedules).length > 0 ? <Button size="sm" variant="secondary" onClick={() => openReview(row, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại</Button> : null}</div></td>
+                        <td>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => setDetail(row)}>
+                              <FileText className="h-4 w-4" />Chi tiết
+                            </Button>
+                            {!isReadOnly && row.status === "cho_duyet" ? (
+                              <Button size="sm" onClick={() => openReview(row, "da_duyet")}>
+                                <CheckCircle2 className="h-4 w-4" />Duyệt
+                              </Button>
+                            ) : !isReadOnly && row.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(row, schedules).length > 0 ? (
+                              <Button size="sm" variant="secondary" onClick={() => openReview(row, "da_duyet")}>
+                                <UserRoundCheck className="h-4 w-4" />Bố trí lại
+                              </Button>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -423,7 +526,30 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           )}
         </Card>
 
-        <Modal open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)} title="Chi tiết đơn nghỉ phép" description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ phép." wide footer={!isReadOnly && detail?.status === "cho_duyet" ? <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}><XCircle className="h-4 w-4" />Từ chối</Button><Button onClick={() => openReview(detail, "da_duyet")}><CheckCircle2 className="h-4 w-4" />Duyệt</Button></div> : !isReadOnly && detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? <div className="flex justify-end"><Button onClick={() => openReview(detail, "da_duyet")}><UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn</Button></div> : undefined}>
+        {/* MODAL CHI TIẾT ĐƠN NGHỈ PHÉP */}
+        <Modal
+          open={Boolean(detail)}
+          onOpenChange={(open) => !open && setDetail(null)}
+          title="Chi tiết đơn nghỉ phép"
+          description="Thông tin xử lý và lịch sử thay đổi của đơn nghỉ phép."
+          wide
+          footer={!isReadOnly && detail?.status === "cho_duyet" ? (
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => openReview(detail, "tu_choi")}>
+                <XCircle className="h-4 w-4" />Từ chối
+              </Button>
+              <Button onClick={() => openReview(detail, "da_duyet")}>
+                <CheckCircle2 className="h-4 w-4" />Duyệt
+              </Button>
+            </div>
+          ) : !isReadOnly && detail?.status === "da_bo_tri_day_thay" && targetScheduleIdsForReview(detail, schedules).length > 0 ? (
+            <div className="flex justify-end">
+              <Button onClick={() => openReview(detail, "da_duyet")}>
+                <UserRoundCheck className="h-4 w-4" />Bố trí lại lịch bị từ chối/quá hạn
+              </Button>
+            </div>
+          ) : undefined}
+        >
           {detail ? (
             <div className="grid gap-5 lg:grid-cols-[1fr_.8fr]">
               <div className="space-y-3 text-sm">
@@ -454,31 +580,363 @@ export function LeaveReviewPage({ allowedRoles }: { allowedRoles: readonly Role[
           ) : null}
         </Modal>
 
-        <Modal open={Boolean(review)} onOpenChange={(open) => !open && setReview(null)} title={review?.decision === "da_duyet" ? (review.request.status === "da_bo_tri_day_thay" ? "Bố trí lại giáo viên dạy thay" : "Duyệt đơn nghỉ phép") : "Từ chối đơn nghỉ phép"} description="Xác nhận phê duyệt và lưu thông tin vào hệ thống." footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setReview(null)}>Hủy</Button><Button form="review-form" variant={review?.decision === "tu_choi" ? "danger" : "primary"} loading={submitting} type="submit">Xác nhận</Button></div>}>
-          <form id="review-form" className="space-y-4" onSubmit={submitReview}>
+        {/* MODAL DUYỆT & TỪ CHỐI ĐƠN NGHỈ PHÉP */}
+        <Modal
+          open={Boolean(review)}
+          onOpenChange={(open) => !open && setReview(null)}
+          wide={review?.decision === "da_duyet"}
+          title={
+            review?.decision === "da_duyet"
+              ? review.request.status === "da_bo_tri_day_thay"
+                ? "Bố trí lại giáo viên dạy thay"
+                : "Duyệt đơn nghỉ phép & Bố trí dạy thay"
+              : "Từ chối đơn nghỉ phép"
+          }
+          description={
+            review?.decision === "da_duyet"
+              ? "Bố trí giáo viên dạy thay hoặc đổi môn học cho từng tiết dạy bị ảnh hưởng trong thời gian nghỉ phép."
+              : "Xác nhận từ chối đơn nghỉ phép và lưu thông tin lý do vào hệ thống."
+          }
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setReview(null)} disabled={submitting}>
+                Hủy
+              </Button>
+              <Button
+                form="review-form"
+                variant={review?.decision === "tu_choi" ? "danger" : "primary"}
+                loading={submitting}
+                type="submit"
+              >
+                {review?.decision === "tu_choi" ? "Xác nhận từ chối" : "Phê duyệt & Lưu bố trí"}
+              </Button>
+            </div>
+          }
+        >
+          <form id="review-form" className="space-y-5" onSubmit={submitReview}>
             {review?.decision === "da_duyet" ? (
-              <div className="space-y-4">
-                <Label>Bố trí giáo viên dạy thay theo từng lịch</Label>
-                {loadingCandidates ? <Skeleton className="h-40 w-full" /> : targetScheduleIdsForReview(review.request, schedules).map((rawScheduleId) => {
-                  const scheduleId = String(rawScheduleId);
-                  const schedule = schedules.find((item) => item.id === scheduleId);
-                  const scheduleCandidates = candidatesBySchedule[scheduleId] ?? [];
-                  return (
-                    <div key={scheduleId} className="rounded-xl border border-border p-3">
-                      <p className="mb-2 text-sm font-semibold">{schedule ? scheduleLabel(schedule, subjects, classes, rooms) : scheduleId}</p>
-                      {scheduleCandidates.length > 0 ? (
-                        <div className="space-y-2">
-                          {scheduleCandidates.map((candidate) => <label key={`${scheduleId}-${candidate.teacherId}`} className="flex cursor-pointer gap-3 rounded-xl border border-border p-3 text-sm hover:bg-muted"><input type="radio" name={`substitute-${scheduleId}`} checked={substituteBySchedule[scheduleId] === candidate.teacherId} onChange={() => setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: candidate.teacherId }))} /><span><span className="font-semibold">{candidate.teacherName}</span><span className="ml-2 text-muted-foreground">{candidate.score} điểm</span><span className="mt-1 block text-xs text-muted-foreground">{candidate.reasons.join(", ")}</span></span></label>)}
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-bold uppercase text-foreground">
+                    Bố trí giáo viên dạy thay cho từng tiết dạy
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {targetScheduleIdsForReview(review.request, schedules).length} tiết bị ảnh hưởng
+                  </span>
+                </div>
+
+                {loadingCandidates ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-32 w-full" />
+                    <Skeleton className="h-32 w-full" />
+                  </div>
+                ) : (
+                  targetScheduleIdsForReview(review.request, schedules).map((rawScheduleId) => {
+                    const scheduleId = String(rawScheduleId);
+                    const schedule = schedules.find((item) => item.id === scheduleId);
+                    const scheduleCandidates = candidatesBySchedule[scheduleId] ?? [];
+                    const activeTab = tabBySchedule[scheduleId] ?? (scheduleCandidates.length > 0 ? "suggest" : "manual");
+                    const filterMode = filterModeBySchedule[scheduleId] ?? "all";
+                    const currentSubjectId = schedule ? String(schedule.subjectId || "") : "";
+                    const currentSubjectDoc = subjectsMap.get(currentSubjectId);
+                    const currentSubjectName = currentSubjectDoc?.name || schedule?.subjectName || "Môn học";
+
+                    // Phân nhóm candidate: Cùng môn vs Môn khác
+                    const sameSubjectCandidates = scheduleCandidates.filter((c) => c.isSameSubject);
+                    const otherSubjectCandidates = scheduleCandidates.filter((c) => !c.isSameSubject);
+
+                    const displayedCandidates =
+                      filterMode === "same"
+                        ? sameSubjectCandidates
+                        : filterMode === "other"
+                          ? otherSubjectCandidates
+                          : scheduleCandidates;
+
+                    const chosenTeacherId = substituteBySchedule[scheduleId] || "";
+                    const chosenSubjectId = subjectBySchedule[scheduleId] || currentSubjectId;
+
+                    const manualSearch = (manualSearchBySchedule[scheduleId] || "").toLowerCase().trim();
+                    const filteredManualTeachers = activeTeachers.filter((t) => {
+                      if (!manualSearch) return true;
+                      const name = (t.fullName || t.name || t.id).toLowerCase();
+                      const dept = String(t.departmentId || "").toLowerCase();
+                      return name.includes(manualSearch) || dept.includes(manualSearch);
+                    });
+
+                    return (
+                      <div
+                        key={scheduleId}
+                        className="rounded-2xl border border-border bg-card p-4 shadow-2xs space-y-3.5"
+                      >
+                        {/* Header thông tin lịch */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                          <div>
+                            <p className="font-bold text-sm text-foreground">
+                              {schedule ? scheduleLabel(schedule, subjects, classes, rooms) : scheduleId}
+                            </p>
+                            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>Môn gốc: <strong className="text-foreground">{currentSubjectName}</strong></span>
+                              <span>·</span>
+                              <span>Lớp: <strong className="text-foreground">{schedule?.className || catalogName(classes, schedule?.classId)}</strong></span>
+                            </div>
+                          </div>
+
+                          {/* Tab Switcher: Gợi ý thông minh vs Chọn giáo viên khác */}
+                          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => setTabBySchedule((prev) => ({ ...prev, [scheduleId]: "suggest" }))}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+                                activeTab === "suggest"
+                                  ? "bg-white text-primary shadow-xs"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                              <span>Gợi ý thông minh ({scheduleCandidates.length})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTabBySchedule((prev) => ({ ...prev, [scheduleId]: "manual" }))}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+                                activeTab === "manual"
+                                  ? "bg-white text-primary shadow-xs"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <Users className="h-3.5 w-3.5 text-blue-500" />
+                              <span>Chọn giáo viên khác</span>
+                            </button>
+                          </div>
                         </div>
-                      ) : <Input value={substituteBySchedule[scheduleId] ?? ""} onChange={(event) => setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: event.target.value }))} placeholder="Nhập mã giáo viên dạy thay cho lịch này" />}
-                    </div>
-                  );
-                })}
+
+                        {/* NỘI DUNG TAB 1: GỢI Ý THÔNG MINH */}
+                        {activeTab === "suggest" ? (
+                          <div className="space-y-2.5">
+                            {/* Filter pills */}
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                              <span className="text-muted-foreground font-medium mr-1">Lọc gợi ý:</span>
+                              <button
+                                type="button"
+                                onClick={() => setFilterModeBySchedule((prev) => ({ ...prev, [scheduleId]: "all" }))}
+                                className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                                  filterMode === "all"
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                                }`}
+                              >
+                                Tất cả ({scheduleCandidates.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFilterModeBySchedule((prev) => ({ ...prev, [scheduleId]: "same" }))}
+                                className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                                  filterMode === "same"
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                }`}
+                              >
+                                Cùng môn ({sameSubjectCandidates.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFilterModeBySchedule((prev) => ({ ...prev, [scheduleId]: "other" }))}
+                                className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                                  filterMode === "other"
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-blue-50 text-blue-800 hover:bg-blue-100"
+                                }`}
+                              >
+                                Môn khác đang rảnh ({otherSubjectCandidates.length})
+                              </button>
+                            </div>
+
+                            {/* Candidate List */}
+                            {displayedCandidates.length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground space-y-2">
+                                <p>Không có giáo viên phù hợp với bộ lọc này.</p>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => setTabBySchedule((prev) => ({ ...prev, [scheduleId]: "manual" }))}
+                                >
+                                  Chuyển sang chọn giáo viên bất kỳ
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                                {displayedCandidates.map((candidate) => {
+                                  const isSelected = chosenTeacherId === candidate.teacherId;
+
+                                  return (
+                                    <label
+                                      key={`${scheduleId}-${candidate.teacherId}`}
+                                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-xs transition ${
+                                        isSelected
+                                          ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                          : "border-border hover:bg-muted/40"
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={`substitute-${scheduleId}`}
+                                        checked={isSelected}
+                                        onChange={() => {
+                                          setSubstituteBySchedule((current) => ({
+                                            ...current,
+                                            [scheduleId]: candidate.teacherId,
+                                          }));
+                                          // Tự động gợi ý chuyển môn nếu chọn GV môn khác
+                                          if (!candidate.isSameSubject && candidate.primarySubjectId) {
+                                            setSubjectBySchedule((current) => ({
+                                              ...current,
+                                              [scheduleId]: candidate.primarySubjectId || current[scheduleId] || currentSubjectId,
+                                            }));
+                                          }
+                                        }}
+                                        className="mt-0.5 h-4 w-4 text-primary focus:ring-primary"
+                                      />
+                                      <div className="flex-1 space-y-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="font-bold text-sm text-foreground">
+                                            {candidate.teacherName}
+                                          </span>
+                                          {candidate.isSameSubject ? (
+                                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700 border border-emerald-200">
+                                              Cùng môn: {currentSubjectName}
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 font-bold text-blue-700 border border-blue-200">
+                                              Môn: {candidate.primarySubjectName || candidate.subjectNames?.join(", ") || "Khác"}
+                                            </span>
+                                          )}
+                                          <span className="ml-auto font-bold text-amber-700">
+                                            {candidate.score} điểm phù hợp
+                                          </span>
+                                        </div>
+                                        <p className="text-muted-foreground text-[11px]">
+                                          {candidate.reasons.join(" · ")}
+                                        </p>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* NỘI DUNG TAB 2: CHỌN GIÁO VIÊN BẤT KỲ */
+                          <div className="space-y-3 rounded-xl bg-muted/30 p-3 border border-border/60">
+                            <div>
+                              <Label className="text-xs font-semibold text-slate-700">
+                                Chọn giáo viên dạy thay từ toàn trường
+                              </Label>
+                              <select
+                                className="mt-1 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold"
+                                value={chosenTeacherId}
+                                onChange={(e) => {
+                                  const tId = e.target.value;
+                                  setSubstituteBySchedule((current) => ({ ...current, [scheduleId]: tId }));
+                                  const teacherDoc = teachers.find((t) => t.id === tId);
+                                  const tSubjectId = Array.isArray(teacherDoc?.subjectIds) && teacherDoc.subjectIds.length > 0 ? String(teacherDoc.subjectIds[0]) : "";
+                                  if (tSubjectId) {
+                                    setSubjectBySchedule((current) => ({ ...current, [scheduleId]: tSubjectId }));
+                                  }
+                                }}
+                              >
+                                <option value="">-- Chọn giáo viên dạy thay --</option>
+                                {filteredManualTeachers.map((t) => {
+                                  const tSubjects = Array.isArray(t.subjectIds)
+                                    ? t.subjectIds.map((id: string) => subjectsMap.get(id)?.name || id).join(", ")
+                                    : "";
+                                  return (
+                                    <option key={t.id} value={t.id}>
+                                      {t.fullName || t.name || t.id} · [{t.departmentId || "Chung"}] {tSubjects ? `(${tSubjects})` : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TÙY CHỌN BỔ SUNG MÔN KHÁC / ĐỔI MÔN CHO TIẾT NÀY */}
+                        <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold uppercase text-slate-700">
+                            <ArrowRightLeft className="h-3.5 w-3.5 text-primary" />
+                            <span>Môn học giảng dạy trong tiết này:</span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <select
+                              className="h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold"
+                              value={chosenSubjectId}
+                              onChange={(e) =>
+                                setSubjectBySchedule((prev) => ({
+                                  ...prev,
+                                  [scheduleId]: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value={currentSubjectId}>
+                                Giữ nguyên môn: {currentSubjectName} (Mặc định)
+                              </option>
+                              {subjects
+                                .filter((s) => s.id !== currentSubjectId)
+                                .map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    Đổi sang môn: {s.name || s.code || s.id}
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[11px] text-muted-foreground flex items-center">
+                              {chosenSubjectId && chosenSubjectId !== currentSubjectId ? (
+                                <span className="font-semibold text-primary">
+                                  ✓ Đã chọn đổi tiết này sang môn: <strong>{subjectsMap.get(chosenSubjectId)?.name || chosenSubjectId}</strong>
+                                </span>
+                              ) : (
+                                <span>Giữ nguyên môn của thời khóa biểu</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             ) : null}
-            <div><Label>{review?.decision === "tu_choi" ? "Lý do từ chối" : "Ghi chú xử lý"}</Label><textarea className="min-h-28 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Nhập lý do hoặc hướng dẫn cho giáo viên..." /></div>
-            {reviewError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{reviewError}</div> : null}
-            {review?.decision === "da_duyet" ? <div className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-sm text-blue-700"><UserRoundCheck className="mt-0.5 h-4 w-4 shrink-0" />Danh sách gợi ý được tính riêng cho từng lịch, có kiểm tra môn dạy, khung giờ trống và thời gian di chuyển.</div> : null}
+
+            {/* Ghi chú xử lý / Lý do từ chối */}
+            <div>
+              <Label className="text-xs font-bold uppercase text-slate-700">
+                {review?.decision === "tu_choi" ? "Lý do từ chối (Bắt buộc)" : "Ghi chú xử lý / Hướng dẫn"}
+              </Label>
+              <textarea
+                className="mt-1 min-h-24 w-full rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder={
+                  review?.decision === "tu_choi"
+                    ? "Nhập lý do từ chối đơn nghỉ phép..."
+                    : "Nhập hướng dẫn hoặc ghi chú cho giáo viên..."
+                }
+              />
+            </div>
+
+            {reviewError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700">
+                {reviewError}
+              </div>
+            ) : null}
+
+            {review?.decision === "da_duyet" ? (
+              <div className="flex items-start gap-2 rounded-xl bg-blue-50/80 p-3 text-xs text-blue-800 border border-blue-200/50">
+                <UserRoundCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                <span>
+                  Hệ thống hỗ trợ gợi ý giáo viên cùng môn hoặc giáo viên bộ môn khác đang rảnh. Bạn cũng có thể đổi môn cho tiết học để linh hoạt quản lý chương trình.
+                </span>
+              </div>
+            ) : null}
           </form>
         </Modal>
       </Shell>
