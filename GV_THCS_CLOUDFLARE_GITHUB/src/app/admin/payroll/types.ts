@@ -10,6 +10,10 @@ export type ViewMode = "table" | "by_date" | "by_teacher";
 
 export type StatusFilter = "all" | "pending_past" | "confirmed" | "adjusted" | "absent" | "upcoming";
 
+export type TeachingLevel = "PRIMARY" | "SECONDARY" | "BOTH";
+
+export type PayrollApprovalStatus = "draft" | "pending_approval" | "approved" | "review_required" | "paid";
+
 export interface ScheduleWithMeta extends Row {
   calculatedDate: string;
   dayOfWeekNumber: number;
@@ -32,6 +36,39 @@ export interface ScheduleWithMeta extends Row {
   effectiveTeacherId: string;
   effectiveTeacherName: string;
   isSubstituted: boolean;
+  schoolLevel: "PRIMARY" | "SECONDARY";
+  schoolLevelLabel: string;
+  cleanedNote: string;
+}
+
+export interface TeacherPayrollSummaryRow {
+  teacherId: string;
+  teacherCode: string;
+  teacherName: string;
+  teachingLevel: TeachingLevel;
+  teachingLevelLabel: string;
+  departmentId: string;
+  departmentName: string;
+  teacherType: "co_huu" | "thinh_giang" | string;
+  primaryActual: number;
+  primaryStandard: number | null;
+  primaryRate: number;
+  primaryAmount: number;
+  secondaryActual: number;
+  secondaryStandard: number | null;
+  secondaryRate: number;
+  secondaryAmount: number;
+  substituteCount: number;
+  absentCount: number;
+  overtimePeriods: number;
+  adjustmentAmount: number;
+  adjustmentReason: string;
+  totalAmount: number;
+  status: PayrollApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: unknown;
+  payrollDocId: string;
+  schedules: ScheduleWithMeta[];
 }
 
 export const MONTH_OPTIONS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
@@ -90,6 +127,90 @@ export function formatPeriodDisplay(startPeriod: unknown, endPeriod: unknown) {
   };
 }
 
+export function resolveScheduleSchoolLevel(
+  schedule: Row,
+  classDoc?: Row
+): "PRIMARY" | "SECONDARY" {
+  if (schedule.schoolLevel === "primary") return "PRIMARY";
+  if (schedule.schoolLevel === "secondary") return "SECONDARY";
+  if (classDoc?.schoolLevel === "primary") return "PRIMARY";
+  if (classDoc?.schoolLevel === "secondary") return "SECONDARY";
+
+  const grade = Number(classDoc?.grade ?? classDoc?.gradeLevel ?? 0);
+  if (grade >= 1 && grade <= 5) return "PRIMARY";
+  if (grade >= 6 && grade <= 9) return "SECONDARY";
+
+  const className = String(classDoc?.name || classDoc?.code || schedule.className || "");
+  const match = className.match(/^([1-9])/);
+  if (match) {
+    const g = Number(match[1]);
+    if (g >= 1 && g <= 5) return "PRIMARY";
+    if (g >= 6 && g <= 9) return "SECONDARY";
+  }
+
+  return "SECONDARY";
+}
+
+export function resolveTeacherLevel(
+  teacher: Row,
+  primaryHours: number,
+  secondaryHours: number
+): TeachingLevel {
+  const levels = Array.isArray(teacher.schoolLevels)
+    ? (teacher.schoolLevels as string[])
+    : typeof teacher.schoolLevel === "string"
+      ? [teacher.schoolLevel]
+      : [];
+
+  const declaredBoth =
+    levels.includes("all") ||
+    levels.includes("both") ||
+    (levels.includes("primary") && levels.includes("secondary"));
+
+  if (declaredBoth || (primaryHours > 0 && secondaryHours > 0)) {
+    return "BOTH";
+  }
+  if (levels.includes("primary") || (primaryHours > 0 && secondaryHours === 0)) {
+    return "PRIMARY";
+  }
+  return "SECONDARY";
+}
+
+export function teachingLevelLabelVi(level: TeachingLevel): string {
+  switch (level) {
+    case "PRIMARY":
+      return "Cấp 1";
+    case "SECONDARY":
+      return "Cấp 2";
+    case "BOTH":
+      return "Cả 2 cấp";
+    default:
+      return "—";
+  }
+}
+
+const AUTOMATED_NOTE_PREFIXES = [
+  "Duyệt nhanh tất cả lịch đã qua",
+  "Xác nhận đã dạy",
+  "Xác nhận hàng loạt theo phân công",
+  "Duyệt nhanh lịch ngày",
+  "Duyệt nhanh lịch của",
+  "Xác nhận hàng loạt đã dạy",
+];
+
+export function cleanNoteText(reason?: unknown, note?: unknown): string {
+  const r = typeof reason === "string" ? reason.trim() : "";
+  const n = typeof note === "string" ? note.trim() : "";
+  const isAutomated = AUTOMATED_NOTE_PREFIXES.some((prefix) => r.startsWith(prefix));
+  if (isAutomated) {
+    return n;
+  }
+  if (r && n && r !== n) {
+    return `${r} (${n})`;
+  }
+  return r || n || "";
+}
+
 export function statusLabelVi(status: AttendanceDisplayStatus | unknown): string {
   switch (status) {
     case "confirmed":
@@ -122,6 +243,38 @@ export function statusBadgeTone(status: AttendanceDisplayStatus | unknown): "suc
     case "pending_past":
       return "warning";
     case "upcoming":
+    default:
+      return "neutral";
+  }
+}
+
+export function payrollStatusLabelVi(status: PayrollApprovalStatus | string | unknown): string {
+  switch (status) {
+    case "approved":
+      return "Đã duyệt";
+    case "pending_approval":
+      return "Chờ duyệt";
+    case "review_required":
+      return "Yêu cầu rà soát";
+    case "paid":
+      return "Đã chi trả";
+    case "draft":
+      return "Nháp";
+    default:
+      return "Chờ duyệt";
+  }
+}
+
+export function payrollStatusBadgeTone(status: PayrollApprovalStatus | string | unknown): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (status) {
+    case "approved":
+    case "paid":
+      return "success";
+    case "review_required":
+      return "danger";
+    case "pending_approval":
+      return "warning";
+    case "draft":
     default:
       return "neutral";
   }

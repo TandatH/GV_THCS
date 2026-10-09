@@ -1,6 +1,19 @@
 "use client";
 
-import { Calculator, CheckCircle2, CircleDollarSign, Download, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Calculator,
+  CheckCircle2,
+  CircleDollarSign,
+  Download,
+  Filter,
+  FileCheck,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Users,
+  XCircle,
+} from "lucide-react";
 import {
   collection,
   doc,
@@ -33,19 +46,32 @@ import { AttendanceByDateView } from "./components/attendance-by-date-view";
 import { AttendanceByTeacherView } from "./components/attendance-by-teacher-view";
 import { BatchConfirmModal } from "./components/batch-confirm-modal";
 import { AdjustAttendanceModal } from "./components/adjust-attendance-modal";
+import { PayrollKpiCards } from "./components/payroll-kpi-cards";
+import { PrincipalPayrollTable } from "./components/principal-payroll-table";
+import { PrincipalAdjustmentModal } from "./components/principal-adjustment-modal";
+import { TeacherScheduleDrawer } from "./components/teacher-schedule-drawer";
+
 import {
+  type PayrollApprovalStatus,
   type Row,
   type ScheduleWithMeta,
   type StatusFilter,
+  type TeacherPayrollSummaryRow,
+  type TeachingLevel,
   type ViewMode,
   MONTH_OPTIONS,
+  cleanNoteText,
   currentMonthString,
-  localTodayDateOnly,
   dateFromScheduleRow,
-  parseScheduleDateDetails,
   formatPeriodDisplay,
-  statusLabelVi,
+  localTodayDateOnly,
+  parseScheduleDateDetails,
+  payrollStatusLabelVi,
+  resolveScheduleSchoolLevel,
+  resolveTeacherLevel,
   statusBadgeTone,
+  statusLabelVi,
+  teachingLevelLabelVi,
 } from "./types";
 
 function csvCell(value: unknown) {
@@ -61,24 +87,33 @@ function rateDocId(teacherId: string, subjectId: string) {
 }
 
 export default function AdminPayrollPage() {
-  const { user } = useAuth();
-  const [tab, setTab] = useState<"attendance" | "summary" | "payroll">("attendance");
+  const { user, role } = useAuth();
+
+  // Role flags (RBAC)
+  const isPrincipal = role === "bgh";
+  const isAdmin = role === "admin";
+  const canEditPayroll = isPrincipal || isAdmin;
+  const showAuditLog = !isPrincipal; // ẨN HOÀN TOÀN AUDIT LOG đối với Hiệu trưởng
+
+  // Primary active tab
+  const [tab, setTab] = useState<"summary" | "attendance">("summary");
   const [selectedMonth, setSelectedMonth] = useState(currentMonthString());
 
-  // Global filters
+  // High-level filters
+  const [schoolLevelFilter, setSchoolLevelFilter] = useState<"ALL" | "PRIMARY" | "SECONDARY" | "BOTH">("ALL");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [teacherTypeFilter, setTeacherTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   // Attendance specific filters & views
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
-  const [search, setSearch] = useState("");
   const [selectedDate, setSelectedDate] = useState("all");
   const [selectedTeacherId, setSelectedTeacherId] = useState("all");
   const [selectedClassId, setSelectedClassId] = useState("all");
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
 
-  // Data states
+  // Firestore raw collections
   const [schedules, setSchedules] = useState<Row[]>([]);
   const [teachers, setTeachers] = useState<Row[]>([]);
   const [subjects, setSubjects] = useState<Row[]>([]);
@@ -89,17 +124,23 @@ export default function AdminPayrollPage() {
   const [rateRows, setRateRows] = useState<Row[]>([]);
   const [auditRows, setAuditRows] = useState<Row[]>([]);
 
-  // Loading & Action states
+  // Loading & State flags
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [calculating, setCalculating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Modals
+  // Modals & Drawers
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [adjustTarget, setAdjustTarget] = useState<ScheduleWithMeta | null>(null);
   const [adjustError, setAdjustError] = useState("");
 
+  const [principalEditRow, setPrincipalEditRow] = useState<TeacherPayrollSummaryRow | null>(null);
+  const [detailDrawerRow, setDetailDrawerRow] = useState<TeacherPayrollSummaryRow | null>(null);
+  const [confirmApproveAllOpen, setConfirmApproveAllOpen] = useState(false);
+  const [confirmReviewAllOpen, setConfirmReviewAllOpen] = useState(false);
+
+  // Rate modal logic (admin only)
   const [rateOpen, setRateOpen] = useState(false);
   const [rateSubmitting, setRateSubmitting] = useState(false);
   const [rateError, setRateError] = useState("");
@@ -108,57 +149,97 @@ export default function AdminPayrollPage() {
   const selectedYear = selectedMonth.slice(0, 4);
   const selectedMonthNumber = selectedMonth.slice(5, 7);
 
-  // Firestore listeners
+  // Real-time Firestore Listeners
   useEffect(() => {
     setLoading(true);
     setError("");
     const unsubscribers = [
-      onSnapshot(query(collection(firestore, "schedules"), limit(2000)), (snapshot) => {
-        setSchedules(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        setLoading(false);
-      }, (snapshotError) => { setError(firebaseDataErrorMessage(snapshotError)); setLoading(false); }),
-      onSnapshot(query(collection(firestore, "teachers"), limit(500)), (snapshot) => {
-        setTeachers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
-      onSnapshot(query(collection(firestore, "subjects"), limit(500)), (snapshot) => {
-        setSubjects(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
-      onSnapshot(query(collection(firestore, "classes"), limit(500)), (snapshot) => {
-        setClasses(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, () => undefined),
-      onSnapshot(query(collection(firestore, "departments"), limit(500)), (snapshot) => {
-        setDepartments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, () => undefined),
-      onSnapshot(query(collection(firestore, "payrollRates"), limit(500)), (snapshot) => {
-        setRateRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
-      onSnapshot(query(collection(firestore, "auditLogs"), limit(80)), (snapshot) => {
-        setAuditRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, () => undefined),
+      onSnapshot(
+        query(collection(firestore, "schedules"), limit(2000)),
+        (snapshot) => {
+          setSchedules(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          setLoading(false);
+        },
+        (snapshotError) => {
+          setError(firebaseDataErrorMessage(snapshotError));
+          setLoading(false);
+        }
+      ),
+      onSnapshot(
+        query(collection(firestore, "teachers"), limit(500)),
+        (snapshot) => {
+          setTeachers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
+      ),
+      onSnapshot(
+        query(collection(firestore, "subjects"), limit(500)),
+        (snapshot) => {
+          setSubjects(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
+      ),
+      onSnapshot(
+        query(collection(firestore, "classes"), limit(500)),
+        (snapshot) => {
+          setClasses(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        () => undefined
+      ),
+      onSnapshot(
+        query(collection(firestore, "departments"), limit(500)),
+        (snapshot) => {
+          setDepartments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        () => undefined
+      ),
+      onSnapshot(
+        query(collection(firestore, "payrollRates"), limit(500)),
+        (snapshot) => {
+          setRateRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
+      ),
+      onSnapshot(
+        query(collection(firestore, "auditLogs"), limit(80)),
+        (snapshot) => {
+          setAuditRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        () => undefined
+      ),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
   useEffect(() => {
     const unsubscribers = [
-      onSnapshot(query(collection(firestore, "checkins"), where("month", "==", selectedMonth), limit(2000)), (snapshot) => {
-        setCheckins(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
-      onSnapshot(query(collection(firestore, "payroll"), where("month", "==", selectedMonth), limit(500)), (snapshot) => {
-        setPayrollRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
+      onSnapshot(
+        query(collection(firestore, "checkins"), where("month", "==", selectedMonth), limit(2000)),
+        (snapshot) => {
+          setCheckins(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
+      ),
+      onSnapshot(
+        query(collection(firestore, "payroll"), where("month", "==", selectedMonth), limit(500)),
+        (snapshot) => {
+          setPayrollRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        },
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
+      ),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [selectedMonth]);
 
-  // Lookup maps
+  // Lookup Maps
   const teacherById = useMemo(() => new Map(teachers.map((t) => [t.id, t])), [teachers]);
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
   const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
   const departmentById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
   const checkinByScheduleId = useMemo(() => new Map(checkins.map((c) => [String(c.scheduleId), c])), [checkins]);
+  const payrollByTeacherId = useMemo(() => new Map(payrollRows.map((p) => [String(p.teacherId), p])), [payrollRows]);
 
-  // Department options with fallback to unique teacher departmentIds
+  // Department options
   const departmentOptions = useMemo(() => {
     if (departments.length > 0) {
       return departments.map((d) => ({
@@ -170,7 +251,7 @@ export default function AdminPayrollPage() {
     return Array.from(set).map((id) => ({ id, name: id }));
   }, [departments, teachers]);
 
-  // Process raw schedules into structured ScheduleWithMeta
+  // Process raw schedules into structured ScheduleWithMeta with multi-level awareness
   const monthProcessedSchedules = useMemo(() => {
     const today = localTodayDateOnly();
 
@@ -196,11 +277,16 @@ export default function AdminPayrollPage() {
         const resolvedClassName = classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "—";
 
         const subjectDoc = subjectById.get(String(schedule.subjectId));
-        const resolvedSubjectName = subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "—";
+        const resolvedSubjectName =
+          subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "—";
 
         const startPeriodNum = Math.max(1, Number(schedule.startPeriod || 1));
         const endPeriodNum = Number(schedule.endPeriod || 0);
         const periodInfo = formatPeriodDisplay(schedule.startPeriod, schedule.endPeriod);
+
+        // Multi-level classification
+        const schoolLevel = resolveScheduleSchoolLevel(schedule, classDoc);
+        const schoolLevelLabel = schoolLevel === "PRIMARY" ? "Cấp 1" : "Cấp 2";
 
         // Effective status resolution
         let effectiveStatus: ScheduleWithMeta["effectiveStatus"] = "upcoming";
@@ -226,9 +312,11 @@ export default function AdminPayrollPage() {
         const effectiveTeacherName = checkinDoc?.teacherName || effectiveTeacherDoc?.fullName || resolvedTeacherName;
         const isSubstituted = Boolean(
           effectiveTeacherId &&
-          effectiveTeacherId !== String(schedule.originalTeacherId || schedule.teacherId || "") &&
-          effectiveStatus === "adjusted"
+            effectiveTeacherId !== String(schedule.originalTeacherId || schedule.teacherId || "") &&
+            effectiveStatus === "adjusted"
         );
+
+        const cleanedNote = cleanNoteText(checkinDoc?.adjustmentReason, checkinDoc?.note);
 
         return {
           ...schedule,
@@ -253,6 +341,9 @@ export default function AdminPayrollPage() {
           effectiveTeacherId,
           effectiveTeacherName,
           isSubstituted,
+          schoolLevel,
+          schoolLevelLabel,
+          cleanedNote,
         };
       })
       .sort((a, b) => a.calculatedDate.localeCompare(b.calculatedDate) || a.startPeriodNum - b.startPeriodNum);
@@ -279,12 +370,303 @@ export default function AdminPayrollPage() {
     return { total, confirmed, pendingPast, upcoming, adjusted, absent };
   }, [monthProcessedSchedules]);
 
-  // Past schedules that MUST be resolved before payroll can be calculated
+  // Unconfirmed past schedules (blocking payroll calculation)
   const unconfirmedPastSchedules = useMemo(() => {
     return monthProcessedSchedules.filter((s) => s.effectiveStatus === "pending_past");
   }, [monthProcessedSchedules]);
 
-  // Available dates for secondary dropdown
+  // Multi-Level Teacher Summary Rows Calculation (Core Engine)
+  const allTeacherPayrollRows = useMemo(() => {
+    return teachers
+      .filter((t) => t.status !== "inactive")
+      .map((teacher): TeacherPayrollSummaryRow => {
+        const teacherSchedules = monthProcessedSchedules.filter(
+          (s) =>
+            s.effectiveTeacherId === teacher.id ||
+            s.actualTeacherId === teacher.id ||
+            s.teacherId === teacher.id
+        );
+
+        // Confirmed or adjusted teaching checkins
+        const validTeachingSchedules = monthProcessedSchedules.filter(
+          (s) =>
+            s.effectiveTeacherId === teacher.id &&
+            ["confirmed", "adjusted"].includes(s.effectiveStatus)
+        );
+
+        // Primary vs Secondary breakdown
+        const primarySchedules = validTeachingSchedules.filter((s) => s.schoolLevel === "PRIMARY");
+        const secondarySchedules = validTeachingSchedules.filter((s) => s.schoolLevel === "SECONDARY");
+
+        const rawPrimaryActual = primarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
+        const rawSecondaryActual = secondarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
+
+        // Substitutions and Absences
+        const substituteCount = validTeachingSchedules.filter((s) => s.isSubstituted).length;
+        const absentCount = teacherSchedules.filter((s) => s.effectiveStatus === "absent").length;
+
+        // Level classification
+        const teachingLevel = resolveTeacherLevel(teacher, rawPrimaryActual, rawSecondaryActual);
+        const teachingLevelLabel = teachingLevelLabelVi(teachingLevel);
+
+        // Firestore payroll doc check
+        const payrollDoc = payrollByTeacherId.get(teacher.id);
+
+        const primaryActual =
+          payrollDoc?.overridePrimaryActual !== undefined
+            ? Number(payrollDoc.overridePrimaryActual)
+            : rawPrimaryActual;
+        const secondaryActual =
+          payrollDoc?.overrideSecondaryActual !== undefined
+            ? Number(payrollDoc.overrideSecondaryActual)
+            : rawSecondaryActual;
+
+        // Standard periods (định mức)
+        const isAdjunct = teacher.teacherType === "thinh_giang";
+        const standardWeeks = 4;
+        const totalStandardPeriods = isAdjunct
+          ? null
+          : Math.round(Number(teacher.standardPeriodsPerWeek || 19) * standardWeeks);
+
+        let primaryStandard: number | null = null;
+        let secondaryStandard: number | null = null;
+
+        if (!isAdjunct && totalStandardPeriods !== null) {
+          if (teachingLevel === "PRIMARY") {
+            primaryStandard = totalStandardPeriods;
+            secondaryStandard = null;
+          } else if (teachingLevel === "SECONDARY") {
+            primaryStandard = null;
+            secondaryStandard = totalStandardPeriods;
+          } else {
+            // BOTH: allocate based on actual ratio or 50/50
+            const totalActual = primaryActual + secondaryActual;
+            if (totalActual > 0) {
+              const ratio = primaryActual / totalActual;
+              primaryStandard = Math.round(totalStandardPeriods * ratio);
+              secondaryStandard = totalStandardPeriods - primaryStandard;
+            } else {
+              primaryStandard = Math.round(totalStandardPeriods / 2);
+              secondaryStandard = totalStandardPeriods - primaryStandard;
+            }
+          }
+        }
+
+        // Overtime (tiết phụ trội)
+        let overtimePeriods = 0;
+        if (!isAdjunct) {
+          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
+          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
+          overtimePeriods = pOver + sOver;
+        }
+
+        // Rates
+        const primaryRate = Number(
+          teacher.primaryRatePerPeriod ||
+            teacher.ratePerPeriod ||
+            (teachingLevel === "PRIMARY" ? teacher.ratePerPeriod : null) ||
+            120000
+        );
+        const secondaryRate = Number(
+          teacher.secondaryRatePerPeriod ||
+            teacher.ratePerPeriod ||
+            (teachingLevel === "SECONDARY" ? teacher.ratePerPeriod : null) ||
+            150000
+        );
+
+        // Amount calculation
+        let primaryAmount = 0;
+        let secondaryAmount = 0;
+        if (isAdjunct) {
+          primaryAmount = primaryActual * primaryRate;
+          secondaryAmount = secondaryActual * secondaryRate;
+        } else {
+          // Co huu: base pay or overtime pay
+          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
+          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
+          primaryAmount = pOver * primaryRate;
+          secondaryAmount = sOver * secondaryRate;
+        }
+
+        const adjustmentAmount = Number(payrollDoc?.adjustmentAmount || 0);
+        const adjustmentReason = String(payrollDoc?.adjustmentReason || "");
+
+        const baseTotal =
+          payrollDoc?.amount !== undefined && payrollDoc?.amount !== null
+            ? Number(payrollDoc.amount)
+            : primaryAmount + secondaryAmount;
+        const totalAmount = Math.max(0, baseTotal + adjustmentAmount);
+
+        const status: PayrollApprovalStatus = (payrollDoc?.status as PayrollApprovalStatus) || "pending_approval";
+
+        const deptDoc = departmentById.get(String(teacher.departmentId || ""));
+        const departmentName = deptDoc?.name || deptDoc?.code || teacher.departmentId || "—";
+
+        return {
+          teacherId: teacher.id,
+          teacherCode: teacher.teacherCode || "",
+          teacherName: teacher.fullName || teacher.email || teacher.id,
+          teachingLevel,
+          teachingLevelLabel,
+          departmentId: teacher.departmentId || "",
+          departmentName,
+          teacherType: teacher.teacherType || "co_huu",
+          primaryActual,
+          primaryStandard,
+          primaryRate,
+          primaryAmount,
+          secondaryActual,
+          secondaryStandard,
+          secondaryRate,
+          secondaryAmount,
+          substituteCount,
+          absentCount,
+          overtimePeriods,
+          adjustmentAmount,
+          adjustmentReason,
+          totalAmount,
+          status,
+          approvedBy: payrollDoc?.approvedBy,
+          approvedAt: payrollDoc?.approvedAt,
+          payrollDocId: `${selectedMonth}_${teacher.id}`,
+          schedules: teacherSchedules,
+        };
+      })
+      .sort((a, b) => a.teacherName.localeCompare(b.teacherName, "vi"));
+  }, [
+    departmentById,
+    monthProcessedSchedules,
+    payrollByTeacherId,
+    selectedMonth,
+    teachers,
+  ]);
+
+  // Filtered Summary Rows according to global filters
+  const filteredSummaryRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return allTeacherPayrollRows.filter((row) => {
+      // 1. School Level filter
+      if (schoolLevelFilter !== "ALL" && row.teachingLevel !== schoolLevelFilter) {
+        return false;
+      }
+
+      // 2. Department filter
+      if (departmentFilter !== "all" && row.departmentId !== departmentFilter) {
+        return false;
+      }
+
+      // 3. Teacher Type filter
+      if (teacherTypeFilter !== "all" && row.teacherType !== teacherTypeFilter) {
+        return false;
+      }
+
+      // 4. Keyword search
+      if (q) {
+        const pool = [row.teacherName, row.teacherCode, row.departmentName, row.teachingLevelLabel]
+          .join(" ")
+          .toLowerCase();
+        if (!pool.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [allTeacherPayrollRows, departmentFilter, schoolLevelFilter, search, teacherTypeFilter]);
+
+  // Top 4 KPI Decision Cards Metrics
+  const payrollKpiMetrics = useMemo(() => {
+    const totalEstimatedPayroll = filteredSummaryRows.reduce((sum, r) => sum + r.totalAmount, 0);
+    const totalTeachers = filteredSummaryRows.length;
+    const primaryPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.primaryActual, 0);
+    const secondaryPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.secondaryActual, 0);
+    const totalPeriods = primaryPeriods + secondaryPeriods;
+    const substitutePeriods = filteredSummaryRows.reduce((sum, r) => sum + r.substituteCount, 0);
+    const absentPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.absentCount, 0);
+    const pendingPastPeriods = kpiCounts.pendingPast;
+
+    const pendingApprovalTeachers = filteredSummaryRows.filter(
+      (r) => r.status === "pending_approval" || r.status === "draft"
+    ).length;
+    const approvedTeachers = filteredSummaryRows.filter(
+      (r) => r.status === "approved" || r.status === "paid"
+    ).length;
+    const reviewRequiredTeachers = filteredSummaryRows.filter((r) => r.status === "review_required").length;
+
+    return {
+      totalEstimatedPayroll,
+      totalTeachers,
+      totalPeriods,
+      primaryPeriods,
+      secondaryPeriods,
+      substitutePeriods,
+      absentPeriods,
+      pendingPastPeriods,
+      pendingApprovalTeachers,
+      approvedTeachers,
+      reviewRequiredTeachers,
+    };
+  }, [filteredSummaryRows, kpiCounts.pendingPast]);
+
+  // Filtered schedules for Timesheet tab
+  const filteredProcessedSchedules = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase("vi");
+
+    return monthProcessedSchedules.filter((item) => {
+      if (schoolLevelFilter !== "ALL" && item.schoolLevel !== schoolLevelFilter) {
+        return false;
+      }
+      if (departmentFilter !== "all") {
+        const teacher = teacherById.get(item.effectiveTeacherId);
+        const matchesDept = item.departmentId === departmentFilter || teacher?.departmentId === departmentFilter;
+        if (!matchesDept) return false;
+      }
+      if (teacherTypeFilter !== "all") {
+        const teacher = teacherById.get(item.effectiveTeacherId);
+        const matchesType = item.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
+        if (!matchesType) return false;
+      }
+      if (statusFilter !== "all" && item.effectiveStatus !== statusFilter) {
+        return false;
+      }
+      if (selectedDate !== "all" && item.calculatedDate !== selectedDate) {
+        return false;
+      }
+      if (selectedTeacherId !== "all" && item.effectiveTeacherId !== selectedTeacherId && item.teacherId !== selectedTeacherId) {
+        return false;
+      }
+      if (selectedClassId !== "all" && item.classId !== selectedClassId) {
+        return false;
+      }
+      if (keyword) {
+        const searchPool = [
+          item.resolvedTeacherName,
+          item.resolvedTeacherCode,
+          item.effectiveTeacherName,
+          item.resolvedClassName,
+          item.resolvedSubjectName,
+          item.resolvedDepartmentName,
+          item.className,
+          item.subjectName,
+        ].filter(Boolean);
+        const matches = searchPool.some((val) => String(val).toLocaleLowerCase("vi").includes(keyword));
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [
+    departmentFilter,
+    monthProcessedSchedules,
+    schoolLevelFilter,
+    search,
+    selectedClassId,
+    selectedDate,
+    selectedTeacherId,
+    statusFilter,
+    teacherById,
+    teacherTypeFilter,
+  ]);
+
+  // Available dates for timesheet view
   const availableDates = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
     for (const item of monthProcessedSchedules) {
@@ -304,92 +686,6 @@ export default function AdminPayrollPage() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [monthProcessedSchedules]);
 
-  // Filtered schedules according to all active criteria
-  const filteredProcessedSchedules = useMemo(() => {
-    const keyword = search.trim().toLocaleLowerCase("vi");
-
-    return monthProcessedSchedules.filter((item) => {
-      // 1. Department filter
-      if (departmentFilter !== "all") {
-        const teacher = teacherById.get(item.effectiveTeacherId);
-        const matchesDept = item.departmentId === departmentFilter || teacher?.departmentId === departmentFilter;
-        if (!matchesDept) return false;
-      }
-
-      // 2. Teacher type filter
-      if (teacherTypeFilter !== "all") {
-        const teacher = teacherById.get(item.effectiveTeacherId);
-        const matchesType = item.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
-        if (!matchesType) return false;
-      }
-
-      // 3. Status filter
-      if (statusFilter !== "all" && item.effectiveStatus !== statusFilter) {
-        return false;
-      }
-
-      // 4. Date filter
-      if (selectedDate !== "all" && item.calculatedDate !== selectedDate) {
-        return false;
-      }
-
-      // 5. Teacher filter
-      if (selectedTeacherId !== "all" && item.effectiveTeacherId !== selectedTeacherId && item.teacherId !== selectedTeacherId) {
-        return false;
-      }
-
-      // 6. Class filter
-      if (selectedClassId !== "all" && item.classId !== selectedClassId) {
-        return false;
-      }
-
-      // 7. Search keyword
-      if (keyword) {
-        const searchPool = [
-          item.resolvedTeacherName,
-          item.resolvedTeacherCode,
-          item.effectiveTeacherName,
-          item.resolvedClassName,
-          item.resolvedSubjectName,
-          item.resolvedDepartmentName,
-          item.className,
-          item.subjectName,
-        ].filter(Boolean);
-
-        const matches = searchPool.some((val) => String(val).toLocaleLowerCase("vi").includes(keyword));
-        if (!matches) return false;
-      }
-
-      return true;
-    });
-  }, [
-    departmentFilter,
-    monthProcessedSchedules,
-    search,
-    selectedClassId,
-    selectedDate,
-    selectedTeacherId,
-    statusFilter,
-    teacherById,
-    teacherTypeFilter,
-  ]);
-
-  const hasActiveFilters = Boolean(
-    search.trim() ||
-    statusFilter !== "all" ||
-    selectedDate !== "all" ||
-    selectedTeacherId !== "all" ||
-    selectedClassId !== "all"
-  );
-
-  const handleResetFilters = () => {
-    setSearch("");
-    setStatusFilter("all");
-    setSelectedDate("all");
-    setSelectedTeacherId("all");
-    setSelectedClassId("all");
-  };
-
   // Selection handlers
   const handleToggleSelect = (id: string) => {
     setSelectedRowIds((prev) => {
@@ -401,18 +697,13 @@ export default function AdminPayrollPage() {
   };
 
   const handleSelectAllPage = (ids: string[]) => {
-    if (ids.length === 0) {
-      setSelectedRowIds(new Set());
-    } else {
-      setSelectedRowIds(new Set(ids));
-    }
+    if (ids.length === 0) setSelectedRowIds(new Set());
+    else setSelectedRowIds(new Set(ids));
   };
 
-  const handleClearSelection = () => {
-    setSelectedRowIds(new Set());
-  };
+  const handleClearSelection = () => setSelectedRowIds(new Set());
 
-  // Core write checkin function (single)
+  // Quick single schedule checkin
   async function writeCheckin(
     schedule: ScheduleWithMeta | Row,
     override?: { status: "confirmed" | "adjusted" | "absent"; actualTeacherId: string; reason: string; note: string }
@@ -429,47 +720,51 @@ export default function AdminPayrollPage() {
     const subjectDoc = subjectById.get(String(schedule.subjectId || ""));
     const deptDoc = departmentById.get(String(schedule.departmentId || teacher?.departmentId || ""));
 
-    await setDoc(doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`), {
-      scheduleId: schedule.id,
-      month: selectedMonth,
-      date: dateFromScheduleRow(schedule),
-      teacherId: actualTeacherId,
-      teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
-      departmentId: teacher?.departmentId || schedule.departmentId || "",
-      departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
-      classId: schedule.classId || "",
-      className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
-      subjectId: schedule.subjectId || "",
-      subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
-      startPeriod: schedule.startPeriod || null,
-      endPeriod: schedule.endPeriod || null,
-      periodCount,
-      payablePeriods: payable ? periodCount : 0,
-      payable,
-      status,
-      actualTeacherId,
-      originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
-      teacherType: teacher?.teacherType || schedule.teacherType || "",
-      attendanceSource: "admin_confirmation",
-      confirmedAt: serverTimestamp(),
-      confirmedBy: user.uid,
-      adjustedBy: user.uid,
-      adjustmentReason: override?.reason || "Xác nhận đã dạy",
-      note: override?.note || "",
-      updatedAt: serverTimestamp(),
-      updatedBy: user.uid,
-      ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
-    }, { merge: true });
+    await setDoc(
+      doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`),
+      {
+        scheduleId: schedule.id,
+        month: selectedMonth,
+        date: dateFromScheduleRow(schedule),
+        teacherId: actualTeacherId,
+        teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
+        departmentId: teacher?.departmentId || schedule.departmentId || "",
+        departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
+        classId: schedule.classId || "",
+        className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
+        subjectId: schedule.subjectId || "",
+        subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
+        startPeriod: schedule.startPeriod || null,
+        endPeriod: schedule.endPeriod || null,
+        periodCount,
+        payablePeriods: payable ? periodCount : 0,
+        payable,
+        status,
+        actualTeacherId,
+        originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+        teacherType: teacher?.teacherType || schedule.teacherType || "",
+        attendanceSource: "admin_confirmation",
+        confirmedAt: serverTimestamp(),
+        confirmedBy: user.uid,
+        adjustedBy: user.uid,
+        adjustmentReason: override?.reason || "Xác nhận đã dạy",
+        note: override?.note || "",
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+        ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+      },
+      { merge: true }
+    );
   }
 
-  // Core batch checkin function
+  // Batch checkin write
   async function writeCheckinsBatch(
     targetSchedules: (ScheduleWithMeta | Row)[],
     status: "confirmed" | "absent" = "confirmed",
     reason = "Xác nhận hàng loạt theo phân công"
   ) {
     if (!user || targetSchedules.length === 0) return;
-    const chunkSize = 400; // safe margin for Firestore 500 limit
+    const chunkSize = 400;
 
     for (let offset = 0; offset < targetSchedules.length; offset += chunkSize) {
       const chunk = targetSchedules.slice(offset, offset + chunkSize);
@@ -487,44 +782,47 @@ export default function AdminPayrollPage() {
         const deptDoc = departmentById.get(String(schedule.departmentId || teacher?.departmentId || ""));
 
         const checkinRef = doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`);
-        batch.set(checkinRef, {
-          scheduleId: schedule.id,
-          month: selectedMonth,
-          date: dateFromScheduleRow(schedule),
-          teacherId: actualTeacherId,
-          teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
-          departmentId: teacher?.departmentId || schedule.departmentId || "",
-          departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
-          classId: schedule.classId || "",
-          className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
-          subjectId: schedule.subjectId || "",
-          subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
-          startPeriod: schedule.startPeriod || null,
-          endPeriod: schedule.endPeriod || null,
-          periodCount,
-          payablePeriods: payable ? periodCount : 0,
-          payable,
-          status,
-          actualTeacherId,
-          originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
-          teacherType: teacher?.teacherType || schedule.teacherType || "",
-          attendanceSource: "admin_confirmation_batch",
-          confirmedAt: serverTimestamp(),
-          confirmedBy: user.uid,
-          adjustedBy: user.uid,
-          adjustmentReason: reason,
-          note: "",
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-          ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
-        }, { merge: true });
+        batch.set(
+          checkinRef,
+          {
+            scheduleId: schedule.id,
+            month: selectedMonth,
+            date: dateFromScheduleRow(schedule),
+            teacherId: actualTeacherId,
+            teacherName: teacher?.fullName || schedule.teacherName || actualTeacherId,
+            departmentId: teacher?.departmentId || schedule.departmentId || "",
+            departmentName: deptDoc?.name || deptDoc?.code || teacher?.departmentName || "",
+            classId: schedule.classId || "",
+            className: classDoc?.name || classDoc?.code || schedule.className || schedule.classId || "",
+            subjectId: schedule.subjectId || "",
+            subjectName: subjectDoc?.name || schedule.subjectName || subjectDoc?.code || schedule.subjectId || "",
+            startPeriod: schedule.startPeriod || null,
+            endPeriod: schedule.endPeriod || null,
+            periodCount,
+            payablePeriods: payable ? periodCount : 0,
+            payable,
+            status,
+            actualTeacherId,
+            originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+            teacherType: teacher?.teacherType || schedule.teacherType || "",
+            attendanceSource: "admin_confirmation_batch",
+            confirmedAt: serverTimestamp(),
+            confirmedBy: user.uid,
+            adjustedBy: user.uid,
+            adjustmentReason: reason,
+            note: "",
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+            ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+          },
+          { merge: true }
+        );
       }
 
       await batch.commit();
     }
   }
 
-  // Single schedule quick confirmation
   async function confirmSchedule(schedule: ScheduleWithMeta) {
     setActionLoading(true);
     setError("");
@@ -538,7 +836,6 @@ export default function AdminPayrollPage() {
     }
   }
 
-  // Submit modal adjustment
   async function handleAdjustSubmit(formData: {
     status: "confirmed" | "adjusted" | "absent";
     actualTeacherId: string;
@@ -559,7 +856,6 @@ export default function AdminPayrollPage() {
     }
   }
 
-  // Batch confirm all unconfirmed past schedules
   async function handleBatchConfirmAllPast() {
     if (unconfirmedPastSchedules.length === 0) return;
     setActionLoading(true);
@@ -575,7 +871,6 @@ export default function AdminPayrollPage() {
     }
   }
 
-  // Batch confirm selected checkbox rows
   async function handleBatchConfirmSelected(ids: string[], status: "confirmed" | "absent") {
     const targetItems = monthProcessedSchedules.filter((s) => ids.includes(s.id));
     if (targetItems.length === 0) return;
@@ -586,34 +881,6 @@ export default function AdminPayrollPage() {
       await writeCheckinsBatch(targetItems, status, reason);
       setSelectedRowIds(new Set());
       toast.success(`Đã cập nhật trạng thái cho ${targetItems.length} lịch dạy.`);
-    } catch (batchError) {
-      setError(firebaseDataErrorMessage(batchError));
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  // Batch confirm by date
-  async function handleBatchConfirmDate(dateSchedules: ScheduleWithMeta[]) {
-    setActionLoading(true);
-    setError("");
-    try {
-      await writeCheckinsBatch(dateSchedules, "confirmed", `Duyệt nhanh lịch ngày ${dateSchedules[0]?.formattedDate || ""}`);
-      toast.success(`Đã duyệt tất cả ${dateSchedules.length} tiết chờ trong ngày.`);
-    } catch (batchError) {
-      setError(firebaseDataErrorMessage(batchError));
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  // Batch confirm by teacher
-  async function handleBatchConfirmTeacher(teacherSchedules: ScheduleWithMeta[]) {
-    setActionLoading(true);
-    setError("");
-    try {
-      await writeCheckinsBatch(teacherSchedules, "confirmed", `Duyệt nhanh lịch của ${teacherSchedules[0]?.resolvedTeacherName || ""}`);
-      toast.success(`Đã duyệt tất cả ${teacherSchedules.length} tiết chờ của giáo viên.`);
     } catch (batchError) {
       setError(firebaseDataErrorMessage(batchError));
     } finally {
@@ -643,17 +910,21 @@ export default function AdminPayrollPage() {
       const teacher = teacherById.get(rateForm.teacherId);
       const subject = subjectById.get(rateForm.subjectId);
       const existing = rateRows.find((row) => row.id === rateDocId(rateForm.teacherId, rateForm.subjectId));
-      await setDoc(doc(firestore, "payrollRates", rateDocId(rateForm.teacherId, rateForm.subjectId)), {
-        teacherId: rateForm.teacherId,
-        teacherName: textValue(teacher?.fullName) || textValue(teacher?.email) || rateForm.teacherId,
-        departmentId: textValue(teacher?.departmentId),
-        subjectId: rateForm.subjectId,
-        subjectName: textValue(subject?.name) || textValue(subject?.code) || rateForm.subjectId,
-        ratePerPeriod: Number(rateForm.ratePerPeriod),
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-        ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
-      }, { merge: true });
+      await setDoc(
+        doc(firestore, "payrollRates", rateDocId(rateForm.teacherId, rateForm.subjectId)),
+        {
+          teacherId: rateForm.teacherId,
+          teacherName: textValue(teacher?.fullName) || textValue(teacher?.email) || rateForm.teacherId,
+          departmentId: textValue(teacher?.departmentId),
+          subjectId: rateForm.subjectId,
+          subjectName: textValue(subject?.name) || textValue(subject?.code) || rateForm.subjectId,
+          ratePerPeriod: Number(rateForm.ratePerPeriod),
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+          ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+        },
+        { merge: true }
+      );
       toast.success("Đã lưu đơn giá/tiết.");
       setRateForm({ teacherId: "", subjectId: "", ratePerPeriod: "" });
     } catch (submitError) {
@@ -663,42 +934,7 @@ export default function AdminPayrollPage() {
     }
   }
 
-  // Summary rows logic
-  const summaryRows = useMemo(() => {
-    return teachers
-      .map((teacher) => {
-        const teacherCheckins = checkins.filter(
-          (c) => c.teacherId === teacher.id && ["confirmed", "adjusted"].includes(String(c.status))
-        );
-        const actualPeriods = teacherCheckins.reduce((sum, c) => sum + Number(c.periodCount || 0), 0);
-        const standardPeriods = teacher.teacherType === "co_huu" ? Number(teacher.standardPeriodsPerWeek || 0) * 4 : null;
-        const deptDoc = departmentById.get(String(teacher.departmentId || ""));
-        const departmentName = deptDoc?.name || deptDoc?.code || teacher.departmentId || "—";
-
-        return {
-          teacherId: teacher.id,
-          teacherName: teacher.fullName || teacher.email || teacher.id,
-          teacherType: teacher.teacherType,
-          departmentId: teacher.departmentId || "",
-          departmentName,
-          actualPeriods,
-          standardPeriods,
-          differencePeriods: standardPeriods === null ? null : actualPeriods - standardPeriods,
-        };
-      })
-      .filter((row) => row.actualPeriods > 0 || departmentFilter === "all" || row.departmentId === departmentFilter);
-  }, [checkins, departmentById, departmentFilter, teachers]);
-
-  // Payroll rows logic
-  const filteredPayrollRows = useMemo(() => {
-    return payrollRows.filter((row) => {
-      const teacher = teacherById.get(String(row.teacherId));
-      const matchesDepartment = departmentFilter === "all" || teacher?.departmentId === departmentFilter;
-      const matchesType = teacherTypeFilter === "all" || row.teacherType === teacherTypeFilter || teacher?.teacherType === teacherTypeFilter;
-      return matchesDepartment && matchesType;
-    });
-  }, [departmentFilter, payrollRows, teacherById, teacherTypeFilter]);
-
+  // Admin Payroll Calculator
   async function calculatePayroll() {
     setError("");
     if (unconfirmedPastSchedules.length > 0) {
@@ -711,8 +947,8 @@ export default function AdminPayrollPage() {
     setCalculating(true);
     try {
       const result = await calculateMonthlyPayroll(selectedMonth);
-      toast.success(`Đã tính bảng lương cho ${result.count} giáo viên.`);
-      setTab("payroll");
+      toast.success(`Đã tính bảng lương cho ${result.count} giáo viên và gửi BGH phê duyệt.`);
+      setTab("summary");
     } catch (submitError) {
       setError(firebaseErrorMessage(submitError));
     } finally {
@@ -720,35 +956,204 @@ export default function AdminPayrollPage() {
     }
   }
 
+  // Principal Quick Single Approve
+  async function handleQuickApprove(row: TeacherPayrollSummaryRow) {
+    if (!user) return;
+    setActionLoading(true);
+    try {
+      const nextStatus: PayrollApprovalStatus = row.status === "approved" ? "pending_approval" : "approved";
+      await setDoc(
+        doc(firestore, "payroll", row.payrollDocId),
+        {
+          teacherId: row.teacherId,
+          month: selectedMonth,
+          status: nextStatus,
+          approvedBy: nextStatus === "approved" ? user.uid : null,
+          approvedAt: nextStatus === "approved" ? serverTimestamp() : null,
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+        },
+        { merge: true }
+      );
+      toast.success(
+        nextStatus === "approved"
+          ? `Đã phê duyệt thù lao cho giáo viên ${row.teacherName}`
+          : `Đã chuyển về trạng thái Chờ duyệt cho ${row.teacherName}`
+      );
+    } catch (err) {
+      toast.error(firebaseDataErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Principal Batch Approve All
+  async function handleApproveAllPending() {
+    if (!user) return;
+    const pendingRows = filteredSummaryRows.filter(
+      (r) => r.status === "pending_approval" || r.status === "draft" || r.status === "review_required"
+    );
+    if (pendingRows.length === 0) {
+      toast.info("Không có giáo viên nào đang chờ phê duyệt.");
+      setConfirmApproveAllOpen(false);
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const batch = writeBatch(firestore);
+      for (const row of pendingRows) {
+        const ref = doc(firestore, "payroll", row.payrollDocId);
+        batch.set(
+          ref,
+          {
+            teacherId: row.teacherId,
+            month: selectedMonth,
+            status: "approved",
+            approvedBy: user.uid,
+            approvedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      setConfirmApproveAllOpen(false);
+      toast.success(`Hiệu trưởng đã phê duyệt thành công toàn bộ ${pendingRows.length} giáo viên.`);
+    } catch (err) {
+      toast.error(firebaseDataErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Principal Batch Review / Reject All
+  async function handleRequestReviewAll() {
+    if (!user) return;
+    const targetRows = filteredSummaryRows.filter((r) => r.status !== "review_required");
+    if (targetRows.length === 0) return;
+    setActionLoading(true);
+    try {
+      const batch = writeBatch(firestore);
+      for (const row of targetRows) {
+        const ref = doc(firestore, "payroll", row.payrollDocId);
+        batch.set(
+          ref,
+          {
+            teacherId: row.teacherId,
+            month: selectedMonth,
+            status: "review_required",
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      setConfirmReviewAllOpen(false);
+      toast.success(`Đã yêu cầu kế toán & giáo vụ rà soát lại ${targetRows.length} hồ sơ thù lao.`);
+    } catch (err) {
+      toast.error(firebaseDataErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Principal Edit Modal Submission
+  async function handlePrincipalAdjustmentSubmit(data: {
+    primaryActual: number;
+    secondaryActual: number;
+    adjustmentAmount: number;
+    adjustmentReason: string;
+    status: PayrollApprovalStatus;
+  }) {
+    if (!user || !principalEditRow) return;
+    setActionLoading(true);
+    try {
+      const ref = doc(firestore, "payroll", principalEditRow.payrollDocId);
+      const newAmount = Math.max(
+        0,
+        (data.primaryActual * principalEditRow.primaryRate) +
+          (data.secondaryActual * principalEditRow.secondaryRate) +
+          data.adjustmentAmount
+      );
+
+      await setDoc(
+        ref,
+        {
+          teacherId: principalEditRow.teacherId,
+          month: selectedMonth,
+          overridePrimaryActual: data.primaryActual,
+          overrideSecondaryActual: data.secondaryActual,
+          actualPeriods: data.primaryActual + data.secondaryActual,
+          adjustmentAmount: data.adjustmentAmount,
+          adjustmentReason: data.adjustmentReason,
+          status: data.status,
+          amount: newAmount,
+          adjustedBy: user.uid,
+          adjustedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+          ...(data.status === "approved"
+            ? { approvedBy: user.uid, approvedAt: serverTimestamp() }
+            : {}),
+        },
+        { merge: true }
+      );
+      setPrincipalEditRow(null);
+      toast.success(`Đã lưu điều chỉnh công & thù lao cho giáo viên ${principalEditRow.teacherName}.`);
+    } catch (err) {
+      toast.error(firebaseDataErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // Comprehensive Multi-Level CSV Export
   function exportPayrollCsv() {
-    const rows = filteredPayrollRows.map((row) => {
-      const teacher = teacherById.get(String(row.teacherId));
-      return [
-        teacher?.fullName || row.teacherId,
-        row.teacherType || teacher?.teacherType || "",
-        row.actualPeriods ?? 0,
-        row.standardPeriods ?? "",
-        row.differencePeriods ?? "",
-        row.ratePerPeriod ?? "",
-        row.amount ?? "",
-        statusLabelVi(row.status),
-      ];
-    });
+    const rows = filteredSummaryRows.map((row) => [
+      row.teacherCode,
+      row.teacherName,
+      row.teachingLevelLabel,
+      row.departmentName,
+      row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu",
+      row.primaryActual,
+      row.primaryStandard ?? "—",
+      row.secondaryActual,
+      row.secondaryStandard ?? "—",
+      row.substituteCount,
+      row.absentCount,
+      row.overtimePeriods,
+      row.adjustmentAmount,
+      row.adjustmentReason,
+      row.totalAmount,
+      payrollStatusLabelVi(row.status),
+    ]);
+
     const header = [
-      "Giáo viên",
-      "Loại giáo viên",
-      "Số tiết thực dạy",
-      "Số tiết chuẩn",
-      "Số tiết vượt/thiếu",
-      "Đơn giá",
-      "Thành tiền",
-      "Trạng thái",
+      "Mã GV",
+      "Họ và Tên",
+      "Cấp dạy",
+      "Tổ bộ môn",
+      "Loại hợp đồng",
+      "Tiết Cấp 1 (Thực)",
+      "Định mức C1",
+      "Tiết Cấp 2 (Thực)",
+      "Định mức C2",
+      "Dạy thay (+)",
+      "Báo vắng (-)",
+      "Tiết phụ trội",
+      "Điều chỉnh (+/- VND)",
+      "Lý do điều chỉnh",
+      "Tổng thù lao/Lương (VND)",
+      "Trạng thái phê duyệt",
     ];
+
     const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `bang-luong-${selectedMonth}.csv`;
+    anchor.download = `bang-luong-lien-cap-${selectedMonth}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -762,32 +1167,73 @@ export default function AdminPayrollPage() {
   }
 
   return (
-    <RoleGuard allowedRoles={["admin"]}>
+    <RoleGuard allowedRoles={["admin", "bgh"]}>
       <Shell>
         <PageHeader
-          eyebrow="Nghiệp vụ thù lao"
-          title="Chấm công & Bảng lương"
-          description="Theo dõi lịch phân công, điểm danh tiết dạy, xử lý dạy thay và tự động chốt số liệu tính thù lao."
+          eyebrow="Nghiệp vụ liên cấp"
+          title={isPrincipal ? "Phê duyệt Chấm công & Bảng lương" : "Chấm công & Bảng lương liên cấp"}
+          description={
+            isPrincipal
+              ? "Kiểm soát số tiết Cấp 1 & Cấp 2, điều chỉnh trực tiếp và phê duyệt chi trả lương cho giáo viên toàn trường."
+              : "Theo dõi phân công, đối soát điểm danh tiết dạy, xử lý dạy thay và tính toán bảng lương trình BGH."
+          }
           actions={
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={exportPayrollCsv} disabled={filteredPayrollRows.length === 0}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={exportPayrollCsv}
+                disabled={filteredSummaryRows.length === 0}
+              >
                 <Download className="h-4 w-4" />
                 Xuất CSV
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setRateOpen(true);
-                  setRateError("");
-                }}
-              >
-                <CircleDollarSign className="h-4 w-4" />
-                Đơn giá thù lao
-              </Button>
-              <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>
-                <Calculator className="h-4 w-4" />
-                Tính bảng lương
-              </Button>
+
+              {/* Principal Specific Buttons */}
+              {isPrincipal && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setConfirmReviewAllOpen(true)}
+                    disabled={filteredSummaryRows.length === 0}
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Yêu cầu rà soát
+                  </Button>
+                  <Button
+                    onClick={() => setConfirmApproveAllOpen(true)}
+                    disabled={filteredSummaryRows.length === 0}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Phê duyệt bảng lương
+                  </Button>
+                </>
+              )}
+
+              {/* Admin Specific Buttons */}
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setRateOpen(true);
+                      setRateError("");
+                    }}
+                  >
+                    <CircleDollarSign className="h-4 w-4" />
+                    Đơn giá thù lao
+                  </Button>
+                  <Button
+                    loading={calculating}
+                    onClick={calculatePayroll}
+                    disabled={unconfirmedPastSchedules.length > 0}
+                  >
+                    <Calculator className="h-4 w-4" />
+                    Tính bảng lương
+                  </Button>
+                </>
+              )}
             </div>
           }
         />
@@ -798,32 +1244,48 @@ export default function AdminPayrollPage() {
           </div>
         ) : null}
 
-        {/* Global Controls Card */}
-        <Card className="mb-5 p-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* TOP FILTERS CARD */}
+        <Card className="mb-5 p-4 shadow-xs">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {/* Tháng / Năm */}
             <div>
-              <Label>Tháng</Label>
+              <Label>Tháng / Năm</Label>
+              <div className="flex gap-2">
+                <select
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold"
+                  value={selectedMonthNumber}
+                  onChange={(e) => setMonthPart(e.target.value)}
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      Tháng {m}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  className="w-24 font-semibold"
+                  value={selectedYear}
+                  onChange={(e) => setYearPart(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
+              </div>
+            </div>
+
+            {/* Cấp học */}
+            <div>
+              <Label>Cấp học</Label>
               <select
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-medium"
-                value={selectedMonthNumber}
-                onChange={(e) => setMonthPart(e.target.value)}
+                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-semibold"
+                value={schoolLevelFilter}
+                onChange={(e) => setSchoolLevelFilter(e.target.value as any)}
               >
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    Tháng {m}
-                  </option>
-                ))}
+                <option value="ALL">Tất cả cấp học</option>
+                <option value="PRIMARY">Cấp 1 (Tiểu học)</option>
+                <option value="SECONDARY">Cấp 2 (THCS)</option>
+                <option value="BOTH">Giáo viên dạy cả 2 cấp</option>
               </select>
             </div>
 
-            <div>
-              <Label>Năm</Label>
-              <Input
-                value={selectedYear}
-                onChange={(e) => setYearPart(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              />
-            </div>
-
+            {/* Tổ / Bộ môn */}
             <div>
               <Label>Tổ / Bộ môn</Label>
               <select
@@ -831,7 +1293,7 @@ export default function AdminPayrollPage() {
                 value={departmentFilter}
                 onChange={(e) => setDepartmentFilter(e.target.value)}
               >
-                <option value="all">Tất cả bộ môn</option>
+                <option value="all">Tất cả tổ bộ môn</option>
                 {departmentOptions.map((dept) => (
                   <option key={dept.id} value={dept.id}>
                     {dept.name}
@@ -840,62 +1302,112 @@ export default function AdminPayrollPage() {
               </select>
             </div>
 
+            {/* Loại hợp đồng */}
             <div>
-              <Label>Loại giáo viên</Label>
+              <Label>Loại hợp đồng</Label>
               <select
                 className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
                 value={teacherTypeFilter}
                 onChange={(e) => setTeacherTypeFilter(e.target.value)}
               >
-                <option value="all">Tất cả loại giáo viên</option>
+                <option value="all">Tất cả hợp đồng</option>
                 <option value="co_huu">Cơ hữu</option>
                 <option value="thinh_giang">Thỉnh giảng</option>
               </select>
             </div>
+
+            {/* Tìm kiếm */}
+            <div>
+              <Label>Tìm giáo viên</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Mã GV, họ tên..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
         </Card>
 
-        {/* Main Tabs */}
-        <div className="mb-5 flex flex-wrap gap-2">
-          <Button
-            variant={tab === "attendance" ? "primary" : "secondary"}
-            onClick={() => setTab("attendance")}
-            className="relative"
-          >
-            Chấm công tiết dạy
-            {kpiCounts.pendingPast > 0 ? (
-              <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white">
-                {kpiCounts.pendingPast}
-              </span>
-            ) : null}
-          </Button>
-          <Button variant={tab === "summary" ? "primary" : "secondary"} onClick={() => setTab("summary")}>
-            Tổng hợp theo tháng
-          </Button>
-          <Button variant={tab === "payroll" ? "primary" : "secondary"} onClick={() => setTab("payroll")}>
-            Bảng lương tháng
-          </Button>
+        {/* 4 KPI DECISION CARDS */}
+        <PayrollKpiCards
+          totalEstimatedPayroll={payrollKpiMetrics.totalEstimatedPayroll}
+          totalTeachers={payrollKpiMetrics.totalTeachers}
+          totalPeriods={payrollKpiMetrics.totalPeriods}
+          primaryPeriods={payrollKpiMetrics.primaryPeriods}
+          secondaryPeriods={payrollKpiMetrics.secondaryPeriods}
+          substitutePeriods={payrollKpiMetrics.substitutePeriods}
+          absentPeriods={payrollKpiMetrics.absentPeriods}
+          pendingPastPeriods={payrollKpiMetrics.pendingPastPeriods}
+          pendingApprovalTeachers={payrollKpiMetrics.pendingApprovalTeachers}
+          approvedTeachers={payrollKpiMetrics.approvedTeachers}
+          reviewRequiredTeachers={payrollKpiMetrics.reviewRequiredTeachers}
+          isPrincipal={isPrincipal}
+        />
+
+        {/* VIEW TABS */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <Button
+              variant={tab === "summary" ? "primary" : "secondary"}
+              onClick={() => setTab("summary")}
+            >
+              Bảng tổng hợp công & Lương
+            </Button>
+            <Button
+              variant={tab === "attendance" ? "primary" : "secondary"}
+              onClick={() => setTab("attendance")}
+              className="relative"
+            >
+              Nhật ký chi tiết tiết dạy
+              {kpiCounts.pendingPast > 0 ? (
+                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white">
+                  {kpiCounts.pendingPast}
+                </span>
+              ) : null}
+            </Button>
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            Dữ liệu tháng: <strong>{selectedMonth}</strong> · Tổng:{" "}
+            <strong>{filteredSummaryRows.length}</strong> giáo viên
+          </div>
         </div>
 
-        {/* TAB 1: Chấm công (Industrial Standard Timesheet & Attendance) */}
+        {/* TAB 1: BẢNG TỔNG HỢP CÔNG & LƯƠNG LIÊN CẤP (Dành cho Hiệu trưởng & Admin) */}
+        {tab === "summary" && (
+          <PrincipalPayrollTable
+            rows={filteredSummaryRows}
+            onOpenEdit={(row) => setPrincipalEditRow(row)}
+            onQuickApprove={handleQuickApprove}
+            onOpenDetail={(row) => setDetailDrawerRow(row)}
+            actionLoading={actionLoading}
+            isPrincipal={isPrincipal}
+          />
+        )}
+
+        {/* TAB 2: NHẬT KÝ CHI TIẾT TIẾT DẠY (Timesheet) */}
         {tab === "attendance" && (
           <div className="space-y-4">
-            {/* KPI Ribbon */}
-            <AttendanceKpiRibbon
-              total={kpiCounts.total}
-              confirmed={kpiCounts.confirmed}
-              pendingPast={kpiCounts.pendingPast}
-              upcoming={kpiCounts.upcoming}
-              adjusted={kpiCounts.adjusted}
-              absent={kpiCounts.absent}
-              activeFilter={statusFilter}
-              onSelectFilter={(newFilter) => setStatusFilter(newFilter)}
-              onOpenBatchModal={() => setBatchModalOpen(true)}
-            />
+            {/* KPI Ribbon (Chỉ hiển thị cho Admin hoặc khi cần đối soát chi tiết) */}
+            {isAdmin && (
+              <AttendanceKpiRibbon
+                total={kpiCounts.total}
+                confirmed={kpiCounts.confirmed}
+                pendingPast={kpiCounts.pendingPast}
+                upcoming={kpiCounts.upcoming}
+                adjusted={kpiCounts.adjusted}
+                absent={kpiCounts.absent}
+                activeFilter={statusFilter}
+                onSelectFilter={(newFilter) => setStatusFilter(newFilter)}
+                onOpenBatchModal={() => setBatchModalOpen(true)}
+              />
+            )}
 
-            {/* Attendance Workspace Card */}
             <Card className="p-4 sm:p-5">
-              {/* Toolbar */}
               <AttendanceToolbar
                 search={search}
                 onSearchChange={setSearch}
@@ -914,11 +1426,22 @@ export default function AdminPayrollPage() {
                 classes={classes}
                 counts={kpiCounts}
                 totalFilteredCount={filteredProcessedSchedules.length}
-                onResetFilters={handleResetFilters}
-                hasActiveFilters={hasActiveFilters}
+                onResetFilters={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setSelectedDate("all");
+                  setSelectedTeacherId("all");
+                  setSelectedClassId("all");
+                }}
+                hasActiveFilters={Boolean(
+                  search.trim() ||
+                    statusFilter !== "all" ||
+                    selectedDate !== "all" ||
+                    selectedTeacherId !== "all" ||
+                    selectedClassId !== "all"
+                )}
               />
 
-              {/* View Rendering */}
               <div className="mt-5">
                 {loading ? (
                   <div className="space-y-3 p-4">
@@ -943,7 +1466,17 @@ export default function AdminPayrollPage() {
                     schedules={filteredProcessedSchedules}
                     onConfirmSchedule={confirmSchedule}
                     onAdjustSchedule={(s) => setAdjustTarget(s)}
-                    onBatchConfirmDate={handleBatchConfirmDate}
+                    onBatchConfirmDate={async (dateSchedules) => {
+                      setActionLoading(true);
+                      try {
+                        await writeCheckinsBatch(dateSchedules, "confirmed", `Duyệt nhanh ngày ${dateSchedules[0]?.formattedDate || ""}`);
+                        toast.success(`Đã duyệt tất cả ${dateSchedules.length} tiết.`);
+                      } catch (e) {
+                        toast.error(firebaseDataErrorMessage(e));
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
                     actionLoading={actionLoading}
                   />
                 ) : (
@@ -951,160 +1484,122 @@ export default function AdminPayrollPage() {
                     schedules={filteredProcessedSchedules}
                     onConfirmSchedule={confirmSchedule}
                     onAdjustSchedule={(s) => setAdjustTarget(s)}
-                    onBatchConfirmTeacher={handleBatchConfirmTeacher}
+                    onBatchConfirmTeacher={async (teacherSchedules) => {
+                      setActionLoading(true);
+                      try {
+                        await writeCheckinsBatch(teacherSchedules, "confirmed", `Duyệt nhanh của ${teacherSchedules[0]?.resolvedTeacherName || ""}`);
+                        toast.success(`Đã duyệt tất cả ${teacherSchedules.length} tiết của GV.`);
+                      } catch (e) {
+                        toast.error(firebaseDataErrorMessage(e));
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
                     actionLoading={actionLoading}
                   />
                 )}
               </div>
             </Card>
 
-            {/* Audit Log Card */}
-            <Card className="mt-6 overflow-hidden">
-              <div className="border-b border-border px-5 py-4 sm:px-6">
-                <h2 className="text-base font-bold">Lịch sử thay đổi chấm công (Audit Log)</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Ghi nhận đầy đủ thông tin người duyệt, thời gian và lý do điều chỉnh theo quy trình kiểm soát.
-                </p>
-              </div>
-              <div className="divide-y divide-border">
-                {auditRows.slice(0, 6).map((row) => (
-                  <div key={row.id} className="px-5 py-3 text-xs sm:px-6">
-                    <p className="font-semibold text-foreground">{row.action || "Chấm công / Điều chỉnh"}</p>
-                    <p className="text-muted-foreground mt-0.5">
-                      {row.entityType || "checkin"} · {row.entityId || "—"} · {formatDate(row.createdAt)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
+            {/* AUDIT LOG CARD (CHỈ HIỂN THỊ KHI showAuditLog === true, TỨC ADMIN; ẨN HOÀN TOÀN KHỎI HIỆU TRƯỞNG) */}
+            {showAuditLog && (
+              <Card className="mt-6 overflow-hidden">
+                <div className="border-b border-border px-5 py-4 sm:px-6">
+                  <h2 className="text-base font-bold">Lịch sử thay đổi chấm công (Audit Log)</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Ghi nhận đầy đủ thông tin người duyệt, thời gian và lý do điều chỉnh phục vụ đối soát nội bộ.
+                  </p>
+                </div>
+                <div className="divide-y divide-border">
+                  {auditRows.slice(0, 6).map((row) => (
+                    <div key={row.id} className="px-5 py-3 text-xs sm:px-6">
+                      <p className="font-semibold text-foreground">{row.action || "Chấm công / Điều chỉnh"}</p>
+                      <p className="text-muted-foreground mt-0.5">
+                        {row.entityType || "checkin"} · {row.entityId || "—"} · {formatDate(row.createdAt)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </div>
         )}
 
-        {/* TAB 2: Tổng hợp theo tháng */}
-        {tab === "summary" && (
-          <Card className="overflow-hidden">
-            <div className="border-b border-border px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-bold">Tổng hợp tiết dạy theo tháng</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Số liệu tổng hợp chỉ tính các bản ghi chấm công đã xác nhận (Đã dạy / Đã điều chỉnh).
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="data-table min-w-[840px]">
-                <thead>
-                  <tr>
-                    <th>Giáo viên</th>
-                    <th>Tổ bộ môn</th>
-                    <th>Loại giáo viên</th>
-                    <th>Số tiết thực dạy</th>
-                    <th>Số tiết chuẩn (tháng)</th>
-                    <th>Chênh lệch (Vượt/Thiếu)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryRows.map((row) => (
-                    <tr key={row.teacherId}>
-                      <td className="font-semibold">{row.teacherName}</td>
-                      <td>{row.departmentName}</td>
-                      <td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td>
-                      <td className="font-bold text-foreground">{row.actualPeriods}</td>
-                      <td>{row.standardPeriods ?? "—"}</td>
-                      <td>
-                        {row.differencePeriods !== null ? (
-                          <span
-                            className={
-                              row.differencePeriods > 0
-                                ? "font-bold text-emerald-700"
-                                : row.differencePeriods < 0
-                                  ? "font-bold text-rose-700"
-                                  : "text-muted-foreground"
-                            }
-                          >
-                            {row.differencePeriods > 0 ? `+${row.differencePeriods}` : row.differencePeriods}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
+        {/* MODAL ĐIỀU CHỈNH CỦA HIỆU TRƯỞNG / ADMIN */}
+        <PrincipalAdjustmentModal
+          open={Boolean(principalEditRow)}
+          onOpenChange={(open) => !open && setPrincipalEditRow(null)}
+          row={principalEditRow}
+          onSubmit={handlePrincipalAdjustmentSubmit}
+          loading={actionLoading}
+        />
 
-        {/* TAB 3: Bảng lương */}
-        {tab === "payroll" && (
-          <Card className="overflow-hidden">
-            <div className="border-b border-border px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-bold">Bảng lương & Thù lao tháng</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Dữ liệu được hệ thống tổng hợp tự động dựa trên số tiết thực dạy đã đối soát.
-              </p>
+        {/* DRAWER CHI TIẾT TỪNG TIẾT DẠY CỦA GIÁO VIÊN */}
+        <TeacherScheduleDrawer
+          open={Boolean(detailDrawerRow)}
+          onClose={() => setDetailDrawerRow(null)}
+          teacherRow={detailDrawerRow}
+          schedules={monthProcessedSchedules}
+        />
+
+        {/* MODAL XÁC NHẬN PHÊ DUYỆT TOÀN BỘ (DÀNH CHO HIỆU TRƯỞNG) */}
+        <Modal
+          open={confirmApproveAllOpen}
+          onOpenChange={setConfirmApproveAllOpen}
+          title="Xác nhận phê duyệt toàn bộ bảng lương"
+          description={`Bạn có chắc chắn muốn phê duyệt chi trả lương cho toàn bộ ${payrollKpiMetrics.pendingApprovalTeachers} giáo viên đang chờ duyệt trong tháng ${selectedMonth}?`}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmApproveAllOpen(false)}>
+                Hủy
+              </Button>
+              <Button
+                loading={actionLoading}
+                onClick={handleApproveAllPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Xác nhận phê duyệt
+              </Button>
             </div>
-            {filteredPayrollRows.length === 0 ? (
-              <EmptyState
-                icon={<Calculator className="h-6 w-6" />}
-                title="Chưa có bảng lương tháng này"
-                description="Bấm 'Tính bảng lương' để hệ thống tính toán thù lao cho giáo viên."
-                action={
-                  <Button loading={calculating} onClick={calculatePayroll} disabled={unconfirmedPastSchedules.length > 0}>
-                    Tính bảng lương
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="data-table min-w-[1080px]">
-                  <thead>
-                    <tr>
-                      <th>Giáo viên</th>
-                      <th>Loại giáo viên</th>
-                      <th>Số tiết thực dạy</th>
-                      <th>Số tiết chuẩn</th>
-                      <th>Vượt/Thiếu</th>
-                      <th>Đơn giá / Tiết</th>
-                      <th>Thành tiền</th>
-                      <th>Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPayrollRows.map((row) => {
-                      const teacher = teacherById.get(String(row.teacherId));
-                      const subjectAmounts = Array.isArray(row.subjectAmounts) ? row.subjectAmounts : [];
-                      const rateText =
-                        subjectAmounts.length > 1
-                          ? `${subjectAmounts.length} mức đơn giá`
-                          : row.ratePerPeriod === null || row.ratePerPeriod === undefined
-                            ? "—"
-                            : formatCurrency(Number(row.ratePerPeriod));
+          }
+        >
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 text-xs text-emerald-900 space-y-2">
+            <p className="font-bold text-sm">Thông tin phê duyệt:</p>
+            <p>• Tháng quyết toán: <strong>{selectedMonth}</strong></p>
+            <p>• Tổng quỹ lương dự kiến: <strong>{formatCurrency(payrollKpiMetrics.totalEstimatedPayroll)}</strong></p>
+            <p>• Số giáo viên được phê chuẩn: <strong>{payrollKpiMetrics.pendingApprovalTeachers}</strong> giáo viên</p>
+          </div>
+        </Modal>
 
-                      return (
-                        <tr key={row.id}>
-                          <td className="font-semibold">{teacher?.fullName || row.teacherId}</td>
-                          <td>{row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu"}</td>
-                          <td className="font-bold text-foreground">{row.actualPeriods ?? 0}</td>
-                          <td>{row.standardPeriods ?? "—"}</td>
-                          <td>{row.differencePeriods ?? "—"}</td>
-                          <td>{rateText}</td>
-                          <td className="font-bold text-primary">
-                            {row.amount === null || row.amount === undefined ? "—" : formatCurrency(Number(row.amount))}
-                          </td>
-                          <td>
-                            <Badge tone={statusBadgeTone(row.status)}>{statusLabelVi(row.status)}</Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        )}
+        {/* MODAL YÊU CẦU RÀ SOÁT TOÀN BỘ (DÀNH CHO HIỆU TRƯỞNG) */}
+        <Modal
+          open={confirmReviewAllOpen}
+          onOpenChange={setConfirmReviewAllOpen}
+          title="Yêu cầu rà soát lại số liệu bảng lương"
+          description={`Chuyển trạng thái các giáo viên sang 'Yêu cầu rà soát' để bộ phận kế toán và giáo vụ kiểm tra lại số liệu tháng ${selectedMonth}.`}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setConfirmReviewAllOpen(false)}>
+                Hủy
+              </Button>
+              <Button
+                loading={actionLoading}
+                onClick={handleRequestReviewAll}
+                className="bg-rose-600 hover:bg-rose-700 text-white"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Gửi yêu cầu rà soát
+              </Button>
+            </div>
+          }
+        >
+          <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 text-xs text-rose-900">
+            Hệ thống sẽ gắn cờ cảnh báo rà soát tới bộ phận giáo vụ và kế toán để đối chiếu lại lịch dạy thay, báo vắng và số tiết phụ trội.
+          </div>
+        </Modal>
 
-        {/* Modal Xác nhận hàng loạt cho lịch quá hạn */}
+        {/* MODAL XÁC NHẬN HÀNG LOẠT QUÁ HẠN (ADMIN) */}
         <BatchConfirmModal
           open={batchModalOpen}
           onOpenChange={setBatchModalOpen}
@@ -1113,7 +1608,7 @@ export default function AdminPayrollPage() {
           loading={actionLoading}
         />
 
-        {/* Modal Điều chỉnh chấm công & Dạy thay */}
+        {/* MODAL ĐIỀU CHỈNH CHẤM CÔNG TỪNG TIẾT (ADMIN) */}
         <AdjustAttendanceModal
           open={Boolean(adjustTarget)}
           onOpenChange={(open) => !open && setAdjustTarget(null)}
@@ -1124,7 +1619,7 @@ export default function AdminPayrollPage() {
           error={adjustError}
         />
 
-        {/* Modal Đơn giá thù lao */}
+        {/* MODAL ĐƠN GIÁ THÙ LAO (ADMIN ONLY) */}
         <Modal
           open={rateOpen}
           onOpenChange={setRateOpen}

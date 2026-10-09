@@ -6,6 +6,7 @@ import { Badge, Button, EmptyState } from "@/components/ui";
 import { cn, initials } from "@/lib/utils";
 import {
   type ScheduleWithMeta,
+  cleanNoteText,
   getSubjectColorClasses,
   statusBadgeTone,
   statusLabelVi,
@@ -130,10 +131,10 @@ export function AttendanceTableView({
                 />
               </th>
               <th className="px-3 py-3.5">Ngày & Tiết dạy</th>
-              <th className="px-3 py-3.5">Giáo viên phân công</th>
+              <th className="px-3 py-3.5">Cấp học</th>
               <th className="px-3 py-3.5">Lớp & Môn học</th>
+              <th className="px-3 py-3.5">Giáo viên thực hiện</th>
               <th className="px-3 py-3.5">Trạng thái chấm công</th>
-              <th className="px-3 py-3.5">Giáo viên thực dạy</th>
               <th className="px-3 py-3.5">Ghi chú / Điều chỉnh</th>
               <th className="w-48 px-3 py-3.5 text-right">Thao tác</th>
             </tr>
@@ -142,6 +143,13 @@ export function AttendanceTableView({
             {currentRows.map((schedule) => {
               const isSelected = selectedIds.has(schedule.id);
               const subjectColors = getSubjectColorClasses(schedule.resolvedSubjectName);
+              const isSubstituted =
+                schedule.isSubstituted ||
+                Boolean(
+                  schedule.effectiveTeacherId &&
+                  schedule.effectiveTeacherId !== (schedule.originalTeacherId || schedule.teacherId)
+                );
+              const noteText = cleanNoteText(schedule.checkinDoc?.adjustmentReason, schedule.checkinDoc?.note);
 
               return (
                 <tr
@@ -185,25 +193,17 @@ export function AttendanceTableView({
                     </div>
                   </td>
 
-                  {/* Giáo viên phân công */}
+                  {/* Cấp học */}
                   <td className="px-3 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                        {initials(schedule.resolvedTeacherName)}
-                      </div>
-                      <div>
-                        <div className="font-bold text-foreground">
-                          {schedule.resolvedTeacherName}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                          {schedule.resolvedTeacherCode ? <span>{schedule.resolvedTeacherCode} · </span> : null}
-                          <span className="font-medium text-slate-600">{schedule.resolvedDepartmentName}</span>
-                          {schedule.teacherType === "thinh_giang" ? (
-                            <span className="rounded bg-purple-50 px-1 py-0.2 text-[10px] text-purple-700">Thỉnh giảng</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
+                    {schedule.schoolLevel === "PRIMARY" ? (
+                      <span className="inline-flex items-center rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-bold text-teal-800">
+                        Cấp 1
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-800">
+                        Cấp 2
+                      </span>
+                    )}
                   </td>
 
                   {/* Lớp & Môn */}
@@ -223,6 +223,46 @@ export function AttendanceTableView({
                         {schedule.resolvedSubjectName}
                       </span>
                     </div>
+                  </td>
+
+                  {/* Giáo viên thực hiện (Gộp Giáo viên phân công & Giáo viên thực dạy) */}
+                  <td className="px-3 py-3">
+                    {isSubstituted ? (
+                      <div>
+                        <div className="font-semibold text-foreground flex items-center gap-1 flex-wrap">
+                          <span className="text-slate-500 line-through text-xs">
+                            {schedule.resolvedTeacherName}
+                          </span>
+                          <span className="text-blue-700 font-bold">
+                            ➔ {schedule.effectiveTeacherName}
+                          </span>
+                          <span className="rounded bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-800">
+                            Dạy thay
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          {schedule.resolvedDepartmentName}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          {initials(schedule.resolvedTeacherName)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-foreground">
+                            {schedule.resolvedTeacherName}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                            {schedule.resolvedTeacherCode ? <span>{schedule.resolvedTeacherCode} · </span> : null}
+                            <span className="font-medium text-slate-600">{schedule.resolvedDepartmentName}</span>
+                            {schedule.teacherType === "thinh_giang" ? (
+                              <span className="rounded bg-purple-50 px-1 py-0.2 text-[10px] text-purple-700">Thỉnh giảng</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </td>
 
                   {/* Trạng thái */}
@@ -255,37 +295,12 @@ export function AttendanceTableView({
                     )}
                   </td>
 
-                  {/* Giáo viên thực dạy */}
-                  <td className="px-3 py-3">
-                    {schedule.isSubstituted ? (
-                      <div>
-                        <div className="font-semibold text-blue-700">
-                          {schedule.effectiveTeacherName}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          (Dạy thay {schedule.resolvedTeacherName})
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-foreground">
-                        {schedule.checkinDoc?.teacherName || schedule.resolvedTeacherName}
-                      </div>
-                    )}
-                  </td>
-
-                  {/* Ghi chú / Điều chỉnh */}
+                  {/* Ghi chú / Điều chỉnh (Đã dọn text rác) */}
                   <td className="px-3 py-3 text-xs text-muted-foreground max-w-xs">
-                    {schedule.checkinDoc?.adjustmentReason || schedule.checkinDoc?.note ? (
-                      <div className="space-y-0.5">
-                        <p className="font-medium text-foreground truncate" title={schedule.checkinDoc.adjustmentReason}>
-                          {schedule.checkinDoc.adjustmentReason}
-                        </p>
-                        {schedule.checkinDoc.note ? (
-                          <p className="truncate text-slate-500" title={schedule.checkinDoc.note}>
-                            {schedule.checkinDoc.note}
-                          </p>
-                        ) : null}
-                      </div>
+                    {noteText ? (
+                      <p className="font-medium text-foreground truncate" title={noteText}>
+                        {noteText}
+                      </p>
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
@@ -326,52 +341,50 @@ export function AttendanceTableView({
         </table>
       </div>
 
-      {/* Pagination Footer */}
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
+      {/* Pagination */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+        <div>
+          Hiển thị <strong>{startIndex + 1}</strong> – <strong>{Math.min(startIndex + pageSize, schedules.length)}</strong> trên tổng số <strong>{schedules.length}</strong> lịch dạy
+        </div>
+
         <div className="flex items-center gap-2">
-          <span>Hiển thị</span>
           <select
-            className="h-8 rounded-lg border border-border bg-background px-2 text-xs"
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
               setCurrentPage(1);
             }}
+            className="h-8 rounded-lg border border-border bg-background px-2 text-xs"
           >
-            <option value={25}>25 dòng/trang</option>
-            <option value={50}>50 dòng/trang</option>
-            <option value={100}>100 dòng/trang</option>
-            <option value={500}>500 dòng/trang</option>
+            <option value="15">15 dòng/trang</option>
+            <option value="25">25 dòng/trang</option>
+            <option value="50">50 dòng/trang</option>
+            <option value="100">100 dòng/trang</option>
           </select>
-          <span>
-            từ {startIndex + 1} đến {Math.min(startIndex + pageSize, schedules.length)} trong tổng số {schedules.length} tiết
-          </span>
-        </div>
 
-        <div className="flex items-center gap-1.5 self-center sm:self-auto">
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={safePage <= 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className="h-8 px-2.5 text-xs"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Trước
-          </Button>
-          <span className="px-2 font-medium text-foreground">
-            Trang {safePage} / {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={safePage >= totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            className="h-8 px-2.5 text-xs"
-          >
-            Sau
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="px-2 font-medium">
+              Trang {safePage} / {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
