@@ -16,6 +16,8 @@ interface PrincipalAdjustmentModalProps {
   onSubmit: (data: {
     primaryActual: number;
     secondaryActual: number;
+    primaryRate: number;
+    secondaryRate: number;
     adjustmentAmount: number;
     adjustmentReason: string;
     status: PayrollApprovalStatus;
@@ -32,6 +34,8 @@ export function PrincipalAdjustmentModal({
 }: PrincipalAdjustmentModalProps) {
   const [primaryActual, setPrimaryActual] = useState<number>(0);
   const [secondaryActual, setSecondaryActual] = useState<number>(0);
+  const [primaryRate, setPrimaryRate] = useState<number>(120000);
+  const [secondaryRate, setSecondaryRate] = useState<number>(150000);
   const [adjustmentAmount, setAdjustmentAmount] = useState<number>(0);
   const [adjustmentReason, setAdjustmentReason] = useState<string>("");
   const [status, setStatus] = useState<PayrollApprovalStatus>("approved");
@@ -41,6 +45,8 @@ export function PrincipalAdjustmentModal({
     if (row) {
       setPrimaryActual(row.primaryActual);
       setSecondaryActual(row.secondaryActual);
+      setPrimaryRate(row.primaryRate > 0 ? row.primaryRate : 120000);
+      setSecondaryRate(row.secondaryRate > 0 ? row.secondaryRate : 150000);
       setAdjustmentAmount(row.adjustmentAmount || 0);
       setAdjustmentReason(row.adjustmentReason || "");
       setStatus(row.status || "approved");
@@ -51,14 +57,12 @@ export function PrincipalAdjustmentModal({
   if (!row) return null;
 
   // Real-time calculation of new estimated amount
-  const newPrimaryAmount =
-    row.primaryRate > 0
-      ? primaryActual * row.primaryRate
-      : row.primaryAmount;
-  const newSecondaryAmount =
-    row.secondaryRate > 0
-      ? secondaryActual * row.secondaryRate
-      : row.secondaryAmount;
+  const isAdjunct = row.teacherType === "thinh_giang";
+  const pOver = row.primaryStandard !== null ? Math.max(0, primaryActual - row.primaryStandard) : primaryActual;
+  const sOver = row.secondaryStandard !== null ? Math.max(0, secondaryActual - row.secondaryStandard) : secondaryActual;
+
+  const newPrimaryAmount = isAdjunct ? primaryActual * primaryRate : pOver * primaryRate;
+  const newSecondaryAmount = isAdjunct ? secondaryActual * secondaryRate : sOver * secondaryRate;
   const newTotalAmount = Math.max(
     0,
     newPrimaryAmount + newSecondaryAmount + Number(adjustmentAmount || 0)
@@ -73,6 +77,8 @@ export function PrincipalAdjustmentModal({
     await onSubmit({
       primaryActual: Number(primaryActual || 0),
       secondaryActual: Number(secondaryActual || 0),
+      primaryRate: Number(primaryRate || 0),
+      secondaryRate: Number(secondaryRate || 0),
       adjustmentAmount: Number(adjustmentAmount || 0),
       adjustmentReason: adjustmentReason.trim(),
       status,
@@ -138,50 +144,102 @@ export function PrincipalAdjustmentModal({
 
         {/* Inputs Grid */}
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* Cấp 1 hours override */}
-          <div className="space-y-1.5 rounded-xl border border-teal-200/80 bg-teal-50/30 p-3.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold text-teal-900 uppercase">
-                Tiết thực dạy Cấp 1
-              </Label>
-              <span className="text-xs text-teal-700">
-                Định mức: {row.primaryStandard ?? "—"}
-              </span>
+          {/* Cấp 1 hours & rate */}
+          <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/30 p-3.5">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-teal-900 uppercase">
+                  Tiết thực dạy Cấp 1
+                </Label>
+                <span className="text-xs text-teal-700">
+                  Định mức: {row.primaryStandard ?? "—"}
+                </span>
+              </div>
+              <Input
+                type="number"
+                min="0"
+                value={primaryActual}
+                onChange={(e) => setPrimaryActual(Math.max(0, Number(e.target.value)))}
+                disabled={row.teachingLevel === "SECONDARY"}
+                placeholder="Nhập số tiết C1"
+              />
             </div>
-            <Input
-              type="number"
-              min="0"
-              value={primaryActual}
-              onChange={(e) => setPrimaryActual(Math.max(0, Number(e.target.value)))}
-              disabled={row.teachingLevel === "SECONDARY"}
-              placeholder="Nhập số tiết C1"
-            />
-            <p className="text-[11px] text-teal-700">
-              Đơn giá C1: {row.primaryRate > 0 ? formatCurrency(row.primaryRate) : "Chưa cài đặt"}/tiết
-            </p>
+
+            <div className="space-y-1.5 border-t border-teal-200/60 pt-2.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-teal-900">
+                  Đơn giá Cấp 1 (VND/tiết)
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setPrimaryRate(120000)}
+                  className="text-[11px] font-semibold text-teal-700 hover:underline"
+                >
+                  Đặt lại chuẩn (120k)
+                </button>
+              </div>
+              <Input
+                type="number"
+                step="5000"
+                min="0"
+                value={primaryRate}
+                onChange={(e) => setPrimaryRate(Math.max(0, Number(e.target.value)))}
+                disabled={row.teachingLevel === "SECONDARY"}
+                placeholder="Ví dụ: 120000"
+              />
+              <p className="text-[11px] text-teal-700 font-medium">
+                Áp dụng: {formatCurrency(primaryRate)}/tiết
+              </p>
+            </div>
           </div>
 
-          {/* Cấp 2 hours override */}
-          <div className="space-y-1.5 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold text-indigo-900 uppercase">
-                Tiết thực dạy Cấp 2
-              </Label>
-              <span className="text-xs text-indigo-700">
-                Định mức: {row.secondaryStandard ?? "—"}
-              </span>
+          {/* Cấp 2 hours & rate */}
+          <div className="space-y-3 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-3.5">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-indigo-900 uppercase">
+                  Tiết thực dạy Cấp 2
+                </Label>
+                <span className="text-xs text-indigo-700">
+                  Định mức: {row.secondaryStandard ?? "—"}
+                </span>
+              </div>
+              <Input
+                type="number"
+                min="0"
+                value={secondaryActual}
+                onChange={(e) => setSecondaryActual(Math.max(0, Number(e.target.value)))}
+                disabled={row.teachingLevel === "PRIMARY"}
+                placeholder="Nhập số tiết C2"
+              />
             </div>
-            <Input
-              type="number"
-              min="0"
-              value={secondaryActual}
-              onChange={(e) => setSecondaryActual(Math.max(0, Number(e.target.value)))}
-              disabled={row.teachingLevel === "PRIMARY"}
-              placeholder="Nhập số tiết C2"
-            />
-            <p className="text-[11px] text-indigo-700">
-              Đơn giá C2: {row.secondaryRate > 0 ? formatCurrency(row.secondaryRate) : "Chưa cài đặt"}/tiết
-            </p>
+
+            <div className="space-y-1.5 border-t border-indigo-200/60 pt-2.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-indigo-900">
+                  Đơn giá Cấp 2 (VND/tiết)
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setSecondaryRate(150000)}
+                  className="text-[11px] font-semibold text-indigo-700 hover:underline"
+                >
+                  Đặt lại chuẩn (150k)
+                </button>
+              </div>
+              <Input
+                type="number"
+                step="5000"
+                min="0"
+                value={secondaryRate}
+                onChange={(e) => setSecondaryRate(Math.max(0, Number(e.target.value)))}
+                disabled={row.teachingLevel === "PRIMARY"}
+                placeholder="Ví dụ: 150000"
+              />
+              <p className="text-[11px] text-indigo-700 font-medium">
+                Áp dụng: {formatCurrency(secondaryRate)}/tiết
+              </p>
+            </div>
           </div>
         </div>
 
