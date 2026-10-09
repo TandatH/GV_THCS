@@ -64,8 +64,8 @@ export function PrincipalPayrollTable({
               <th className="px-3.5 py-3.5">Họ và Tên</th>
               <th className="px-3.5 py-3.5">Cấp dạy</th>
               <th className="px-3.5 py-3.5">Tổ BM</th>
-              <th className="px-3.5 py-3.5 text-center">Tiết Cấp 1 (Thực/Định mức)</th>
-              <th className="px-3.5 py-3.5 text-center">Tiết Cấp 2 (Thực/Định mức)</th>
+              <th className="px-3.5 py-3.5 text-center">Tiết Cấp 1 (Thực/ĐM · Đơn giá)</th>
+              <th className="px-3.5 py-3.5 text-center">Tiết Cấp 2 (Thực/ĐM · Đơn giá)</th>
               <th className="px-3.5 py-3.5 text-center">Dạy thay (+)</th>
               <th className="px-3.5 py-3.5 text-center">Báo vắng (-)</th>
               <th className="px-3.5 py-3.5 text-center">Tiết phụ trội</th>
@@ -130,13 +130,21 @@ export function PrincipalPayrollTable({
                   {/* Tiết Cấp 1 */}
                   <td className="px-3.5 py-3 text-center text-xs">
                     {teachesPrimary ? (
-                      <span className="inline-block rounded-md bg-teal-50/60 px-2 py-1 font-medium text-teal-950">
-                        <strong className="font-extrabold text-teal-700 text-sm">
-                          {row.primaryActual}
-                        </strong>
-                        <span className="text-slate-400 mx-1">/</span>
-                        <span>{row.primaryStandard ?? "—"}</span>
-                      </span>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="inline-block rounded-md bg-teal-50/80 px-2 py-0.5 font-medium text-teal-950">
+                          <strong className="font-extrabold text-teal-700 text-sm">
+                            {row.primaryActual}
+                          </strong>
+                          <span className="text-slate-400 mx-1">/</span>
+                          <span>{row.primaryStandard ?? "—"}</span>
+                        </span>
+                        <div className="text-[11px] font-semibold text-teal-700">
+                          {formatCurrency(row.primaryRate)}/t
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-700">
+                          = {formatCurrency(row.primaryAmount)}
+                        </div>
+                      </div>
                     ) : (
                       <span className="text-slate-300 font-bold">—</span>
                     )}
@@ -145,13 +153,21 @@ export function PrincipalPayrollTable({
                   {/* Tiết Cấp 2 */}
                   <td className="px-3.5 py-3 text-center text-xs">
                     {teachesSecondary ? (
-                      <span className="inline-block rounded-md bg-indigo-50/60 px-2 py-1 font-medium text-indigo-950">
-                        <strong className="font-extrabold text-indigo-700 text-sm">
-                          {row.secondaryActual}
-                        </strong>
-                        <span className="text-slate-400 mx-1">/</span>
-                        <span>{row.secondaryStandard ?? "—"}</span>
-                      </span>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="inline-block rounded-md bg-indigo-50/80 px-2 py-0.5 font-medium text-indigo-950">
+                          <strong className="font-extrabold text-indigo-700 text-sm">
+                            {row.secondaryActual}
+                          </strong>
+                          <span className="text-slate-400 mx-1">/</span>
+                          <span>{row.secondaryStandard ?? "—"}</span>
+                        </span>
+                        <div className="text-[11px] font-semibold text-indigo-700">
+                          {formatCurrency(row.secondaryRate)}/t
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-700">
+                          = {formatCurrency(row.secondaryAmount)}
+                        </div>
+                      </div>
                     ) : (
                       <span className="text-slate-300 font-bold">—</span>
                     )}
@@ -211,7 +227,13 @@ export function PrincipalPayrollTable({
                           ? `(+${formatCurrency(row.adjustmentAmount)})`
                           : `(${formatCurrency(row.adjustmentAmount)})`}
                       </div>
-                    ) : null}
+                    ) : (
+                      teachesPrimary && teachesSecondary ? (
+                        <div className="text-[10px] text-muted-foreground">
+                          {formatCurrency(row.primaryAmount)} + {formatCurrency(row.secondaryAmount)}
+                        </div>
+                      ) : null
+                    )}
                   </td>
 
                   {/* Trạng thái */}
