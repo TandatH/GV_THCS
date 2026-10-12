@@ -201,10 +201,6 @@ export function PrincipalPayrollTable({
                       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800">
                         +{row.overtimePeriods}
                       </span>
-                    ) : row.overtimePeriods < 0 ? (
-                      <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 font-bold text-rose-800">
-                        {row.overtimePeriods}
-                      </span>
                     ) : (
                       <span className="text-slate-400">0</span>
                     )}
