@@ -230,10 +230,10 @@ export function AttendanceTableView({
                     {isSubstituted ? (
                       <div>
                         <div className="font-semibold text-foreground flex items-center gap-1 flex-wrap">
-                          <span className="text-slate-500 line-through text-xs">
-                            {schedule.resolvedTeacherName}
+                          <span className="text-slate-500 line-through text-xs" title="Giáo viên được phân công gốc (vắng/nghỉ)">
+                            {schedule.originalTeacherName || schedule.resolvedTeacherName}
                           </span>
-                          <span className="text-blue-700 font-bold">
+                          <span className="text-blue-700 font-bold" title="Giáo viên thực hiện dạy thay">
                             ➔ {schedule.effectiveTeacherName}
                           </span>
                           <span className="rounded bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-800">

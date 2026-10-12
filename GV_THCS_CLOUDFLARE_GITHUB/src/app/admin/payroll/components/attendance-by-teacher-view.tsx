@@ -28,7 +28,7 @@ export function AttendanceByTeacherView({
   const groupedByTeacher = useMemo(() => {
     const map = new Map<string, ScheduleWithMeta[]>();
     for (const schedule of schedules) {
-      const teacherId = String(schedule.actualTeacherId || schedule.teacherId || "unknown");
+      const teacherId = String(schedule.effectiveTeacherId || schedule.actualTeacherId || schedule.teacherId || "unknown");
       if (!map.has(teacherId)) map.set(teacherId, []);
       map.get(teacherId)!.push(schedule);
     }
@@ -37,7 +37,7 @@ export function AttendanceByTeacherView({
       .map(([teacherId, items]) => {
         const sortedItems = [...items].sort((a, b) => a.calculatedDate.localeCompare(b.calculatedDate) || a.startPeriodNum - b.startPeriodNum);
         const meta = items[0];
-        const teacherName = meta?.resolvedTeacherName || teacherId;
+        const teacherName = meta?.effectiveTeacherName || meta?.resolvedTeacherName || teacherId;
         const departmentName = meta?.resolvedDepartmentName || "—";
         const teacherType = meta?.teacherType || "";
 
@@ -213,7 +213,7 @@ export function AttendanceByTeacherView({
                           </span>
                         ) : schedule.effectiveStatus === "adjusted" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-semibold">
-                            <UserCheck className="h-3 w-3" /> Dạy thay: {schedule.effectiveTeacherName}
+                            <UserCheck className="h-3 w-3" /> {schedule.isSubstituted ? `Dạy thay cho ${schedule.originalTeacherName || schedule.resolvedTeacherName}` : `Dạy thay: ${schedule.effectiveTeacherName}`}
                           </span>
                         ) : schedule.effectiveStatus === "absent" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-rose-700 font-semibold">
