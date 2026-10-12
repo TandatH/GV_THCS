@@ -483,12 +483,12 @@ export default function AdminPayrollPage() {
           }
         }
 
-        // Overtime (tiết phụ trội / chênh lệch định mức)
+        // Overtime (Tiết phụ trội: chỉ tính khi thực dạy vượt định mức, không để số âm)
         let overtimePeriods = 0;
         if (!isAdjunct) {
-          const pDiff = primaryStandard !== null ? primaryActual - primaryStandard : 0;
-          const sDiff = secondaryStandard !== null ? secondaryActual - secondaryStandard : 0;
-          overtimePeriods = pDiff + sDiff;
+          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
+          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
+          overtimePeriods = pOver + sOver;
         }
 
         // Rates (Đơn giá theo cấp học)
