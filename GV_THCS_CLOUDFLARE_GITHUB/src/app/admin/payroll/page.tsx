@@ -268,10 +268,36 @@ export default function AdminPayrollPage() {
         const isToday = calculatedDate === today;
         const isUpcoming = Boolean(calculatedDate && calculatedDate > today);
 
+        const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+        const originalTeacherDoc = teacherById.get(originalTeacherId);
+        const originalTeacherName =
+          originalTeacherDoc?.fullName ||
+          schedule.originalTeacherName ||
+          schedule.teacherName ||
+          originalTeacherId ||
+          "—";
+        const originalTeacherCode = originalTeacherDoc?.teacherCode || "";
+
         const checkinDoc = checkinByScheduleId.get(schedule.id);
-        const assignedTeacher = teacherById.get(String(schedule.actualTeacherId || schedule.teacherId));
-        const resolvedTeacherName = assignedTeacher?.fullName || schedule.teacherName || schedule.teacherId || "—";
-        const resolvedTeacherCode = assignedTeacher?.teacherCode || "";
+        const effectiveTeacherId = String(
+          checkinDoc?.teacherId || schedule.actualTeacherId || schedule.teacherId || ""
+        );
+        const effectiveTeacherDoc = teacherById.get(effectiveTeacherId);
+        const effectiveTeacherName =
+          checkinDoc?.teacherName ||
+          effectiveTeacherDoc?.fullName ||
+          (effectiveTeacherId === originalTeacherId ? originalTeacherName : effectiveTeacherId) ||
+          "—";
+
+        const isSubstituted = Boolean(
+          originalTeacherId &&
+          effectiveTeacherId &&
+          effectiveTeacherId !== originalTeacherId
+        );
+
+        const assignedTeacher = effectiveTeacherDoc || originalTeacherDoc;
+        const resolvedTeacherName = originalTeacherName;
+        const resolvedTeacherCode = originalTeacherCode || assignedTeacher?.teacherCode || "";
 
         const deptId = String(schedule.departmentId || assignedTeacher?.departmentId || "");
         const deptDoc = departmentById.get(deptId);
@@ -299,7 +325,7 @@ export default function AdminPayrollPage() {
             effectiveStatus = "absent";
           } else if (
             checkinDoc.status === "adjusted" ||
-            (checkinDoc.teacherId && checkinDoc.teacherId !== (schedule.actualTeacherId || schedule.teacherId))
+            isSubstituted
           ) {
             effectiveStatus = "adjusted";
           } else {
@@ -310,15 +336,6 @@ export default function AdminPayrollPage() {
         } else {
           effectiveStatus = "upcoming";
         }
-
-        const effectiveTeacherId = String(checkinDoc?.teacherId || schedule.actualTeacherId || schedule.teacherId || "");
-        const effectiveTeacherDoc = teacherById.get(effectiveTeacherId);
-        const effectiveTeacherName = checkinDoc?.teacherName || effectiveTeacherDoc?.fullName || resolvedTeacherName;
-        const isSubstituted = Boolean(
-          effectiveTeacherId &&
-            effectiveTeacherId !== String(schedule.originalTeacherId || schedule.teacherId || "") &&
-            effectiveStatus === "adjusted"
-        );
 
         const cleanedNote = cleanNoteText(checkinDoc?.adjustmentReason, checkinDoc?.note);
 
@@ -331,6 +348,8 @@ export default function AdminPayrollPage() {
           isPast,
           isToday,
           isUpcoming,
+          originalTeacherId,
+          originalTeacherName,
           resolvedTeacherName,
           resolvedTeacherCode,
           resolvedDepartmentName,
@@ -388,10 +407,11 @@ export default function AdminPayrollPage() {
           (s) =>
             s.effectiveTeacherId === teacher.id ||
             s.actualTeacherId === teacher.id ||
-            s.teacherId === teacher.id
+            s.teacherId === teacher.id ||
+            s.originalTeacherId === teacher.id
         );
 
-        // Confirmed or adjusted teaching checkins
+        // Confirmed or adjusted teaching checkins (Người thực dạy)
         const validTeachingSchedules = monthProcessedSchedules.filter(
           (s) =>
             s.effectiveTeacherId === teacher.id &&
@@ -405,9 +425,22 @@ export default function AdminPayrollPage() {
         const rawPrimaryActual = primarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
         const rawSecondaryActual = secondarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
 
-        // Substitutions and Absences
-        const substituteCount = validTeachingSchedules.filter((s) => s.isSubstituted).length;
-        const absentCount = teacherSchedules.filter((s) => s.effectiveStatus === "absent").length;
+        // Substitutions (Dạy thay +): Số tiết GV này đi dạy thay cho người khác
+        const substituteSchedules = validTeachingSchedules.filter((s) => s.isSubstituted);
+        const substituteCount = substituteSchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
+
+        // Absences (Báo vắng -):
+        // 1. Các lịch bị đánh dấu vắng (absent)
+        // 2. Các lịch vốn của GV này nhưng nghỉ/vắng và có người khác dạy thay (trừ tiết của GV nghỉ để chuyển cho người dạy thay)
+        const absentSchedules = teacherSchedules.filter((s) => {
+          if (s.effectiveStatus === "absent") {
+            return (s.originalTeacherId || s.teacherId) === teacher.id || s.effectiveTeacherId === teacher.id;
+          }
+          const wasOriginalTeacher = (s.originalTeacherId || s.teacherId) === teacher.id;
+          const anotherTeacherTaught = s.effectiveTeacherId && s.effectiveTeacherId !== teacher.id;
+          return wasOriginalTeacher && anotherTeacherTaught && ["confirmed", "adjusted"].includes(s.effectiveStatus);
+        });
+        const absentCount = absentSchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
 
         // Level classification
         const teachingLevel = resolveTeacherLevel(teacher, rawPrimaryActual, rawSecondaryActual);
@@ -450,12 +483,12 @@ export default function AdminPayrollPage() {
           }
         }
 
-        // Overtime (tiết phụ trội)
+        // Overtime (tiết phụ trội / chênh lệch định mức)
         let overtimePeriods = 0;
         if (!isAdjunct) {
-          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
-          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
-          overtimePeriods = pOver + sOver;
+          const pDiff = primaryStandard !== null ? primaryActual - primaryStandard : 0;
+          const sDiff = secondaryStandard !== null ? secondaryActual - secondaryStandard : 0;
+          overtimePeriods = pDiff + sDiff;
         }
 
         // Rates (Đơn giá theo cấp học)
@@ -704,8 +737,11 @@ export default function AdminPayrollPage() {
     if (!user) return;
     const existing = checkinByScheduleId.get(schedule.id);
     const actualTeacherId = override?.actualTeacherId || String(schedule.actualTeacherId || schedule.teacherId || "");
+    const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+    const isSubstitutedSchedule = Boolean(actualTeacherId && originalTeacherId && actualTeacherId !== originalTeacherId);
     const teacher = teacherById.get(actualTeacherId);
-    const status = override?.status || "confirmed";
+    const originalTeacher = teacherById.get(originalTeacherId);
+    const status = override?.status || (isSubstitutedSchedule ? "adjusted" : "confirmed");
     const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
     const payable = ["confirmed", "adjusted"].includes(status);
 
@@ -734,13 +770,17 @@ export default function AdminPayrollPage() {
         payable,
         status,
         actualTeacherId,
-        originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+        originalTeacherId,
         teacherType: teacher?.teacherType || schedule.teacherType || "",
         attendanceSource: "admin_confirmation",
         confirmedAt: serverTimestamp(),
         confirmedBy: user.uid,
         adjustedBy: user.uid,
-        adjustmentReason: override?.reason || "Xác nhận đã dạy",
+        adjustmentReason:
+          override?.reason ||
+          (isSubstitutedSchedule
+            ? `Dạy thay cho ${originalTeacher?.fullName || originalTeacherId}`
+            : "Xác nhận đã dạy"),
         note: override?.note || "",
         updatedAt: serverTimestamp(),
         updatedBy: user.uid,
@@ -766,9 +806,16 @@ export default function AdminPayrollPage() {
       for (const schedule of chunk) {
         const existing = checkinByScheduleId.get(schedule.id);
         const actualTeacherId = String(schedule.actualTeacherId || schedule.teacherId || "");
+        const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+        const isSubstitutedSchedule = Boolean(actualTeacherId && originalTeacherId && actualTeacherId !== originalTeacherId);
         const teacher = teacherById.get(actualTeacherId);
+        const originalTeacher = teacherById.get(originalTeacherId);
         const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
-        const payable = status === "confirmed";
+        const resolvedStatus = status === "confirmed" && isSubstitutedSchedule ? "adjusted" : status;
+        const payable = ["confirmed", "adjusted"].includes(resolvedStatus);
+        const resolvedReason = isSubstitutedSchedule
+          ? `Dạy thay cho ${originalTeacher?.fullName || originalTeacherId}`
+          : reason;
 
         const classDoc = classById.get(String(schedule.classId || ""));
         const subjectDoc = subjectById.get(String(schedule.subjectId || ""));
@@ -794,15 +841,15 @@ export default function AdminPayrollPage() {
             periodCount,
             payablePeriods: payable ? periodCount : 0,
             payable,
-            status,
+            status: resolvedStatus,
             actualTeacherId,
-            originalTeacherId: schedule.originalTeacherId || schedule.teacherId || "",
+            originalTeacherId,
             teacherType: teacher?.teacherType || schedule.teacherType || "",
             attendanceSource: "admin_confirmation_batch",
             confirmedAt: serverTimestamp(),
             confirmedBy: user.uid,
             adjustedBy: user.uid,
-            adjustmentReason: reason,
+            adjustmentReason: resolvedReason,
             note: "",
             updatedAt: serverTimestamp(),
             updatedBy: user.uid,
@@ -821,7 +868,9 @@ export default function AdminPayrollPage() {
     setError("");
     try {
       await writeCheckin(schedule);
-      toast.success(`Đã xác nhận tiết dạy của ${schedule.resolvedTeacherName}`);
+      const isSub = schedule.isSubstituted;
+      const targetName = isSub ? schedule.effectiveTeacherName : (schedule.resolvedTeacherName || schedule.effectiveTeacherName);
+      toast.success(isSub ? `Đã xác nhận tiết dạy thay của ${targetName}` : `Đã xác nhận tiết dạy của ${targetName}`);
     } catch (submitError) {
       setError(firebaseDataErrorMessage(submitError));
     } finally {

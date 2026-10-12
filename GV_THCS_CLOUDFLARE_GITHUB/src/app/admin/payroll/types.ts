@@ -22,6 +22,8 @@ export interface ScheduleWithMeta extends Row {
   isPast: boolean;
   isToday: boolean;
   isUpcoming: boolean;
+  originalTeacherId?: string;
+  originalTeacherName?: string;
   resolvedTeacherName: string;
   resolvedTeacherCode: string;
   resolvedDepartmentName: string;
