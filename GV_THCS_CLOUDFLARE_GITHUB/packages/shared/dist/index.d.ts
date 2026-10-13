@@ -35,8 +35,8 @@ export declare const roleSchema: z.ZodEnum<{
     giaovien: "giaovien";
 }>;
 export declare const teacherTypeSchema: z.ZodEnum<{
-    co_huu: "co_huu";
     thinh_giang: "thinh_giang";
+    co_huu: "co_huu";
 }>;
 export declare const schoolLevelSchema: z.ZodEnum<{
     primary: "primary";
@@ -82,8 +82,8 @@ export declare const teacherSchema: z.ZodObject<{
     degree: z.ZodString;
     startDate: z.ZodString;
     teacherType: z.ZodEnum<{
-        co_huu: "co_huu";
         thinh_giang: "thinh_giang";
+        co_huu: "co_huu";
     }>;
     standardPeriodsPerWeek: z.ZodNullable<z.ZodNumber>;
     ratePerPeriod: z.ZodNullable<z.ZodNumber>;
@@ -141,11 +141,12 @@ export declare const scheduleSchema: z.ZodObject<{
     weekStart: z.ZodString;
     dayOfWeek: z.ZodNumber;
     startPeriod: z.ZodNumber;
+    periodRangeConvention: z.ZodOptional<z.ZodLiteral<"exclusive">>;
     endPeriod: z.ZodNumber;
     status: z.ZodDefault<z.ZodEnum<{
+        cancelled: "cancelled";
         scheduled: "scheduled";
         needs_attention: "needs_attention";
-        cancelled: "cancelled";
     }>>;
     confirmationDeadline: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     cancellationReason: z.ZodDefault<z.ZodOptional<z.ZodString>>;
@@ -238,8 +239,8 @@ export declare const attendanceSchema: z.ZodObject<{
     scheduleId: z.ZodString;
     status: z.ZodEnum<{
         confirmed: "confirmed";
-        absent: "absent";
         adjusted: "adjusted";
+        absent: "absent";
     }>;
     actualTeacherId: z.ZodOptional<z.ZodString>;
     periodCount: z.ZodOptional<z.ZodNumber>;
@@ -264,3 +265,4 @@ export interface SubstituteCandidate {
 export declare function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean;
 export declare function scheduleResourceSlotKeys(input: Pick<ScheduleInput, "semesterId" | "weekStart" | "dayOfWeek" | "startPeriod" | "endPeriod" | "classId" | "roomId">, teacherId: string): string[];
 export declare function scheduleSlotKeys(input: ScheduleInput): string[];
+export * from "./payroll.js";
