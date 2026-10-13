@@ -24,10 +24,55 @@ export function payrollScheduleDate(schedule: PayrollRecord): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function scheduledPeriodCount(schedule: PayrollRecord): number {
+export type PeriodRangeConvention = "exclusive" | "inclusive";
+
+export function resolveSchedulePeriodRange(schedule: PayrollRecord) {
   const start = finiteNumber(schedule.startPeriod);
-  const end = finiteNumber(schedule.endPeriod);
-  return Math.max(0, end > start && start > 0 ? end - start : finiteNumber(schedule.periodCount));
+  const rawEnd = finiteNumber(schedule.endPeriod);
+  const storedCount = finiteNumber(schedule.periodCount);
+  const validStart = Number.isInteger(start) && start > 0;
+  const validEnd = Number.isInteger(rawEnd) && rawEnd > 0;
+  const validStoredCount = Number.isInteger(storedCount) && storedCount > 0;
+  // Lịch hiện tại lưu mốc kết thúc loại trừ: chọn tiết 1–2 => start=1, end=3.
+  // Chỉ dùng quy ước bao gồm tiết cuối khi có cờ rõ ràng hoặc số tiết lịch cũ xác nhận.
+  // Không thể suy ra ý định nhập tay chỉ từ cặp 1,2; mặc định giữ quy ước hệ thống.
+  const convention: PeriodRangeConvention = schedule.periodRangeConvention === "inclusive"
+    || (schedule.periodRangeConvention !== "exclusive" && validStart && validEnd
+      && validStoredCount && storedCount === rawEnd - start + 1) ? "inclusive" : "exclusive";
+  if (validStart && validEnd) {
+    const end = rawEnd + (convention === "inclusive" ? 1 : 0);
+    const count = Math.max(0, end - start);
+    return { start, end, last: count > 0 ? end - 1 : null, count, convention };
+  }
+  // Không hồi sinh khoảng tiết đảo ngược/thập phân bằng periodCount cũ.
+  const malformedRange = (schedule.startPeriod != null && schedule.startPeriod !== "" && !validStart)
+    || (schedule.endPeriod != null && schedule.endPeriod !== "" && !validEnd);
+  const count = !malformedRange && validStoredCount ? storedCount : 0;
+  return { start: validStart ? start : null, end: validStart && count > 0 ? start + count : null,
+    last: validStart && count > 0 ? start + count - 1 : null, count, convention };
+}
+
+export function scheduledPeriodCount(schedule: PayrollRecord): number {
+  return resolveSchedulePeriodRange(schedule).count;
+}
+
+export function normalizeSchedulePeriodRange<T extends PayrollRecord>(schedule: T): T {
+  const range = resolveSchedulePeriodRange(schedule);
+  // Chuẩn hóa bản đọc trong bộ nhớ cho lịch/bảng in; không tự ghi đổi dữ liệu Firestore.
+  if (range.count <= 0 || range.start === null || range.end === null) return schedule;
+  return { ...schedule, startPeriod: range.start, endPeriod: range.end,
+    periodCount: range.count, periodRangeConvention: "exclusive" };
+}
+
+// Một hàm cho cả nhãn tiết và số tiết, tránh giao diện ghi 1 tiết nhưng lương tính 0.
+export function formatPeriodDisplay(startOrSchedule: unknown, endPeriod?: unknown, metadata: PayrollRecord = {}) {
+  const schedule = typeof startOrSchedule === "object" && startOrSchedule !== null
+    ? startOrSchedule as PayrollRecord : { ...metadata, startPeriod: startOrSchedule, endPeriod };
+  const range = resolveSchedulePeriodRange(schedule);
+  const label = range.count > 0 && range.start !== null && range.last !== null
+    ? range.start === range.last ? `Tiết ${range.start}` : `Tiết ${range.start}–${range.last}`
+    : range.count > 0 ? "Chưa rõ khoảng tiết" : "Khoảng tiết không hợp lệ";
+  return { ...range, label, display: `${label} (${range.count} tiết)` };
 }
 
 export function payrollSchoolLevel(schedule: PayrollRecord, classDoc?: PayrollRecord): PayrollSchoolLevel {
@@ -168,4 +213,34 @@ export function teacherPayrollStandards(teacher: PayrollRecord, primaryActual: n
     standardPeriods: primaryStandard === null && secondaryStandard === null ? null : (primaryStandard ?? 0) + (secondaryStandard ?? 0),
     overtimePeriods: (primaryStandard === null ? 0 : Math.max(0, primaryActual - primaryStandard))
       + (secondaryStandard === null ? 0 : Math.max(0, secondaryActual - secondaryStandard)) };
+}
+
+export interface PayrollSummaryInput {
+  primaryActual: number;
+  secondaryActual: number;
+  substituteCount: number;
+  absentCount: number;
+  totalAmount: number;
+  pendingPastPeriods?: number;
+  status: string;
+}
+
+export function summarizePayrollRows(rows: PayrollSummaryInput[]) {
+  // KPI và chân bảng cùng cộng các dòng sau lọc, không cộng/trừ lại chỉ số đối soát.
+  return rows.reduce((total, row) => {
+    total.totalTeachers += 1;
+    total.primaryPeriods += row.primaryActual;
+    total.secondaryPeriods += row.secondaryActual;
+    total.totalPeriods += row.primaryActual + row.secondaryActual;
+    total.substitutePeriods += row.substituteCount;
+    total.absentPeriods += row.absentCount;
+    total.pendingPastPeriods += row.pendingPastPeriods ?? 0;
+    total.totalEstimatedPayroll += row.totalAmount;
+    if (row.status === "draft" || row.status === "pending_approval") total.pendingApprovalTeachers += 1;
+    if (["approved", "locked", "paid"].includes(row.status)) total.approvedTeachers += 1;
+    if (row.status === "review_required") total.reviewRequiredTeachers += 1;
+    return total;
+  }, { totalTeachers: 0, primaryPeriods: 0, secondaryPeriods: 0, totalPeriods: 0, substitutePeriods: 0,
+    absentPeriods: 0, pendingPastPeriods: 0, totalEstimatedPayroll: 0, pendingApprovalTeachers: 0,
+    approvedTeachers: 0, reviewRequiredTeachers: 0 });
 }

@@ -142,6 +142,8 @@ export const scheduleSchema = z.object({
   weekStart: z.string().date(),
   dayOfWeek: z.number().int().min(2).max(7),
   startPeriod: z.number().int().min(1).max(20),
+  // Chuẩn lưu trữ: endPeriod là mốc sau tiết cuối (tiết 1–2 lưu 1–3).
+  periodRangeConvention: z.literal("exclusive").optional(),
   endPeriod: z.number().int().min(2).max(21),
   status: z.enum(["scheduled", "needs_attention", "cancelled"]).default("scheduled"),
   confirmationDeadline: z.string().datetime().nullish(),
@@ -269,3 +271,4 @@ export function scheduleResourceSlotKeys(
 export function scheduleSlotKeys(input: ScheduleInput) {
   return scheduleResourceSlotKeys(input, input.teacherId);
 }
+export * from "./payroll.js";
