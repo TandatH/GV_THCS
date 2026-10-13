@@ -29,6 +29,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { finiteNumber, indexMonthlyCheckins, resolveTeachingAttendance, scheduledPeriodCount,
+  teacherAttendanceTotals, teacherPayrollAmounts, teacherPayrollStandards } from "@school/shared";
+
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "@/components/ui";
@@ -78,12 +81,21 @@ function csvCell(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
-function textValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : "";
-}
-
-function rateDocId(teacherId: string, subjectId: string) {
-  return `${teacherId}_${subjectId}`;
+function payrollSummaryPayload(row: TeacherPayrollSummaryRow) {
+  const standardPeriods = row.primaryStandard === null && row.secondaryStandard === null
+    ? null : (row.primaryStandard ?? 0) + (row.secondaryStandard ?? 0);
+  const actualPeriods = row.primaryActual + row.secondaryActual;
+  return {
+    teacherName: row.teacherName, teacherType: row.teacherType,
+    primaryActual: row.primaryActual, secondaryActual: row.secondaryActual, actualPeriods,
+    primaryRate: row.primaryRate, secondaryRate: row.secondaryRate,
+    primaryAmount: row.primaryAmount, secondaryAmount: row.secondaryAmount,
+    primaryStandard: row.primaryStandard, secondaryStandard: row.secondaryStandard, standardPeriods,
+    differencePeriods: standardPeriods === null ? null : actualPeriods - standardPeriods,
+    substituteCount: row.substituteCount, absentCount: row.absentCount, overtimePeriods: row.overtimePeriods,
+    adjustmentAmount: row.adjustmentAmount, adjustmentReason: row.adjustmentReason,
+    amount: row.totalAmount, totalAmount: row.totalAmount, calculationVersion: 3,
+  };
 }
 
 export default function AdminPayrollPage() {
@@ -121,11 +133,13 @@ export default function AdminPayrollPage() {
   const [departments, setDepartments] = useState<Row[]>([]);
   const [checkins, setCheckins] = useState<Row[]>([]);
   const [payrollRows, setPayrollRows] = useState<Row[]>([]);
-  const [rateRows, setRateRows] = useState<Row[]>([]);
+  const [payrollSettings, setPayrollSettings] = useState<Row | null>(null);
   const [auditRows, setAuditRows] = useState<Row[]>([]);
 
   // Loading & State flags
-  const [loading, setLoading] = useState(true);
+  const [referenceLoading, setLoading] = useState(true);
+  const [monthLoading, setMonthLoading] = useState(true);
+  const loading = referenceLoading || monthLoading;
   const [error, setError] = useState("");
   const [calculating, setCalculating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -144,7 +158,7 @@ export default function AdminPayrollPage() {
   const [rateOpen, setRateOpen] = useState(false);
   const [rateSubmitting, setRateSubmitting] = useState(false);
   const [rateError, setRateError] = useState("");
-  const [rateForm, setRateForm] = useState({ teacherId: "", subjectId: "", ratePerPeriod: "" });
+  const [rateForm, setRateForm] = useState({ teacherId: "", schoolLevel: "secondary", ratePerPeriod: "" });
 
   const selectedYear = selectedMonth.slice(0, 4);
   const selectedMonthNumber = selectedMonth.slice(5, 7);
@@ -153,12 +167,21 @@ export default function AdminPayrollPage() {
   useEffect(() => {
     setLoading(true);
     setError("");
+    const loaded = new Set<string>();
+    const markLoaded = (name: string) => {
+      loaded.add(name);
+      if (loaded.size === 4) setLoading(false);
+    };
     const unsubscribers = [
+      onSnapshot(doc(firestore, "systemSettings", "payroll"), (snapshot) => {
+        setPayrollSettings(snapshot.exists() ? { ...snapshot.data(), id: snapshot.id } : null);
+        markLoaded("settings");
+      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
       onSnapshot(
-        query(collection(firestore, "schedules"), limit(2000)),
+        collection(firestore, "schedules"),
         (snapshot) => {
           setSchedules(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-          setLoading(false);
+          markLoaded("schedules");
         },
         (snapshotError) => {
           setError(firebaseDataErrorMessage(snapshotError));
@@ -166,9 +189,10 @@ export default function AdminPayrollPage() {
         }
       ),
       onSnapshot(
-        query(collection(firestore, "teachers"), limit(500)),
+        collection(firestore, "teachers"),
         (snapshot) => {
           setTeachers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          markLoaded("teachers");
         },
         (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
@@ -180,11 +204,12 @@ export default function AdminPayrollPage() {
         (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
       onSnapshot(
-        query(collection(firestore, "classes"), limit(500)),
+        collection(firestore, "classes"),
         (snapshot) => {
           setClasses(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          markLoaded("classes");
         },
-        () => undefined
+        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
       onSnapshot(
         query(collection(firestore, "departments"), limit(500)),
@@ -192,13 +217,6 @@ export default function AdminPayrollPage() {
           setDepartments(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
         },
         () => undefined
-      ),
-      onSnapshot(
-        query(collection(firestore, "payrollRates"), limit(500)),
-        (snapshot) => {
-          setRateRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-        },
-        (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
       ...(showAuditLog
         ? [
@@ -216,18 +234,28 @@ export default function AdminPayrollPage() {
   }, [showAuditLog]);
 
   useEffect(() => {
+    setMonthLoading(true);
+    setCheckins([]);
+    setPayrollRows([]);
+    const loaded = new Set<string>();
+    const markLoaded = (name: string) => {
+      loaded.add(name);
+      if (loaded.size === 2) setMonthLoading(false);
+    };
     const unsubscribers = [
       onSnapshot(
-        query(collection(firestore, "checkins"), where("month", "==", selectedMonth), limit(2000)),
+        query(collection(firestore, "checkins"), where("month", "==", selectedMonth)),
         (snapshot) => {
           setCheckins(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          markLoaded("checkins");
         },
         (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
       onSnapshot(
-        query(collection(firestore, "payroll"), where("month", "==", selectedMonth), limit(500)),
+        query(collection(firestore, "payroll"), where("month", "==", selectedMonth)),
         (snapshot) => {
           setPayrollRows(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          markLoaded("payroll");
         },
         (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))
       ),
@@ -240,7 +268,7 @@ export default function AdminPayrollPage() {
   const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
   const classById = useMemo(() => new Map(classes.map((c) => [c.id, c])), [classes]);
   const departmentById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
-  const checkinByScheduleId = useMemo(() => new Map(checkins.map((c) => [String(c.scheduleId), c])), [checkins]);
+  const checkinByScheduleId = useMemo(() => indexMonthlyCheckins(checkins, selectedMonth) as Map<string, Row>, [checkins, selectedMonth]);
   const payrollByTeacherId = useMemo(() => new Map(payrollRows.map((p) => [String(p.teacherId), p])), [payrollRows]);
 
   // Department options
@@ -260,7 +288,7 @@ export default function AdminPayrollPage() {
     const today = localTodayDateOnly();
 
     return schedules
-      .filter((s) => s.status !== "cancelled" && dateFromScheduleRow(s).startsWith(selectedMonth))
+      .filter((s) => s.status !== "cancelled" && s.isActive !== false && dateFromScheduleRow(s).startsWith(selectedMonth))
       .map((schedule): ScheduleWithMeta => {
         const calculatedDate = dateFromScheduleRow(schedule);
         const dateDetails = parseScheduleDateDetails(calculatedDate);
@@ -268,7 +296,9 @@ export default function AdminPayrollPage() {
         const isToday = calculatedDate === today;
         const isUpcoming = Boolean(calculatedDate && calculatedDate > today);
 
-        const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+        const checkinDoc = checkinByScheduleId.get(schedule.id);
+        const attendance = resolveTeachingAttendance(schedule, checkinDoc, classById.get(String(schedule.classId)));
+        const originalTeacherId = attendance.originalTeacherId;
         const originalTeacherDoc = teacherById.get(originalTeacherId);
         const originalTeacherName =
           originalTeacherDoc?.fullName ||
@@ -278,14 +308,11 @@ export default function AdminPayrollPage() {
           "—";
         const originalTeacherCode = originalTeacherDoc?.teacherCode || "";
 
-        const checkinDoc = checkinByScheduleId.get(schedule.id);
-        const effectiveTeacherId = String(
-          checkinDoc?.teacherId || schedule.actualTeacherId || schedule.teacherId || ""
-        );
+        const effectiveTeacherId = attendance.effectiveTeacherId;
         const effectiveTeacherDoc = teacherById.get(effectiveTeacherId);
         const effectiveTeacherName =
-          checkinDoc?.teacherName ||
           effectiveTeacherDoc?.fullName ||
+          (checkinDoc?.teacherId === effectiveTeacherId ? checkinDoc.teacherName : "") ||
           (effectiveTeacherId === originalTeacherId ? originalTeacherName : effectiveTeacherId) ||
           "—";
 
@@ -318,24 +345,11 @@ export default function AdminPayrollPage() {
         const schoolLevel = resolveScheduleSchoolLevel(schedule, classDoc);
         const schoolLevelLabel = schoolLevel === "PRIMARY" ? "Cấp 1" : "Cấp 2";
 
-        // Effective status resolution
-        let effectiveStatus: ScheduleWithMeta["effectiveStatus"] = "upcoming";
-        if (checkinDoc) {
-          if (checkinDoc.status === "absent") {
-            effectiveStatus = "absent";
-          } else if (
-            checkinDoc.status === "adjusted" ||
-            isSubstituted
-          ) {
-            effectiveStatus = "adjusted";
-          } else {
-            effectiveStatus = "confirmed";
-          }
-        } else if (isPast) {
-          effectiveStatus = "pending_past";
-        } else {
-          effectiveStatus = "upcoming";
-        }
+        // Chỉ confirmed/adjusted hợp lệ mới được hưởng tiết; phân công thay chưa phải công dạy.
+        const effectiveStatus: ScheduleWithMeta["effectiveStatus"] =
+          attendance.status === "pending" || attendance.status === "cancelled"
+            ? (isPast ? "pending_past" : "upcoming")
+            : attendance.status;
 
         const cleanedNote = cleanNoteText(checkinDoc?.adjustmentReason, checkinDoc?.note);
 
@@ -358,7 +372,8 @@ export default function AdminPayrollPage() {
           startPeriodNum,
           endPeriodNum,
           periodLabel: periodInfo.label,
-          periodCountNum: periodInfo.count,
+          periodCountNum: attendance.periodCount,
+          attendance,
           checkinDoc,
           effectiveStatus,
           effectiveTeacherId,
@@ -401,7 +416,7 @@ export default function AdminPayrollPage() {
   // Multi-Level Teacher Summary Rows Calculation (Core Engine)
   const allTeacherPayrollRows = useMemo(() => {
     return teachers
-      .filter((t) => t.status !== "inactive")
+      .filter((t) => t.status === "active" && t.isActive !== false)
       .map((teacher): TeacherPayrollSummaryRow => {
         const teacherSchedules = monthProcessedSchedules.filter(
           (s) =>
@@ -411,36 +426,11 @@ export default function AdminPayrollPage() {
             s.originalTeacherId === teacher.id
         );
 
-        // Confirmed or adjusted teaching checkins (Người thực dạy)
-        const validTeachingSchedules = monthProcessedSchedules.filter(
-          (s) =>
-            s.effectiveTeacherId === teacher.id &&
-            ["confirmed", "adjusted"].includes(s.effectiveStatus)
-        );
-
-        // Primary vs Secondary breakdown
-        const primarySchedules = validTeachingSchedules.filter((s) => s.schoolLevel === "PRIMARY");
-        const secondarySchedules = validTeachingSchedules.filter((s) => s.schoolLevel === "SECONDARY");
-
-        const rawPrimaryActual = primarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
-        const rawSecondaryActual = secondarySchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
-
-        // Substitutions (Dạy thay +): Số tiết GV này đi dạy thay cho người khác
-        const substituteSchedules = validTeachingSchedules.filter((s) => s.isSubstituted);
-        const substituteCount = substituteSchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
-
-        // Absences (Báo vắng -):
-        // 1. Các lịch bị đánh dấu vắng (absent)
-        // 2. Các lịch vốn của GV này nhưng nghỉ/vắng và có người khác dạy thay (trừ tiết của GV nghỉ để chuyển cho người dạy thay)
-        const absentSchedules = teacherSchedules.filter((s) => {
-          if (s.effectiveStatus === "absent") {
-            return (s.originalTeacherId || s.teacherId) === teacher.id || s.effectiveTeacherId === teacher.id;
-          }
-          const wasOriginalTeacher = (s.originalTeacherId || s.teacherId) === teacher.id;
-          const anotherTeacherTaught = s.effectiveTeacherId && s.effectiveTeacherId !== teacher.id;
-          return wasOriginalTeacher && anotherTeacherTaught && ["confirmed", "adjusted"].includes(s.effectiveStatus);
-        });
-        const absentCount = absentSchedules.reduce((sum, s) => sum + s.periodCountNum, 0);
+        // Bù–trừ tuyệt đối: chỉ effectiveTeacherId nhận tiết xác nhận; A không được cộng lại.
+        // Tiết dạy thay của B nằm trong thực dạy, substituteCount chỉ là số đối chiếu.
+        const totals = teacherAttendanceTotals(teacher.id, monthProcessedSchedules.map((s) => s.attendance));
+        const { primaryActual: rawPrimaryActual, secondaryActual: rawSecondaryActual,
+          substituteCount, absentCount } = totals;
 
         // Level classification
         const teachingLevel = resolveTeacherLevel(teacher, rawPrimaryActual, rawSecondaryActual);
@@ -449,79 +439,17 @@ export default function AdminPayrollPage() {
         // Firestore payroll doc check
         const payrollDoc = payrollByTeacherId.get(teacher.id);
 
-        const primaryActual =
-          payrollDoc?.overridePrimaryActual !== undefined
-            ? Number(payrollDoc.overridePrimaryActual)
-            : rawPrimaryActual;
-        const secondaryActual =
-          payrollDoc?.overrideSecondaryActual !== undefined
-            ? Number(payrollDoc.overrideSecondaryActual)
-            : rawSecondaryActual;
-
-        // Standard periods (định mức tiết/tháng)
-        const isAdjunct = teacher.teacherType === "thinh_giang";
-        const standardWeeks = 4;
-        const teacherConfiguredWeekly = Number(teacher.standardPeriodsPerWeek || 0);
-
-        let primaryStandard: number | null = null;
-        let secondaryStandard: number | null = null;
-
-        if (!isAdjunct) {
-          if (teachingLevel === "PRIMARY") {
-            // Chuẩn Tiểu học: 20-23 tiết/tuần (mặc định 20 tiết * 4 tuần = 80 tiết)
-            primaryStandard = Math.round((teacherConfiguredWeekly || 20) * standardWeeks);
-            secondaryStandard = null;
-          } else if (teachingLevel === "SECONDARY") {
-            // Chuẩn THCS: 19 tiết/tuần (19 tiết * 4 tuần = 76 tiết)
-            primaryStandard = null;
-            secondaryStandard = Math.round((teacherConfiguredWeekly || 19) * standardWeeks);
-          } else {
-            // LIÊN CẤP (Cả 2 cấp): C1: 40 tiết | C2: 40 tiết (tổng 80 tiết chuẩn)
-            const totalStandard = Math.round((teacherConfiguredWeekly || 20) * standardWeeks);
-            primaryStandard = Math.round(totalStandard / 2); // 40 tiết C1
-            secondaryStandard = totalStandard - primaryStandard; // 40 tiết C2
-          }
-        }
-
-        // Overtime (Tiết phụ trội: chỉ tính khi thực dạy vượt định mức, không để số âm)
-        let overtimePeriods = 0;
-        if (!isAdjunct) {
-          const pOver = primaryStandard !== null ? Math.max(0, primaryActual - primaryStandard) : 0;
-          const sOver = secondaryStandard !== null ? Math.max(0, secondaryActual - secondaryStandard) : 0;
-          overtimePeriods = pOver + sOver;
-        }
-
-        // Rates (Đơn giá theo cấp học)
-        const primaryRate = Number(
-          payrollDoc?.overridePrimaryRate ||
-            teacher.primaryRatePerPeriod ||
-            (teachingLevel === "PRIMARY" ? teacher.ratePerPeriod : null) ||
-            teacher.ratePerPeriod ||
-            120000
-        );
-        const secondaryRate = Number(
-          payrollDoc?.overrideSecondaryRate ||
-            teacher.secondaryRatePerPeriod ||
-            (teachingLevel === "SECONDARY" ? teacher.ratePerPeriod : null) ||
-            teacher.ratePerPeriod ||
-            150000
-        );
-
-        // Thù lao độc lập cho từng cấp:
-        // Thù lao C1 = Số tiết C1 × Đơn giá C1
-        // Thù lao C2 = Số tiết C2 × Đơn giá C2
-        const primaryAmount = primaryActual * primaryRate;
-        const secondaryAmount = secondaryActual * secondaryRate;
-
-        const adjustmentAmount = Number(payrollDoc?.adjustmentAmount || 0);
+        // Số tiết lấy từ chấm công; sửa sai số tiết phải điều chỉnh từng lịch để không trả trùng.
+        const primaryActual = rawPrimaryActual;
+        const secondaryActual = rawSecondaryActual;
+        const teachingWeeks = Math.max(0, finiteNumber(payrollDoc?.teachingWeeks,
+          finiteNumber(payrollSettings?.monthTeachingWeeks?.[selectedMonth], finiteNumber(payrollSettings?.defaultTeachingWeeks, 4))));
+        const { primaryStandard, secondaryStandard, overtimePeriods } =
+          teacherPayrollStandards(teacher, primaryActual, secondaryActual, teachingWeeks);
+        // Cơ hữu/thỉnh giảng cùng công thức, không trừ định mức và không lấy amount cũ.
+        const { primaryRate, secondaryRate, primaryAmount, secondaryAmount, adjustmentAmount, totalAmount } =
+          teacherPayrollAmounts(teacher, totals, payrollDoc, payrollSettings ?? {});
         const adjustmentReason = String(payrollDoc?.adjustmentReason || "");
-
-        // Tổng thù lao/lương = Thù lao C1 + Thù lao C2 + Khoản điều chỉnh BGH
-        const calculatedTotal = Math.max(0, primaryAmount + secondaryAmount + adjustmentAmount);
-        const totalAmount =
-          payrollDoc?.amount !== undefined && payrollDoc?.amount !== null && Number(payrollDoc.amount) > 0
-            ? Number(payrollDoc.amount)
-            : calculatedTotal;
 
         const status: PayrollApprovalStatus = (payrollDoc?.status as PayrollApprovalStatus) || "pending_approval";
 
@@ -563,6 +491,7 @@ export default function AdminPayrollPage() {
     departmentById,
     monthProcessedSchedules,
     payrollByTeacherId,
+    payrollSettings,
     selectedMonth,
     teachers,
   ]);
@@ -735,21 +664,27 @@ export default function AdminPayrollPage() {
     override?: { status: "confirmed" | "adjusted" | "absent"; actualTeacherId: string; reason: string; note: string }
   ) {
     if (!user) return;
+    if (schedule.status === "cancelled" || schedule.teacherUnassigned === true) {
+      throw new Error("Lịch đã hủy hoặc chưa có người dạy; cần xử lý phân công trước khi xác nhận.");
+    }
     const existing = checkinByScheduleId.get(schedule.id);
-    const actualTeacherId = override?.actualTeacherId || String(schedule.actualTeacherId || schedule.teacherId || "");
-    const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+    const currentAttendance = resolveTeachingAttendance(schedule, existing);
+    const actualTeacherId = override?.actualTeacherId || currentAttendance.effectiveTeacherId;
+    const originalTeacherId = currentAttendance.originalTeacherId;
     const isSubstitutedSchedule = Boolean(actualTeacherId && originalTeacherId && actualTeacherId !== originalTeacherId);
     const teacher = teacherById.get(actualTeacherId);
     const originalTeacher = teacherById.get(originalTeacherId);
     const status = override?.status || (isSubstitutedSchedule ? "adjusted" : "confirmed");
-    const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+    const periodCount = scheduledPeriodCount(schedule);
+    if (!actualTeacherId || periodCount <= 0) throw new Error("Lịch thiếu giáo viên hoặc số tiết hợp lệ.");
     const payable = ["confirmed", "adjusted"].includes(status);
 
     const classDoc = classById.get(String(schedule.classId || ""));
     const subjectDoc = subjectById.get(String(schedule.subjectId || ""));
     const deptDoc = departmentById.get(String(schedule.departmentId || teacher?.departmentId || ""));
 
-    await setDoc(
+    const attendanceBatch = writeBatch(firestore);
+    attendanceBatch.set(
       doc(firestore, "checkins", `${selectedMonth}_${schedule.id}`),
       {
         scheduleId: schedule.id,
@@ -770,7 +705,9 @@ export default function AdminPayrollPage() {
         payable,
         status,
         actualTeacherId,
+        assignedTeacherId: String(schedule.actualTeacherId || schedule.effectiveTeacherId || schedule.teacherId || ""),
         originalTeacherId,
+        schoolLevel: resolveScheduleSchoolLevel(schedule, classDoc).toLowerCase(),
         teacherType: teacher?.teacherType || schedule.teacherType || "",
         attendanceSource: "admin_confirmation",
         confirmedAt: serverTimestamp(),
@@ -784,10 +721,17 @@ export default function AdminPayrollPage() {
         note: override?.note || "",
         updatedAt: serverTimestamp(),
         updatedBy: user.uid,
-        ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+        createdAt: existing?.id === `${selectedMonth}_${schedule.id}` ? existing.createdAt : serverTimestamp(),
+        createdBy: existing?.id === `${selectedMonth}_${schedule.id}` ? existing.createdBy : user.uid,
+        isActive: true,
       },
       { merge: true }
     );
+    // Cho người thực dạy xem lịch được điều chỉnh sang mình mà không đổi phân công gốc.
+    attendanceBatch.update(doc(firestore, "schedules", schedule.id), {
+      attendanceTeacherId: actualTeacherId, updatedAt: serverTimestamp(), updatedBy: user.uid,
+    });
+    await attendanceBatch.commit();
   }
 
   // Batch checkin write
@@ -797,7 +741,11 @@ export default function AdminPayrollPage() {
     reason = "Xác nhận hàng loạt theo phân công"
   ) {
     if (!user || targetSchedules.length === 0) return;
-    const chunkSize = 400;
+    if (targetSchedules.some((schedule) => schedule.status === "cancelled" || schedule.teacherUnassigned === true
+      || scheduledPeriodCount(schedule) <= 0 || !resolveTeachingAttendance(schedule, checkinByScheduleId.get(schedule.id)).effectiveTeacherId)) {
+      throw new Error("Có lịch đã hủy, chưa có người dạy hoặc thiếu số tiết hợp lệ.");
+    }
+    const chunkSize = 200; // Mỗi lịch ghi checkin và cập nhật người xem công.
 
     for (let offset = 0; offset < targetSchedules.length; offset += chunkSize) {
       const chunk = targetSchedules.slice(offset, offset + chunkSize);
@@ -805,12 +753,13 @@ export default function AdminPayrollPage() {
 
       for (const schedule of chunk) {
         const existing = checkinByScheduleId.get(schedule.id);
-        const actualTeacherId = String(schedule.actualTeacherId || schedule.teacherId || "");
-        const originalTeacherId = String(schedule.originalTeacherId || schedule.teacherId || "");
+        const attendance = resolveTeachingAttendance(schedule, existing);
+        const actualTeacherId = attendance.effectiveTeacherId;
+        const originalTeacherId = attendance.originalTeacherId;
         const isSubstitutedSchedule = Boolean(actualTeacherId && originalTeacherId && actualTeacherId !== originalTeacherId);
         const teacher = teacherById.get(actualTeacherId);
         const originalTeacher = teacherById.get(originalTeacherId);
-        const periodCount = Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+        const periodCount = scheduledPeriodCount(schedule);
         const resolvedStatus = status === "confirmed" && isSubstitutedSchedule ? "adjusted" : status;
         const payable = ["confirmed", "adjusted"].includes(resolvedStatus);
         const resolvedReason = isSubstitutedSchedule
@@ -843,7 +792,9 @@ export default function AdminPayrollPage() {
             payable,
             status: resolvedStatus,
             actualTeacherId,
+            assignedTeacherId: String(schedule.actualTeacherId || schedule.effectiveTeacherId || schedule.teacherId || ""),
             originalTeacherId,
+            schoolLevel: resolveScheduleSchoolLevel(schedule, classDoc).toLowerCase(),
             teacherType: teacher?.teacherType || schedule.teacherType || "",
             attendanceSource: "admin_confirmation_batch",
             confirmedAt: serverTimestamp(),
@@ -853,12 +804,21 @@ export default function AdminPayrollPage() {
             note: "",
             updatedAt: serverTimestamp(),
             updatedBy: user.uid,
-            ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
+            createdAt: existing?.id === `${selectedMonth}_${schedule.id}` ? existing.createdAt : serverTimestamp(),
+            createdBy: existing?.id === `${selectedMonth}_${schedule.id}` ? existing.createdBy : user.uid,
+            isActive: true,
           },
           { merge: true }
         );
       }
 
+      for (const schedule of chunk) {
+        const existing = checkinByScheduleId.get(schedule.id);
+        batch.update(doc(firestore, "schedules", schedule.id), {
+          attendanceTeacherId: resolveTeachingAttendance(schedule, existing).effectiveTeacherId,
+          updatedAt: serverTimestamp(), updatedBy: user.uid,
+        });
+      }
       await batch.commit();
     }
   }
@@ -931,53 +891,40 @@ export default function AdminPayrollPage() {
   }
 
   // Rate modal logic
-  const visibleRateRows = useMemo(() => {
-    return rateRows
-      .filter((row) => {
-        const teacher = teacherById.get(String(row.teacherId));
-        return departmentFilter === "all" || teacher?.departmentId === departmentFilter;
-      })
-      .sort((a, b) => String(a.teacherName || a.teacherId).localeCompare(String(b.teacherName || b.teacherId), "vi"));
-  }, [departmentFilter, rateRows, teacherById]);
+  const visibleRateRows = useMemo(() => teachers
+    .filter((teacher) => teacher.status === "active" && teacher.isActive !== false
+      && (departmentFilter === "all" || teacher.departmentId === departmentFilter))
+    .flatMap((teacher) => ["primary", "secondary"].map((schoolLevel) => ({
+      id: `${teacher.id}_${schoolLevel}`, teacherId: teacher.id, teacherName: teacher.fullName || teacher.id,
+      schoolLevel, ratePerPeriod: teacherPayrollAmounts(teacher,
+        { primaryActual: 0, secondaryActual: 0, actualPeriods: 0, substituteCount: 0, absentCount: 0 }, {}, payrollSettings ?? {})[
+          schoolLevel === "primary" ? "primaryRate" : "secondaryRate"],
+    }))), [teachers, departmentFilter, payrollSettings]);
 
   async function saveRate() {
     if (!user) return;
-    if (!rateForm.teacherId || !rateForm.subjectId || Number(rateForm.ratePerPeriod) <= 0) {
-      setRateError("Vui lòng chọn giáo viên, môn học và nhập đơn giá/tiết lớn hơn 0.");
+    const rate = Number(rateForm.ratePerPeriod);
+    if (!rateForm.teacherId || !rateForm.ratePerPeriod.trim() || !Number.isFinite(rate) || rate < 0) {
+      setRateError("Vui lòng chọn giáo viên và nhập đơn giá hữu hạn, không âm.");
       return;
     }
     setRateSubmitting(true);
     setRateError("");
     try {
-      const teacher = teacherById.get(rateForm.teacherId);
-      const subject = subjectById.get(rateForm.subjectId);
-      const existing = rateRows.find((row) => row.id === rateDocId(rateForm.teacherId, rateForm.subjectId));
-      await setDoc(
-        doc(firestore, "payrollRates", rateDocId(rateForm.teacherId, rateForm.subjectId)),
-        {
-          teacherId: rateForm.teacherId,
-          teacherName: textValue(teacher?.fullName) || textValue(teacher?.email) || rateForm.teacherId,
-          departmentId: textValue(teacher?.departmentId),
-          subjectId: rateForm.subjectId,
-          subjectName: textValue(subject?.name) || textValue(subject?.code) || rateForm.subjectId,
-          ratePerPeriod: Number(rateForm.ratePerPeriod),
-          updatedAt: serverTimestamp(),
-          updatedBy: user.uid,
-          ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: user.uid, isActive: true }),
-        },
-        { merge: true }
-      );
-      toast.success("Đã lưu đơn giá/tiết.");
-      setRateForm({ teacherId: "", subjectId: "", ratePerPeriod: "" });
+      await setDoc(doc(firestore, "teachers", rateForm.teacherId), {
+        [rateForm.schoolLevel === "primary" ? "primaryRatePerPeriod" : "secondaryRatePerPeriod"]: rate,
+        updatedAt: serverTimestamp(), updatedBy: user.uid,
+      }, { merge: true });
+      toast.success("Đã lưu đơn giá theo cấp học cho giáo viên.");
+      setRateForm({ teacherId: "", schoolLevel: "secondary", ratePerPeriod: "" });
     } catch (submitError) {
       setRateError(firebaseDataErrorMessage(submitError));
-    } finally {
-      setRateSubmitting(false);
-    }
+    } finally { setRateSubmitting(false); }
   }
 
   // Admin Payroll Calculator
   async function calculatePayroll() {
+    if (loading || error) return;
     setError("");
     if (unconfirmedPastSchedules.length > 0) {
       setError(
@@ -1000,13 +947,15 @@ export default function AdminPayrollPage() {
 
   // Principal Quick Single Approve
   async function handleQuickApprove(row: TeacherPayrollSummaryRow) {
-    if (!user) return;
+    if (!user || loading || error) return;
+    if (row.status === "locked" || row.status === "paid") return;
     setActionLoading(true);
     try {
       const nextStatus: PayrollApprovalStatus = row.status === "approved" ? "pending_approval" : "approved";
       await setDoc(
         doc(firestore, "payroll", row.payrollDocId),
         {
+          ...payrollSummaryPayload(row),
           teacherId: row.teacherId,
           month: selectedMonth,
           status: nextStatus,
@@ -1031,7 +980,7 @@ export default function AdminPayrollPage() {
 
   // Principal Batch Approve All
   async function handleApproveAllPending() {
-    if (!user) return;
+    if (!user || loading || error) return;
     const pendingRows = filteredSummaryRows.filter(
       (r) => r.status === "pending_approval" || r.status === "draft" || r.status === "review_required"
     );
@@ -1048,6 +997,7 @@ export default function AdminPayrollPage() {
         batch.set(
           ref,
           {
+            ...payrollSummaryPayload(row),
             teacherId: row.teacherId,
             month: selectedMonth,
             status: "approved",
@@ -1072,7 +1022,7 @@ export default function AdminPayrollPage() {
   // Principal Batch Review / Reject All
   async function handleRequestReviewAll() {
     if (!user) return;
-    const targetRows = filteredSummaryRows.filter((r) => r.status !== "review_required");
+    const targetRows = filteredSummaryRows.filter((r) => !["review_required", "locked", "paid"].includes(r.status));
     if (targetRows.length === 0) return;
     setActionLoading(true);
     try {
@@ -1111,36 +1061,39 @@ export default function AdminPayrollPage() {
     adjustmentReason: string;
     status: PayrollApprovalStatus;
   }) {
-    if (!user || !principalEditRow) return;
+    if (!user || !principalEditRow || loading || error) return;
+    const currentRow = allTeacherPayrollRows.find((row) => row.payrollDocId === principalEditRow.payrollDocId);
+    if (!currentRow || currentRow.status === "locked" || currentRow.status === "paid") return;
     setActionLoading(true);
     try {
       const ref = doc(firestore, "payroll", principalEditRow.payrollDocId);
-      const isAdjunct = principalEditRow.teacherType === "thinh_giang";
-      const pOver = principalEditRow.primaryStandard !== null
-        ? Math.max(0, data.primaryActual - principalEditRow.primaryStandard)
-        : data.primaryActual;
-      const sOver = principalEditRow.secondaryStandard !== null
-        ? Math.max(0, data.secondaryActual - principalEditRow.secondaryStandard)
-        : data.secondaryActual;
-
-      const primarySubtotal = isAdjunct ? data.primaryActual * data.primaryRate : pOver * data.primaryRate;
-      const secondarySubtotal = isAdjunct ? data.secondaryActual * data.secondaryRate : sOver * data.secondaryRate;
-      const newAmount = Math.max(0, primarySubtotal + secondarySubtotal + data.adjustmentAmount);
+      // Có tiết có tiền cho cả cơ hữu và thỉnh giảng; không trả phần vượt định mức.
+      const newAmount = currentRow.primaryActual * data.primaryRate
+        + currentRow.secondaryActual * data.secondaryRate + data.adjustmentAmount;
 
       await setDoc(
         ref,
         {
+          ...payrollSummaryPayload(currentRow),
           teacherId: principalEditRow.teacherId,
           month: selectedMonth,
-          overridePrimaryActual: data.primaryActual,
-          overrideSecondaryActual: data.secondaryActual,
           overridePrimaryRate: data.primaryRate,
           overrideSecondaryRate: data.secondaryRate,
-          actualPeriods: data.primaryActual + data.secondaryActual,
+          primaryActual: currentRow.primaryActual,
+          secondaryActual: currentRow.secondaryActual,
+          primaryRate: data.primaryRate,
+          secondaryRate: data.secondaryRate,
+          primaryAmount: currentRow.primaryActual * data.primaryRate,
+          secondaryAmount: currentRow.secondaryActual * data.secondaryRate,
+          actualPeriods: currentRow.primaryActual + currentRow.secondaryActual,
+          substituteCount: currentRow.substituteCount,
+          absentCount: currentRow.absentCount,
+          calculationVersion: 3,
           adjustmentAmount: data.adjustmentAmount,
           adjustmentReason: data.adjustmentReason,
           status: data.status,
           amount: newAmount,
+          totalAmount: newAmount,
           adjustedBy: user.uid,
           adjustedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -1691,8 +1644,8 @@ export default function AdminPayrollPage() {
         <Modal
           open={rateOpen}
           onOpenChange={setRateOpen}
-          title="Đơn giá thù lao theo giáo viên và môn"
-          description="Cấu hình đơn giá / 1 tiết cho từng giáo viên dạy từng môn để tính bảng lương tự động."
+          title="Đơn giá thù lao theo giáo viên và cấp học"
+          description="Cấu hình đơn giá Cấp 1 và Cấp 2 áp dụng cho tiết thực dạy. Đơn giá điều chỉnh riêng trong kỳ lương được ưu tiên."
           wide
           footer={
             <div className="flex justify-end gap-2">
@@ -1724,25 +1677,21 @@ export default function AdminPayrollPage() {
               </div>
 
               <div>
-                <Label>Môn học</Label>
+                <Label>Cấp học</Label>
                 <select
                   className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
-                  value={rateForm.subjectId}
-                  onChange={(e) => setRateForm((prev) => ({ ...prev, subjectId: e.target.value }))}
+                  value={rateForm.schoolLevel}
+                  onChange={(e) => setRateForm((prev) => ({ ...prev, schoolLevel: e.target.value }))}
                 >
-                  <option value="">Chọn môn học</option>
-                  {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name || subject.code || subject.id}
-                    </option>
-                  ))}
+                  <option value="primary">Cấp 1 (Tiểu học)</option>
+                  <option value="secondary">Cấp 2 (THCS)</option>
                 </select>
               </div>
 
               <div>
                 <Label>Đơn giá / 1 tiết (VND)</Label>
                 <Input
-                  min="1"
+                  min="0"
                   type="number"
                   value={rateForm.ratePerPeriod}
                   onChange={(e) => setRateForm((prev) => ({ ...prev, ratePerPeriod: e.target.value }))}
@@ -1776,8 +1725,8 @@ export default function AdminPayrollPage() {
                       onClick={() =>
                         setRateForm({
                           teacherId: String(row.teacherId || ""),
-                          subjectId: String(row.subjectId || ""),
-                          ratePerPeriod: String(row.ratePerPeriod || ""),
+                          schoolLevel: String(row.schoolLevel || "secondary"),
+                          ratePerPeriod: String(row.ratePerPeriod ?? ""),
                         })
                       }
                     >
@@ -1785,7 +1734,7 @@ export default function AdminPayrollPage() {
                         {row.teacherName || teacherById.get(String(row.teacherId))?.fullName || row.teacherId}
                       </span>
                       <span className="text-muted-foreground">
-                        {row.subjectName || subjectById.get(String(row.subjectId))?.name || row.subjectId} ·{" "}
+                        {row.schoolLevel === "primary" ? "Cấp 1" : "Cấp 2"} ·{" "}
                         <strong className="text-primary">{formatCurrency(Number(row.ratePerPeriod || 0))}</strong>/tiết
                       </span>
                     </button>
