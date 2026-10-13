@@ -44,7 +44,7 @@ export function AttendanceByTeacherView({
         const totalPeriods = items.reduce((sum, i) => sum + i.periodCountNum, 0);
         const confirmedPeriods = items
           .filter((i) => i.effectiveStatus === "confirmed" || i.effectiveStatus === "adjusted")
-          .reduce((sum, i) => sum + i.periodCountNum, 0);
+          .reduce((sum, i) => sum + i.attendance.payablePeriods, 0);
         const pendingPastPeriods = items
           .filter((i) => i.effectiveStatus === "pending_past")
           .reduce((sum, i) => sum + i.periodCountNum, 0);

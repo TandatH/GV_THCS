@@ -33,10 +33,12 @@ export function PayrollKpiCards({
   isPrincipal,
 }: PayrollKpiCardsProps) {
   const isAllApproved = totalTeachers > 0 && approvedTeachers === totalTeachers;
-  const hasAbnormalities = substitutePeriods > 0 || absentPeriods > 0 || pendingPastPeriods > 0;
+  const hasAbnormalities = pendingPastPeriods > 0;
 
   return (
-    <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-6 min-w-0">
+      <p className="mb-2 text-xs text-muted-foreground">Tổng theo bộ lọc: {totalTeachers} giáo viên, gồm tất cả các trang trong bảng.</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 [&>div]:min-w-0 [&>div>div:first-child]:gap-2">
       {/* CARD 1: Tổng quỹ lương/thù lao dự kiến */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-blue-50/30 p-4 shadow-sm transition hover:shadow-md">
         <div className="flex items-center justify-between text-muted-foreground">
@@ -48,7 +50,7 @@ export function PayrollKpiCards({
           </div>
         </div>
         <div className="mt-3">
-          <div className="text-2xl font-black tracking-tight text-slate-900">
+          <div className="text-[clamp(1.05rem,1.6vw,1.5rem)] font-black tracking-tight text-slate-900 tabular-nums">
             {formatCurrency(totalEstimatedPayroll)}
           </div>
           <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
@@ -85,6 +87,7 @@ export function PayrollKpiCards({
               C2: {secondaryPeriods} tiết
             </span>
           </div>
+          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Đã gồm tiết dạy thay được xác nhận.</p>
         </div>
       </div>
 
@@ -98,7 +101,7 @@ export function PayrollKpiCards({
       >
         <div className="flex items-center justify-between text-muted-foreground">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-            Cảnh báo bất thường
+            Đối soát công
           </span>
           <div
             className={`grid h-8 w-8 place-items-center rounded-xl ${
@@ -111,16 +114,16 @@ export function PayrollKpiCards({
         <div className="mt-3">
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black tracking-tight text-slate-900">
-              {substitutePeriods + absentPeriods + pendingPastPeriods}
+              {pendingPastPeriods}
             </span>
-            <span className="text-xs font-semibold text-slate-500">tiết cần lưu ý</span>
+            <span className="text-xs font-semibold text-slate-500">tiết chờ xác nhận</span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 font-medium text-blue-700 border border-blue-200/60">
-              Dạy thay: <strong>+{substitutePeriods}</strong>
+            <span title="Đã tính vào thực dạy; không cộng thêm" className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 font-medium text-blue-700 border border-blue-200/60">
+              Dạy thay: <strong>{substitutePeriods}</strong>
             </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 font-medium text-rose-700 border border-rose-200/60">
-              Báo vắng: <strong>-{absentPeriods}</strong>
+            <span title="Đã loại khỏi thực dạy; không trừ thêm" className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 font-medium text-rose-700 border border-rose-200/60">
+              Báo vắng: <strong>{absentPeriods}</strong>
             </span>
             {pendingPastPeriods > 0 ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 font-bold text-amber-800">
@@ -128,6 +131,7 @@ export function PayrollKpiCards({
               </span>
             ) : null}
           </div>
+          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Dạy thay đã tính vào công; vắng đã loại khỏi công. Không cộng/trừ lại.</p>
         </div>
       </div>
 
@@ -177,7 +181,7 @@ export function PayrollKpiCards({
               </span>
             )}
           </div>
-          <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-600">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
             <span className="font-medium">
               Đã duyệt: <strong className="text-emerald-700">{approvedTeachers}</strong>
             </span>
@@ -195,6 +199,7 @@ export function PayrollKpiCards({
             ) : null}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

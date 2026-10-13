@@ -1,6 +1,8 @@
 import type { DocumentData } from "firebase/firestore";
 import { format, isValid, parseISO } from "date-fns";
 import { dateOnlyFromDate } from "@/lib/date-only";
+import { payrollScheduleDate, payrollSchoolLevel, type ResolvedTeachingAttendance } from "@school/shared";
+export { formatPeriodDisplay } from "@school/shared";
 
 export type Row = DocumentData & { id: string };
 
@@ -12,9 +14,10 @@ export type StatusFilter = "all" | "pending_past" | "confirmed" | "adjusted" | "
 
 export type TeachingLevel = "PRIMARY" | "SECONDARY" | "BOTH";
 
-export type PayrollApprovalStatus = "draft" | "pending_approval" | "approved" | "review_required" | "paid";
+export type PayrollApprovalStatus = "draft" | "pending_approval" | "approved" | "review_required" | "locked" | "paid";
 
 export interface ScheduleWithMeta extends Row {
+  attendance: ResolvedTeachingAttendance;
   calculatedDate: string;
   dayOfWeekNumber: number;
   dayName: string;
@@ -62,6 +65,7 @@ export interface TeacherPayrollSummaryRow {
   secondaryAmount: number;
   substituteCount: number;
   absentCount: number;
+  pendingPastPeriods: number;
   overtimePeriods: number;
   adjustmentAmount: number;
   adjustmentReason: string;
@@ -85,13 +89,7 @@ export function localTodayDateOnly() {
 }
 
 export function dateFromScheduleRow(schedule: Row): string {
-  if (schedule.date && typeof schedule.date === "string" && schedule.date.length === 10) {
-    return schedule.date;
-  }
-  if (!schedule.weekStart) return "";
-  const date = new Date(String(schedule.weekStart));
-  date.setDate(date.getDate() + Number(schedule.dayOfWeek || 2) - 2);
-  return Number.isNaN(date.getTime()) ? "" : dateOnlyFromDate(date);
+  return payrollScheduleDate(schedule);
 }
 
 const DAY_NAMES_VI: Record<number, string> = {
@@ -116,41 +114,11 @@ export function parseScheduleDateDetails(dateStr: string) {
   };
 }
 
-export function formatPeriodDisplay(startPeriod: unknown, endPeriod: unknown) {
-  const start = Math.max(1, Number(startPeriod || 1));
-  const rawEnd = Number(endPeriod || 0);
-  const last = rawEnd ? Math.max(start, rawEnd - 1) : start;
-  const count = Math.max(1, rawEnd ? rawEnd - start : 1);
-  const label = start === last ? `Tiết ${start}` : `Tiết ${start}–${last}`;
-  return {
-    label,
-    count,
-    display: `${label} (${count} tiết)`,
-  };
-}
-
 export function resolveScheduleSchoolLevel(
   schedule: Row,
   classDoc?: Row
 ): "PRIMARY" | "SECONDARY" {
-  if (schedule.schoolLevel === "primary") return "PRIMARY";
-  if (schedule.schoolLevel === "secondary") return "SECONDARY";
-  if (classDoc?.schoolLevel === "primary") return "PRIMARY";
-  if (classDoc?.schoolLevel === "secondary") return "SECONDARY";
-
-  const grade = Number(classDoc?.grade ?? classDoc?.gradeLevel ?? 0);
-  if (grade >= 1 && grade <= 5) return "PRIMARY";
-  if (grade >= 6 && grade <= 9) return "SECONDARY";
-
-  const className = String(classDoc?.name || classDoc?.code || schedule.className || "");
-  const match = className.match(/^([1-9])/);
-  if (match) {
-    const g = Number(match[1]);
-    if (g >= 1 && g <= 5) return "PRIMARY";
-    if (g >= 6 && g <= 9) return "SECONDARY";
-  }
-
-  return "SECONDARY";
+  return payrollSchoolLevel(schedule, classDoc);
 }
 
 export function resolveTeacherLevel(
@@ -227,6 +195,8 @@ export function statusLabelVi(status: AttendanceDisplayStatus | unknown): string
       return "Chưa tới hạn";
     case "paid":
       return "Đã chi trả";
+    case "locked":
+      return "Đã khóa";
     case "draft":
       return "Nháp";
     default:
@@ -260,6 +230,8 @@ export function payrollStatusLabelVi(status: PayrollApprovalStatus | string | un
       return "Yêu cầu rà soát";
     case "paid":
       return "Đã chi trả";
+    case "locked":
+      return "Đã khóa";
     case "draft":
       return "Nháp";
     default:

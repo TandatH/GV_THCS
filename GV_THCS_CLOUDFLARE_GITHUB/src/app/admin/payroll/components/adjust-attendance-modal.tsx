@@ -35,9 +35,10 @@ export function AdjustAttendanceModal({
     if (!targetSchedule) return;
     const existingCheckin = targetSchedule.checkinDoc;
     const assignedTeacherId = String(targetSchedule.actualTeacherId || targetSchedule.teacherId || "");
-    const currentActualTeacherId = String(existingCheckin?.teacherId || existingCheckin?.actualTeacherId || assignedTeacherId);
+    const currentActualTeacherId = targetSchedule.attendance.effectiveTeacherId || assignedTeacherId;
 
-    const initialStatus = (existingCheckin?.status as "confirmed" | "adjusted" | "absent") || (
+    const initialStatus = (["confirmed", "adjusted", "absent"].includes(String(targetSchedule.attendance.status))
+      ? targetSchedule.attendance.status as "confirmed" | "adjusted" | "absent" : undefined) || (
       currentActualTeacherId !== assignedTeacherId ? "adjusted" : "confirmed"
     );
 
@@ -74,8 +75,13 @@ export function AdjustAttendanceModal({
       return;
     }
 
-    if (status === "adjusted" && (!actualTeacherId || actualTeacherId === assignedTeacherId)) {
-      setLocalError("Vui lòng chọn giáo viên thực tế dạy thay khác với giáo viên phân công.");
+    if (!actualTeacherId) {
+      setLocalError("Vui lòng chọn giáo viên thực dạy hoặc giáo viên báo vắng.");
+      return;
+    }
+    if (status !== "absent" && actualTeacherId === targetSchedule?.originalTeacherId
+      && assignedTeacherId !== targetSchedule?.originalTeacherId) {
+      setLocalError("Giáo viên gốc đang được bố trí người dạy thay. Hãy sửa phân công trước khi ghi nhận người gốc đã dạy.");
       return;
     }
 

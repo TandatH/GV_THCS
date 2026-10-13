@@ -30,7 +30,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { finiteNumber, indexMonthlyCheckins, resolveTeachingAttendance, scheduledPeriodCount,
-  teacherAttendanceTotals, teacherPayrollAmounts, teacherPayrollStandards } from "@school/shared";
+  summarizePayrollRows, teacherAttendanceTotals, teacherPayrollAmounts, teacherPayrollStandards } from "@school/shared";
 
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
@@ -339,7 +339,7 @@ export default function AdminPayrollPage() {
 
         const startPeriodNum = Math.max(1, Number(schedule.startPeriod || 1));
         const endPeriodNum = Number(schedule.endPeriod || 0);
-        const periodInfo = formatPeriodDisplay(schedule.startPeriod, schedule.endPeriod);
+        const periodInfo = formatPeriodDisplay(schedule);
 
         // Multi-level classification
         const schoolLevel = resolveScheduleSchoolLevel(schedule, classDoc);
@@ -475,6 +475,8 @@ export default function AdminPayrollPage() {
           secondaryAmount,
           substituteCount,
           absentCount,
+          pendingPastPeriods: teacherSchedules.filter((s) => s.isPast && s.attendance.status === "pending"
+            && s.effectiveTeacherId === teacher.id).reduce((sum, s) => sum + s.attendance.periodCount, 0),
           overtimePeriods,
           adjustmentAmount,
           adjustmentReason,
@@ -529,38 +531,7 @@ export default function AdminPayrollPage() {
   }, [allTeacherPayrollRows, departmentFilter, schoolLevelFilter, search, teacherTypeFilter]);
 
   // Top 4 KPI Decision Cards Metrics
-  const payrollKpiMetrics = useMemo(() => {
-    const totalEstimatedPayroll = filteredSummaryRows.reduce((sum, r) => sum + r.totalAmount, 0);
-    const totalTeachers = filteredSummaryRows.length;
-    const primaryPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.primaryActual, 0);
-    const secondaryPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.secondaryActual, 0);
-    const totalPeriods = primaryPeriods + secondaryPeriods;
-    const substitutePeriods = filteredSummaryRows.reduce((sum, r) => sum + r.substituteCount, 0);
-    const absentPeriods = filteredSummaryRows.reduce((sum, r) => sum + r.absentCount, 0);
-    const pendingPastPeriods = kpiCounts.pendingPast;
-
-    const pendingApprovalTeachers = filteredSummaryRows.filter(
-      (r) => r.status === "pending_approval" || r.status === "draft"
-    ).length;
-    const approvedTeachers = filteredSummaryRows.filter(
-      (r) => r.status === "approved" || r.status === "paid"
-    ).length;
-    const reviewRequiredTeachers = filteredSummaryRows.filter((r) => r.status === "review_required").length;
-
-    return {
-      totalEstimatedPayroll,
-      totalTeachers,
-      totalPeriods,
-      primaryPeriods,
-      secondaryPeriods,
-      substitutePeriods,
-      absentPeriods,
-      pendingPastPeriods,
-      pendingApprovalTeachers,
-      approvedTeachers,
-      reviewRequiredTeachers,
-    };
-  }, [filteredSummaryRows, kpiCounts.pendingPast]);
+  const payrollKpiMetrics = useMemo(() => summarizePayrollRows(filteredSummaryRows), [filteredSummaryRows]);
 
   // Filtered schedules for Timesheet tab
   const filteredProcessedSchedules = useMemo(() => {
@@ -1559,7 +1530,7 @@ export default function AdminPayrollPage() {
         <TeacherScheduleDrawer
           open={Boolean(detailDrawerRow)}
           onClose={() => setDetailDrawerRow(null)}
-          teacherRow={detailDrawerRow}
+          teacherRow={allTeacherPayrollRows.find((row) => row.payrollDocId === detailDrawerRow?.payrollDocId) ?? null}
           schedules={monthProcessedSchedules}
         />
 

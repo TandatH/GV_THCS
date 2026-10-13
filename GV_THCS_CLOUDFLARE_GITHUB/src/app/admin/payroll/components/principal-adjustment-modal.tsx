@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Calculator, CheckCircle2, CircleDollarSign, Info } from "lucide-react";
 import { Badge, Button, Input, Label, Modal } from "@/components/ui";
 import { formatCurrency } from "@/lib/utils";
+import { teacherPayrollAmounts } from "@school/shared";
 import {
   type PayrollApprovalStatus,
   type TeacherPayrollSummaryRow,
@@ -45,8 +46,8 @@ export function PrincipalAdjustmentModal({
     if (row) {
       setPrimaryActual(row.primaryActual);
       setSecondaryActual(row.secondaryActual);
-      setPrimaryRate(row.primaryRate > 0 ? row.primaryRate : 120000);
-      setSecondaryRate(row.secondaryRate > 0 ? row.secondaryRate : 150000);
+      setPrimaryRate(row.primaryRate);
+      setSecondaryRate(row.secondaryRate);
       setAdjustmentAmount(row.adjustmentAmount || 0);
       setAdjustmentReason(row.adjustmentReason || "");
       setStatus(row.status || "approved");
@@ -57,16 +58,11 @@ export function PrincipalAdjustmentModal({
   if (!row) return null;
 
   // Real-time calculation of new estimated amount
-  const isAdjunct = row.teacherType === "thinh_giang";
-  const pOver = row.primaryStandard !== null ? Math.max(0, primaryActual - row.primaryStandard) : primaryActual;
-  const sOver = row.secondaryStandard !== null ? Math.max(0, secondaryActual - row.secondaryStandard) : secondaryActual;
-
-  const newPrimaryAmount = isAdjunct ? primaryActual * primaryRate : pOver * primaryRate;
-  const newSecondaryAmount = isAdjunct ? secondaryActual * secondaryRate : sOver * secondaryRate;
-  const newTotalAmount = Math.max(
-    0,
-    newPrimaryAmount + newSecondaryAmount + Number(adjustmentAmount || 0)
-  );
+  // Cơ hữu và thỉnh giảng cùng nhận tiền theo tiết thực dạy đã xác nhận.
+  const { primaryAmount: newPrimaryAmount, secondaryAmount: newSecondaryAmount, totalAmount: newTotalAmount } =
+    teacherPayrollAmounts({}, { primaryActual, secondaryActual, actualPeriods: primaryActual + secondaryActual,
+      substituteCount: row.substituteCount, absentCount: row.absentCount },
+    { overridePrimaryRate: primaryRate, overrideSecondaryRate: secondaryRate, adjustmentAmount });
 
   const handleSubmit = async () => {
     if (adjustmentAmount !== 0 && !adjustmentReason.trim()) {
@@ -90,7 +86,7 @@ export function PrincipalAdjustmentModal({
       open={open}
       onOpenChange={onOpenChange}
       title="Điều chỉnh công & Thù lao giáo viên"
-      description="Cho phép Hiệu trưởng / BGH can thiệp trực tiếp số tiết thực dạy, nhập khoản tiền điều chỉnh (+/-) kèm lý do."
+      description="Điều chỉnh đơn giá và khoản tiền (+/-) kèm lý do. Để sửa số tiết thực dạy, cập nhật xác nhận tại tab Chấm công."
       wide
       footer={
         <div className="flex items-center justify-end gap-2">
@@ -160,7 +156,7 @@ export function PrincipalAdjustmentModal({
                 min="0"
                 value={primaryActual}
                 onChange={(e) => setPrimaryActual(Math.max(0, Number(e.target.value)))}
-                disabled={row.teachingLevel === "SECONDARY"}
+                readOnly
                 placeholder="Nhập số tiết C1"
               />
             </div>
@@ -209,7 +205,7 @@ export function PrincipalAdjustmentModal({
                 min="0"
                 value={secondaryActual}
                 onChange={(e) => setSecondaryActual(Math.max(0, Number(e.target.value)))}
-                disabled={row.teachingLevel === "PRIMARY"}
+                readOnly
                 placeholder="Nhập số tiết C2"
               />
             </div>
