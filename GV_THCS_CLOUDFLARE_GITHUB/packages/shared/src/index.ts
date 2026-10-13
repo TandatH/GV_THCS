@@ -271,4 +271,4 @@ export function scheduleResourceSlotKeys(
 export function scheduleSlotKeys(input: ScheduleInput) {
   return scheduleResourceSlotKeys(input, input.teacherId);
 }
-export * from "./payroll.js";
+export * from "./payroll";
