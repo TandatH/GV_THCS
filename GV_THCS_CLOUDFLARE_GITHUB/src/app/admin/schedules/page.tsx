@@ -5,6 +5,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import type { ScheduleInput } from "@school/shared";
+import { normalizeSchedulePeriodRange } from "@school/shared";
 import { addDays, addMinutes, format, isValid, parseISO } from "date-fns";
 import {
   AlertCircle,
@@ -54,6 +55,7 @@ import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { addDaysDateOnly, currentWeekStartDateOnly, normalizeWeekStartDateOnly } from "@/lib/date-only";
 import { buildStudentTimetableWorkbook, downloadStudentTimetableWorkbook } from "@/lib/exports/student-timetable";
+import { buildMasterTimetableWorkbook, downloadMasterTimetableWorkbook } from "@/lib/exports/master-timetable";
 import { cn } from "@/lib/utils";
 
 const fallbackPeriodStartHour = 7;
@@ -634,6 +636,7 @@ export default function SchedulesPage() {
   const [exportOnlyReady, setExportOnlyReady] = useState(true);
   const [exportError, setExportError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [masterExporting, setMasterExporting] = useState<string>("");
   const [exportExtraRows, setExportExtraRows] = useState<ScheduleRow[]>([]);
 
   // Replicate / Apply Timetable to Next Weeks states
@@ -684,7 +687,7 @@ export default function SchedulesPage() {
     return onSnapshot(
       schedulesQuery,
       (snapshot) => {
-        setRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+        setRows(snapshot.docs.map((document) => normalizeSchedulePeriodRange({ ...document.data(), id: document.id })));
         setLoading(false);
       },
       (snapshotError) => {
@@ -709,7 +712,7 @@ export default function SchedulesPage() {
           : query(collection(firestore, "schedules"), where("weekStart", "==", exportWeekStart));
         const snap = await getDocs(q);
         if (active) {
-          setExportExtraRows(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          setExportExtraRows(snap.docs.map((doc) => normalizeSchedulePeriodRange({ ...doc.data(), id: doc.id })));
         }
       } catch (err) {
         console.warn("Lỗi tải lịch tuần xuất:", err);
@@ -1369,6 +1372,60 @@ export default function SchedulesPage() {
     }
   }
 
+  function exportMasterTimetable(level: "primary" | "secondary" | "all") {
+    setMasterExporting(level);
+    try {
+      const targetWeek = exportOpen ? exportWeekStart : selectedWeek;
+      if (!targetWeek) {
+        toast.error("Vui lòng chọn tuần cần xuất.");
+        return;
+      }
+
+      const sourceRows = exportOpen && exportWeekStart !== selectedWeek && exportExtraRows.length > 0 ? exportExtraRows : rows;
+      const targetSchedules = sourceRows.filter((r) => {
+        if (r.status === "cancelled") return false;
+        if (textValue(r.weekStart) !== targetWeek) return false;
+        if (exportOpen && exportOnlyReady && (r.status === "needs_attention" || r.status === "pending_confirmation")) {
+          return false;
+        }
+        if (role === "totruong" && r.departmentId !== managerDepartmentId) return false;
+        const cls = classes.find((c) => c.id === r.classId);
+        const lvl = r.schoolLevel || catalogSchoolLevel(cls) || "secondary";
+        if (level !== "all" && lvl !== level) return false;
+        return true;
+      });
+
+      if (targetSchedules.length === 0) {
+        toast.error(`Không tìm thấy lịch ${level === "primary" ? "Cấp 1" : level === "secondary" ? "Cấp 2" : "toàn trường"} trong tuần ${targetWeek}.`);
+        return;
+      }
+
+      const schoolTitle = exportSchoolName || (level === "primary" ? "TRƯỜNG TIỂU HỌC" : level === "secondary" ? "TRƯỜNG THCS" : "TRƯỜNG PHỔ THÔNG LIÊN CẤP");
+
+      const workbook = buildMasterTimetableWorkbook({
+        schoolName: schoolTitle,
+        weekStart: targetWeek,
+        schoolLevel: level,
+        schedules: targetSchedules,
+        classes,
+        subjects,
+        teachers,
+        rooms,
+        timeSlots,
+      });
+
+      downloadMasterTimetableWorkbook(workbook);
+      toast.success(`Đã xuất TKB tổng thể ${workbook.levelName} (${workbook.classCount} lớp, ${workbook.scheduleCount} lịch).`);
+      if (exportOpen) {
+        setExportOpen(false);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Không thể xuất thời khóa biểu tổng thể.");
+    } finally {
+      setMasterExporting("");
+    }
+  }
+
   async function cancelSelectedSchedule(row: ScheduleRow) {
     const reason = window.prompt("Nhập lý do hủy lịch. Lịch đã hủy vẫn được giữ trong lịch sử:")?.trim();
     if (!reason) return;
@@ -1619,6 +1676,33 @@ export default function SchedulesPage() {
                     >
                       <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                       In TKB Cấp 2
+                    </Button>
+                  ) : null}
+
+                  {/* Nút Xuất tổng thể Cấp 1 & Cấp 2 (Ma trận XML Sáng/Chiều) */}
+                  {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "primary" ? (
+                    <Button
+                      variant="secondary"
+                      loading={masterExporting === "primary"}
+                      onClick={() => exportMasterTimetable("primary")}
+                      className="border-amber-200 bg-amber-50/80 text-amber-900 hover:bg-amber-100 font-semibold gap-1.5 shadow-xs"
+                      title="Xuất thời khóa biểu tổng thể Cấp 1 dạng XML (Ma trận Ca sáng & Ca chiều)"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-amber-600" />
+                      Xuất tổng thể Cấp 1
+                    </Button>
+                  ) : null}
+
+                  {role !== "bgh" || bghSchoolLevel === "all" || bghSchoolLevel === "secondary" ? (
+                    <Button
+                      variant="secondary"
+                      loading={masterExporting === "secondary"}
+                      onClick={() => exportMasterTimetable("secondary")}
+                      className="border-purple-200 bg-purple-50/80 text-purple-900 hover:bg-purple-100 font-semibold gap-1.5 shadow-xs"
+                      title="Xuất thời khóa biểu tổng thể Cấp 2 dạng XML (Ma trận Ca sáng & Ca chiều theo mẫu)"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-purple-600" />
+                      Xuất tổng thể Cấp 2
                     </Button>
                   ) : null}
                 </>
@@ -2824,7 +2908,7 @@ export default function SchedulesPage() {
                 ? "In / Xuất thời khóa biểu Cấp 2 (THCS)"
                 : "In / Xuất thời khóa biểu cho học sinh"
           }
-          description="Chọn tuần, cấp học và lớp. Bạn có thể in trực tiếp hoặc xuất file Excel XML đầy đủ biểu mẫu ký duyệt."
+          description="Chọn tuần, cấp học và lớp. Bạn có thể in trực tiếp, xuất file Excel từng lớp hoặc xuất thời khóa biểu tổng thể (ma trận Sáng/Chiều dạng XML)."
           footer={(
             <div className="flex flex-wrap justify-between items-center w-full gap-2">
               <Button
@@ -2835,10 +2919,20 @@ export default function SchedulesPage() {
                 <Printer className="h-4 w-4 text-slate-600" />
                 In trực tiếp
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="secondary" onClick={() => setExportOpen(false)}>Đóng</Button>
-                <Button loading={exporting} onClick={exportStudentTimetable} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                  <FileSpreadsheet className="h-4 w-4" />Xuất Excel
+                <Button
+                  variant="secondary"
+                  loading={Boolean(masterExporting)}
+                  onClick={() => exportMasterTimetable((exportSchoolLevel as "primary" | "secondary") || "all")}
+                  className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-semibold gap-1.5 shadow-xs"
+                  title="Xuất thời khóa biểu tổng thể cả cấp dạng ma trận Sáng & Chiều (XML chuẩn)"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-amber-600" />
+                  Xuất TKB tổng thể (XML)
+                </Button>
+                <Button loading={exporting} onClick={exportStudentTimetable} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs">
+                  <FileSpreadsheet className="h-4 w-4" />Xuất từng lớp (Excel)
                 </Button>
               </div>
             </div>
