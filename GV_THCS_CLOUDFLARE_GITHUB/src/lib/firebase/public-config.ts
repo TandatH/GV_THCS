@@ -1,24 +1,16 @@
 import type { FirebaseOptions } from "firebase/app";
 
-const isServerBuild = typeof window === "undefined";
-
 const requiredConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || (isServerBuild ? "build-placeholder" : ""),
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || (isServerBuild ? "build-placeholder.firebaseapp.com" : ""),
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || (isServerBuild ? "build-placeholder" : ""),
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || (isServerBuild ? "build-placeholder.appspot.com" : ""),
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || (isServerBuild ? "1234567890" : ""),
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || (isServerBuild ? "1:1234567890:web:buildplaceholder" : ""),
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "demo-api-key-preview",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() || "demo-preview.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "demo-preview-project",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() || "demo-preview.appspot.com",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "1234567890",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "1:1234567890:web:demopreview",
 };
 
-const missing = Object.entries(requiredConfig)
-  .filter(([, value]) => !value)
-  .map(([key]) => key);
-
-if (!isServerBuild && missing.length > 0) {
-  throw new Error(
-    `Thiếu Firebase Web config: ${missing.join(", ")}. Hãy kiểm tra Cloudflare Build Variables.`,
-  );
+if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+  console.warn("Chưa thiết lập NEXT_PUBLIC_FIREBASE_API_KEY. Giao diện đang chạy ở chế độ xem trước.");
 }
 
 export const firebasePublicConfig: FirebaseOptions = {
@@ -34,3 +26,7 @@ export const firebaseAppCheckSiteKey =
 
 export const appCheckDebugEnabled =
   (process.env.NEXT_PUBLIC_APP_CHECK_DEBUG?.trim() || "") === "true";
+
+export const firebaseVapidKey =
+  process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim() ||
+  "BBdx9klybR0j0px1bwJEj0g2sxOtU5eZicY8snNXB09tfFkl2hIBqKYmCjplx9aoqZRBC7zj42NI3sAK2rxPqCY";
