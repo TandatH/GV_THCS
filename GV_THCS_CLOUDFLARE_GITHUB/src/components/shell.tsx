@@ -4,6 +4,7 @@ import type { Role } from "@school/shared";
 import { collection, doc, limit, onSnapshot, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
 import {
   Bell,
+  BellRing,
   BookOpen,
   BookOpenCheck,
   Building2,
@@ -34,10 +35,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
+import {
+  getNotificationPermission,
+  isNotificationSupported,
+  listenForegroundMessages,
+  registerPushNotification,
+  showDesktopNotification,
+} from "@/lib/firebase/messaging";
 import { cn, formatDate, initials } from "@/lib/utils";
 
 import { AppLogo } from "./app-logo";
@@ -262,6 +271,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [notificationError, setNotificationError] = useState("");
+  const [permissionState, setPermissionState] = useState<NotificationPermission | "unsupported">("default");
+  const [enablingPush, setEnablingPush] = useState(false);
+  const isInitialSnapshotRef = useRef(true);
+
+  useEffect(() => {
+    setPermissionState(getNotificationPermission());
+  }, []);
+
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    listenForegroundMessages().then((fn) => {
+      unsub = fn;
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
 
   const current = useMemo(() => {
     if (!role) return null;
@@ -280,17 +306,66 @@ export function Shell({ children }: { children: React.ReactNode }) {
       return;
     }
     setNotificationError("");
+    isInitialSnapshotRef.current = true;
     return onSnapshot(
       query(collection(firestore, "notifications"), where("userId", "==", user.uid), limit(30)),
       (snapshot) => {
         const rows: NotificationRow[] = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
         setNotifications(rows.sort((first, second) => Number(second.createdAt?.seconds || 0) - Number(first.createdAt?.seconds || 0)));
+
+        if (!isInitialSnapshotRef.current) {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const data = change.doc.data();
+              if (data.read !== true) {
+                showDesktopNotification(data.title || "Thông báo mới", {
+                  body: data.body || "Có cập nhật mới từ nhà trường.",
+                  data: { url: data.href || "/teacher/notifications" },
+                });
+              }
+            }
+          });
+        } else {
+          isInitialSnapshotRef.current = false;
+        }
       },
       () => setNotificationError("Không thể tải thông báo."),
     );
   }, [user]);
 
   const unreadCount = notifications.filter((notification) => notification.read !== true).length;
+
+  async function handleEnableDesktopNotification() {
+    if (!user) return;
+    setEnablingPush(true);
+    try {
+      const result = await registerPushNotification(user.uid);
+      setPermissionState(getNotificationPermission());
+      if (result.success) {
+        toast.success("Đã bật thông báo ngoài màn hình thành công!");
+        showDesktopNotification("🔔 Thông báo ngoài màn hình đã kích hoạt!", {
+          body: "Bạn sẽ nhận được thông báo lịch dạy và tin nhắn mới ngay tại góc màn hình.",
+          data: { url: "/teacher/notifications" },
+        });
+      } else {
+        toast.error(result.error || "Không thể bật thông báo.");
+      }
+    } finally {
+      setEnablingPush(false);
+    }
+  }
+
+  function handleTestNotification() {
+    const notif = showDesktopNotification("🔔 Kiểm tra thông báo màn hình", {
+      body: "Chúc mừng! Hệ thống quản lý giáo viên đã kết nối thông báo ngoài màn hình thành công.",
+      data: { url: "/teacher/notifications" },
+    });
+    if (notif) {
+      toast.success("Đã gửi thông báo thử nghiệm ra ngoài màn hình!");
+    } else {
+      toast.error("Vui lòng cấp quyền thông báo trên trình duyệt trước.");
+    }
+  }
 
   async function markNotificationRead(notification: NotificationRow) {
     if (!user || notification.read === true) return;
@@ -340,11 +415,59 @@ export function Shell({ children }: { children: React.ReactNode }) {
               {unreadCount > 0 ? <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-card">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
             </button>
             {notificationOpen ? (
-              <div className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-                <div className="border-b border-border px-4 py-3">
-                  <p className="font-bold">Thông báo</p>
-                  <p className="text-xs text-muted-foreground">{unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Không có thông báo chưa đọc"}</p>
+              <div className="absolute right-0 top-12 z-50 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <div>
+                    <p className="font-bold">Thông báo</p>
+                    <p className="text-xs text-muted-foreground">{unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Không có thông báo chưa đọc"}</p>
+                  </div>
+                  {unreadCount > 0 ? (
+                    <Link
+                      href="/teacher/notifications"
+                      onClick={() => setNotificationOpen(false)}
+                      className="text-xs font-semibold text-blue-600 hover:underline"
+                    >
+                      Xem tất cả
+                    </Link>
+                  ) : null}
                 </div>
+
+                {permissionState !== "granted" && permissionState !== "unsupported" ? (
+                  <div className="border-b border-border bg-blue-50/70 p-3 dark:bg-blue-950/30">
+                    <div className="flex items-start gap-2.5">
+                      <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                      <div className="min-w-0 flex-1 text-xs">
+                        <p className="font-semibold text-foreground">Bật thông báo ngoài màn hình</p>
+                        <p className="mt-0.5 text-muted-foreground leading-relaxed">
+                          Nhận chuông và tin báo lịch dạy ngay góc màn hình kể cả khi thu nhỏ web.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          className="mt-2 h-7 text-xs px-3"
+                          loading={enablingPush}
+                          onClick={handleEnableDesktopNotification}
+                        >
+                          Kích hoạt ngay
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : permissionState === "granted" ? (
+                  <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-xs">
+                    <span className="flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Thông báo màn hình: Đang bật
+                    </span>
+                    <button
+                      onClick={handleTestNotification}
+                      className="text-[11px] font-semibold text-blue-600 hover:underline"
+                    >
+                      Gửi thử chuông
+                    </button>
+                  </div>
+                ) : null}
+
                 {notificationError ? <div className="px-4 py-3 text-sm text-rose-700">{notificationError}</div> : notifications.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">Chưa có thông báo.</div>
                 ) : (
@@ -369,6 +492,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
               </div>
+
             ) : null}
           </div>
           <div className="hidden items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:flex">
