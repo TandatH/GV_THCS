@@ -109,8 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       refreshClaims,
-      signInWithEmail: async (email, password) => {
-        await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+      signInWithEmail: async (emailOrUsername, password) => {
+        let email = emailOrUsername.trim();
+        if (!email.includes("@")) {
+          email = `${email.toLowerCase()}@saodo.local`;
+        }
+        await signInWithEmailAndPassword(firebaseAuth, email, password);
       },
       signInWithGoogle: async () => {
         const provider = new GoogleAuthProvider();
@@ -130,7 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function dashboardPathForRole(role: Role) {
+export function dashboardPathForRole(role: Role, claims?: Record<string, unknown> | null) {
+  if (claims?.userType === "sao_do" || claims?.isSaoDo) {
+    return "/discipline/record";
+  }
   if (role === "bgh") return "/bgh/dashboard";
   if (role === "totruong") return "/totruong/dashboard";
   if (role === "giaovien") return "/teacher/dashboard";
