@@ -1,10 +1,14 @@
 import type {
   ApproveLeaveInput,
+  CreateSaoDoAccountInput,
+  DeleteSaoDoAccountInput,
+  ResetSaoDoPasswordInput,
   Role,
   ScheduleInput,
   SetUserRoleInput,
   SubstituteCandidate,
   TeacherInput,
+  UpdateSaoDoAccountInput,
 } from "@school/shared";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
@@ -379,4 +383,51 @@ export async function submitDisciplineAppeal(input: SubmitDisciplineAppealInput)
 
 export async function reviewDisciplineAppeal(input: ReviewDisciplineAppealInput) {
   return (await reviewDisciplineAppealCallable(input)).data;
+}
+
+// ============================================================================
+// Quản lý Tài khoản Đội Sao Đỏ (Callables)
+// ============================================================================
+
+const createSaoDoAccountCallable = callable<
+  CreateSaoDoAccountInput,
+  { uid: string; email: string; username: string; temporaryPassword?: string; assignedClassIds: string[]; message: string }
+>("createSaoDoAccount");
+
+const updateSaoDoAccountCallable = callable<
+  UpdateSaoDoAccountInput,
+  { message: string }
+>("updateSaoDoAccount");
+
+const resetSaoDoPasswordCallable = callable<
+  ResetSaoDoPasswordInput,
+  { temporaryPassword: string; message: string }
+>("resetSaoDoPassword");
+
+const deleteSaoDoAccountCallable = callable<
+  DeleteSaoDoAccountInput,
+  { action: string; message: string }
+>("deleteSaoDoAccount");
+
+export type {
+  CreateSaoDoAccountInput,
+  UpdateSaoDoAccountInput,
+  ResetSaoDoPasswordInput,
+  DeleteSaoDoAccountInput,
+};
+
+export async function createSaoDoAccount(input: CreateSaoDoAccountInput) {
+  return (await createSaoDoAccountCallable(input)).data;
+}
+
+export async function updateSaoDoAccount(input: UpdateSaoDoAccountInput) {
+  return (await updateSaoDoAccountCallable(input)).data;
+}
+
+export async function resetSaoDoPassword(input: ResetSaoDoPasswordInput) {
+  return (await resetSaoDoPasswordCallable(input)).data;
+}
+
+export async function deleteSaoDoAccount(input: DeleteSaoDoAccountInput) {
+  return (await deleteSaoDoAccountCallable(input)).data;
 }
