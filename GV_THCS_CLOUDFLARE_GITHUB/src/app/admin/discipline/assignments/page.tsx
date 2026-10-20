@@ -65,6 +65,7 @@ import {
   updateSaoDoAccount,
   resetSaoDoPassword,
   deleteSaoDoAccount,
+  firebaseErrorMessage,
   type AssignDisciplineRoleInput,
   type AssignWeeklyDisciplineSignerInput,
   type CreateSaoDoAccountInput,
@@ -450,9 +451,8 @@ function DisciplineAssignmentsContent() {
       setAssignedClassIds([]);
       setIsAllClasses(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
       console.error("Lỗi phân quyền:", err);
-      toast.error("Lỗi khi phân quyền: " + msg);
+      toast.error("Lỗi khi phân quyền: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingRole(false);
     }
@@ -473,8 +473,8 @@ function DisciplineAssignmentsContent() {
       });
       toast.success(`Đã thu hồi quyền của ${assignment.userFullName}.`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi thu hồi quyền: " + msg);
+      console.error("Lỗi thu hồi quyền:", err);
+      toast.error("Lỗi thu hồi quyền: " + firebaseErrorMessage(err));
     }
   }
 
@@ -523,9 +523,8 @@ function DisciplineAssignmentsContent() {
       );
       setIsAssignSignerModalOpen(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
       console.error("Lỗi phân công người ký:", err);
-      toast.error("Lỗi phân công người ký: " + msg);
+      toast.error("Lỗi phân công người ký: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingSigner(false);
     }
@@ -670,9 +669,8 @@ function DisciplineAssignmentsContent() {
         assignedClassNames: assignedNames,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
       console.error("Lỗi tạo tài khoản Sao Đỏ:", err);
-      toast.error("Lỗi tạo tài khoản: " + msg);
+      toast.error("Lỗi tạo tài khoản: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingCreateSaoDo(false);
     }
@@ -715,8 +713,8 @@ function DisciplineAssignmentsContent() {
       setIsEditSaoDoModalOpen(false);
       setEditingSaoDo(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi cập nhật: " + msg);
+      console.error("Lỗi cập nhật:", err);
+      toast.error("Lỗi cập nhật: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingEditSaoDo(false);
     }
@@ -752,8 +750,8 @@ function DisciplineAssignmentsContent() {
         assignedClassNames: (targetSaoDoForPassword.assignedClassIds || []).map((cid) => classMap.get(cid) || cid),
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi đổi mật khẩu: " + msg);
+      console.error("Lỗi đổi mật khẩu:", err);
+      toast.error("Lỗi đổi mật khẩu: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingReset(false);
     }
@@ -770,8 +768,8 @@ function DisciplineAssignmentsContent() {
       const res = await deleteSaoDoAccount({ uid: saoDo.id });
       toast.success(res.message);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi xóa tài khoản: " + msg);
+      console.error("Lỗi xóa tài khoản:", err);
+      toast.error("Lỗi xóa tài khoản: " + firebaseErrorMessage(err));
     }
   }
 
