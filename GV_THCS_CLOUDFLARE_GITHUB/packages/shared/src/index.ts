@@ -1095,6 +1095,9 @@ export const disciplineAssignmentSchema = z.object({
   roleType: z.enum(disciplineRoleTypes),
   assignedClassIds: z.array(z.string().trim()).default([]), // rỗng = toàn trường
   schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+  isSaoDo: z.boolean().optional(),
+  studentClassId: z.string().trim().optional().nullable(),
+  studentClassName: z.string().trim().optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -1106,6 +1109,50 @@ export interface DisciplineAssignment extends DisciplineAssignmentInput {
   createdAt?: unknown;
   updatedAt?: unknown;
 }
+
+// ============================================================================
+// 5.1. SCHEMA & TYPES: QUẢN LÝ TÀI KHOẢN SAO ĐỎ (ĐỘI CÁN SỰ SAO ĐỎ)
+// ============================================================================
+
+export const createSaoDoAccountSchema = z.object({
+  fullName: z.string().trim().min(2, "Họ và tên học sinh phải có ít nhất 2 ký tự").max(120),
+  username: z
+    .string()
+    .trim()
+    .min(3, "Tên đăng nhập phải có ít nhất 3 ký tự")
+    .max(50)
+    .regex(/^[a-zA-Z0-9._@-]+$/, "Tên đăng nhập chỉ gồm chữ cái không dấu, số, dấu chấm, gạch dưới hoặc gạch ngang"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128).optional(),
+  studentClassId: z.string().trim().optional().nullable(),
+  studentClassName: z.string().trim().optional(),
+  assignedClassIds: z.array(z.string().trim()).default([]),
+  schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+  note: z.string().trim().max(500).optional(),
+});
+export type CreateSaoDoAccountInput = z.infer<typeof createSaoDoAccountSchema>;
+
+export const updateSaoDoAccountSchema = z.object({
+  uid: z.string().trim().min(1, "UID không được để trống"),
+  fullName: z.string().trim().min(2, "Họ và tên phải có ít nhất 2 ký tự").max(120).optional(),
+  studentClassId: z.string().trim().optional().nullable(),
+  studentClassName: z.string().trim().optional(),
+  assignedClassIds: z.array(z.string().trim()),
+  schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+  isActive: z.boolean().optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export type UpdateSaoDoAccountInput = z.infer<typeof updateSaoDoAccountSchema>;
+
+export const resetSaoDoPasswordSchema = z.object({
+  uid: z.string().trim().min(1, "UID không được để trống"),
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128).optional(),
+});
+export type ResetSaoDoPasswordInput = z.infer<typeof resetSaoDoPasswordSchema>;
+
+export const deleteSaoDoAccountSchema = z.object({
+  uid: z.string().trim().min(1, "UID không được để trống"),
+});
+export type DeleteSaoDoAccountInput = z.infer<typeof deleteSaoDoAccountSchema>;
 
 // Bổ sung Yêu cầu 1: Phân công người tổng kết ký xác nhận theo từng lớp và từng tuần
 export const disciplineWeeklySignerAssignmentSchema = z.object({

@@ -446,6 +446,9 @@ export declare const disciplineAssignmentSchema: z.ZodObject<{
     }>;
     assignedClassIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
     schoolYearId: z.ZodString;
+    isSaoDo: z.ZodOptional<z.ZodBoolean>;
+    studentClassId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    studentClassName: z.ZodOptional<z.ZodString>;
     isActive: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>;
 export type DisciplineAssignmentInput = z.infer<typeof disciplineAssignmentSchema>;
@@ -456,6 +459,37 @@ export interface DisciplineAssignment extends DisciplineAssignmentInput {
     createdAt?: unknown;
     updatedAt?: unknown;
 }
+export declare const createSaoDoAccountSchema: z.ZodObject<{
+    fullName: z.ZodString;
+    username: z.ZodString;
+    password: z.ZodOptional<z.ZodString>;
+    studentClassId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    studentClassName: z.ZodOptional<z.ZodString>;
+    assignedClassIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    schoolYearId: z.ZodString;
+    note: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export type CreateSaoDoAccountInput = z.infer<typeof createSaoDoAccountSchema>;
+export declare const updateSaoDoAccountSchema: z.ZodObject<{
+    uid: z.ZodString;
+    fullName: z.ZodOptional<z.ZodString>;
+    studentClassId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    studentClassName: z.ZodOptional<z.ZodString>;
+    assignedClassIds: z.ZodArray<z.ZodString>;
+    schoolYearId: z.ZodString;
+    isActive: z.ZodOptional<z.ZodBoolean>;
+    note: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export type UpdateSaoDoAccountInput = z.infer<typeof updateSaoDoAccountSchema>;
+export declare const resetSaoDoPasswordSchema: z.ZodObject<{
+    uid: z.ZodString;
+    password: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export type ResetSaoDoPasswordInput = z.infer<typeof resetSaoDoPasswordSchema>;
+export declare const deleteSaoDoAccountSchema: z.ZodObject<{
+    uid: z.ZodString;
+}, z.core.$strip>;
+export type DeleteSaoDoAccountInput = z.infer<typeof deleteSaoDoAccountSchema>;
 export declare const disciplineWeeklySignerAssignmentSchema: z.ZodObject<{
     id: z.ZodOptional<z.ZodString>;
     weekId: z.ZodString;
