@@ -12,7 +12,7 @@ import { firebaseErrorMessage } from "@/lib/firebase/callables";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loading, role, user, signInWithEmail, signInWithGoogle, sendPasswordReset } = useAuth();
+  const { loading, role, claims, user, signInWithEmail, signInWithGoogle, sendPasswordReset } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -21,8 +21,8 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && user && role) router.replace(dashboardPathForRole(role));
-  }, [loading, role, router, user]);
+    if (!loading && user && role) router.replace(dashboardPathForRole(role, claims));
+  }, [loading, role, claims, router, user]);
 
   async function submitEmailLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,10 +133,19 @@ export default function LoginPage() {
 
             <form className="mt-8 space-y-5" onSubmit={submitEmailLogin}>
               <div>
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email hoặc Tên đăng nhập Sao Đỏ</Label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input id="email" className="pl-10" autoComplete="email" onChange={(event) => setEmail(event.target.value)} placeholder="admin@truong.edu.vn" required type="email" value={email} />
+                  <Input
+                    id="email"
+                    className="pl-10"
+                    autoComplete="username"
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="admin@truong.edu.vn hoặc saodo_6a1"
+                    required
+                    type="text"
+                    value={email}
+                  />
                 </div>
               </div>
               <div>
