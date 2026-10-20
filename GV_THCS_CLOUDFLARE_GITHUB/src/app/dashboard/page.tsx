@@ -103,10 +103,14 @@ export default function DashboardPage() {
   const departmentId = claimString(claims, "departmentId");
 
   useEffect(() => {
+    if (!authLoading && (claims?.userType === "sao_do" || claims?.isSaoDo)) {
+      router.replace("/discipline/record");
+      return;
+    }
     if (!authLoading && role === "bgh") {
       router.replace("/bgh/dashboard");
     }
-  }, [authLoading, role, router]);
+  }, [authLoading, claims, role, router]);
 
   const quickActions = useMemo(() => {
     if (role === "admin") {
