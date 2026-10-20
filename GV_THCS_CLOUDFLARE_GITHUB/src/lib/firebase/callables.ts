@@ -223,3 +223,160 @@ export async function respondToScheduleAssignment(
     await respondToScheduleAssignmentCallable(payload)
   ).data;
 }
+
+// ============================================================================
+// MODULE KỶ LUẬT & THI ĐUA (DISCIPLINE & EMULATION CALLABLES)
+// ============================================================================
+
+export type AssignDisciplineRoleInput = {
+  userUid: string;
+  roleType: "discipline_committee" | "competition_committee";
+  action: "assign" | "revoke";
+  assignedClassIds?: string[];
+  schoolYearId: string;
+};
+
+export type AssignWeeklyDisciplineSignerInput = {
+  schoolYearId: string;
+  weekId: string;
+  classId: string;
+  signerUid: string;
+  signerName: string;
+  signerEmail: string;
+};
+
+export type RecordDisciplineViolationInput = {
+  entryId?: string;
+  classId: string;
+  weekId: string;
+  schoolYearId: string;
+  criterionId: string;
+  criterionCode?: string;
+  scope?: "student" | "class";
+  studentIds?: string[];
+  studentNamesText?: string;
+  students?: { studentId: string; studentName: string }[];
+  quantity?: number;
+  occurredDate?: string;
+  date?: string;
+  period?: number;
+  note?: string;
+  attachmentUrls?: string[];
+  idempotencyKey?: string;
+};
+
+export type ReviewDisciplineViolationInput = {
+  entryId: string;
+  decision?: "approved" | "returned" | "rejected";
+  status?: "approved" | "returned" | "rejected";
+  reviewNote?: string;
+};
+
+export type SignWeeklyDisciplineScoreInput = {
+  weekId: string;
+  classId: string;
+};
+
+export type LockWeeklyDisciplineInput = {
+  weekId: string;
+};
+
+export type ReopenWeeklyDisciplineInput = {
+  weekId: string;
+  classId?: string;
+  reason: string;
+};
+
+export type VerifyWeeklyDisciplineSignatureInput = {
+  approvalId?: string;
+  weekId?: string;
+  classId?: string;
+  version?: number;
+  expectedHash: string;
+};
+
+export type SubmitDisciplineAppealInput = {
+  entryId: string;
+  reason: string;
+  evidenceUrls?: string[];
+};
+
+export type ReviewDisciplineAppealInput = {
+  appealId: string;
+  decision: "approved" | "rejected";
+  actionOnEntry?: "void" | "return";
+  resolutionNote: string;
+};
+
+const assignDisciplineRoleCallable = callable<AssignDisciplineRoleInput, { userUid: string; roleType: string; action: string }>("assignDisciplineRole");
+const assignWeeklyDisciplineSignerCallable = callable<AssignWeeklyDisciplineSignerInput, { assignmentId: string }>("assignWeeklyDisciplineSigner");
+const recordDisciplineViolationCallable = callable<RecordDisciplineViolationInput, { entryId: string; totalPoints: number }>("recordDisciplineViolation");
+const reviewDisciplineViolationCallable = callable<ReviewDisciplineViolationInput, { entryId: string; status: string }>("reviewDisciplineViolation");
+const signWeeklyDisciplineScoreCallable = callable<SignWeeklyDisciplineScoreInput, { approvalId: string; contentHashSha256: string; finalScore: number }>("signWeeklyDisciplineScore");
+const lockWeeklyDisciplineCallable = callable<LockWeeklyDisciplineInput, { weekId: string; totalClasses: number; leaderboardCount: number; message?: string }>("lockWeeklyDiscipline");
+const reopenWeeklyDisciplineCallable = callable<ReopenWeeklyDisciplineInput, { weekId: string; newVersion: number; message?: string }>("reopenWeeklyDiscipline");
+const verifyWeeklyDisciplineSignatureCallable = callable<VerifyWeeklyDisciplineSignatureInput, { status: string; isValid: boolean; match?: boolean; storedHash: string; message?: string }>("verifyWeeklyDisciplineSignature");
+const submitDisciplineAppealCallable = callable<SubmitDisciplineAppealInput, { appealId: string; message: string }>("submitDisciplineAppeal");
+const reviewDisciplineAppealCallable = callable<ReviewDisciplineAppealInput, { appealId: string; decision: string; message: string }>("reviewDisciplineAppeal");
+
+export async function assignDisciplineRole(input: AssignDisciplineRoleInput) {
+  return (await assignDisciplineRoleCallable(input)).data;
+}
+
+export async function assignWeeklyDisciplineSigner(input: AssignWeeklyDisciplineSignerInput) {
+  return (await assignWeeklyDisciplineSignerCallable(input)).data;
+}
+
+export async function recordDisciplineViolation(input: RecordDisciplineViolationInput) {
+  const normalized = {
+    entryId: input.entryId,
+    classId: input.classId,
+    weekId: input.weekId,
+    schoolYearId: input.schoolYearId,
+    criterionId: input.criterionId,
+    scope: input.scope || (input.students && input.students.length > 0 ? "student" : "class"),
+    studentIds: input.studentIds || (input.students ? input.students.map((s) => s.studentId) : []),
+    studentNamesText: input.studentNamesText || (input.students ? input.students.map((s) => s.studentName).join("; ") : ""),
+    quantity: input.quantity || (input.studentIds?.length || input.students?.length || 1),
+    occurredDate: input.occurredDate || input.date,
+    period: input.period,
+    note: input.note || "",
+    attachmentUrls: input.attachmentUrls || [],
+    idempotencyKey: input.idempotencyKey,
+  };
+  return (await recordDisciplineViolationCallable(normalized as any)).data;
+}
+
+export async function reviewDisciplineViolation(input: ReviewDisciplineViolationInput) {
+  const payload = {
+    entryId: input.entryId,
+    decision: input.decision || input.status || "approved",
+    reviewNote: input.reviewNote || "",
+  };
+  return (await reviewDisciplineViolationCallable(payload as any)).data;
+}
+
+export async function signWeeklyDisciplineScore(input: SignWeeklyDisciplineScoreInput) {
+  return (await signWeeklyDisciplineScoreCallable(input)).data;
+}
+
+export async function lockWeeklyDiscipline(input: LockWeeklyDisciplineInput) {
+  return (await lockWeeklyDisciplineCallable(input)).data;
+}
+
+export async function reopenWeeklyDiscipline(input: ReopenWeeklyDisciplineInput) {
+  return (await reopenWeeklyDisciplineCallable(input)).data;
+}
+
+export async function verifyWeeklyDisciplineSignature(input: VerifyWeeklyDisciplineSignatureInput) {
+  const approvalId = input.approvalId || (input.weekId && input.classId ? `${input.weekId}_${input.classId}_v${input.version || 1}` : "");
+  return (await verifyWeeklyDisciplineSignatureCallable({ approvalId, expectedHash: input.expectedHash } as any)).data;
+}
+
+export async function submitDisciplineAppeal(input: SubmitDisciplineAppealInput) {
+  return (await submitDisciplineAppealCallable(input)).data;
+}
+
+export async function reviewDisciplineAppeal(input: ReviewDisciplineAppealInput) {
+  return (await reviewDisciplineAppealCallable(input)).data;
+}
