@@ -72,6 +72,7 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
     { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
     { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+    { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
     { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
     { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
     { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
@@ -99,6 +100,7 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
     { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
     { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+    { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
     { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
     { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
     { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
@@ -148,6 +150,9 @@ const roleLabel: Record<Role, string> = {
 
 function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | null) {
   if (!role) return "Chưa cấp quyền";
+  if (claims?.userType === "sao_do" || claims?.isSaoDo) {
+    return "Đội Sao Đỏ";
+  }
   const isTeaching = Boolean(claims?.teacherId);
   const teachingSuffix = isTeaching && role !== "giaovien" ? " • Kiêm giảng dạy" : "";
 
@@ -167,8 +172,15 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
   const pathname = usePathname();
   const router = useRouter();
   const { claims, role, user, signOutUser } = useAuth();
-  const items = role ? menuByRole[role] : [];
-  const hasTeachingProfile = Boolean(claims?.teacherId) && role !== "giaovien";
+  const isSaoDo = Boolean(claims?.userType === "sao_do" || claims?.isSaoDo);
+  const saoDoItems: MenuItem[] = [
+    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+    { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
+  ];
+  const items = isSaoDo ? saoDoItems : (role ? menuByRole[role] : []);
+  const hasTeachingProfile = !isSaoDo && Boolean(claims?.teacherId) && role !== "giaovien";
   const teachingItems = [
     { href: "/teacher/schedule", label: "Lịch giảng dạy", icon: CalendarDays },
     { href: "/teacher/availability", label: "Đăng ký giờ trống", icon: BookOpenCheck },
