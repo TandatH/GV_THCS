@@ -9,6 +9,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./discipline": {
+      "types": "./dist/discipline.d.ts",
+      "import": "./dist/discipline.js",
+      "default": "./dist/discipline.js"
+    },
+    "./payroll": {
+      "types": "./dist/payroll.d.ts",
+      "import": "./dist/payroll.js",
+      "default": "./dist/payroll.js"
     }
   },
   "type": "module",
