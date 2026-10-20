@@ -519,3 +519,9 @@ export function summarizePayrollRows(rows: PayrollSummaryInput[]) {
     absentPeriods: 0, pendingPastPeriods: 0, totalEstimatedPayroll: 0, pendingApprovalTeachers: 0,
     approvedTeachers: 0, reviewRequiredTeachers: 0 });
 }
+
+// ==========================================
+// MODULE KỶ LUẬT & THI ĐUA (DISCIPLINE)
+// ==========================================
+export * from "./discipline.js";
+
