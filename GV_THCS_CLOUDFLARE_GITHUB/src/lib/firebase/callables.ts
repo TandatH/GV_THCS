@@ -10,7 +10,6 @@ import type {
   TeacherInput,
   UpdateSaoDoAccountInput,
 } from "@school/shared";
-import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 
 import { firebaseFunctions } from "./client";
@@ -94,13 +93,7 @@ const respondToScheduleAssignmentCallable = callable<
   Record<string, never>
 >("respondToScheduleAssignment");
 
-export function firebaseErrorMessage(error: unknown) {
-  if (!(error instanceof FirebaseError)) {
-    return error instanceof Error
-      ? error.message
-      : "Đã xảy ra lỗi không xác định.";
-  }
-
+export function firebaseErrorMessage(error: unknown): string {
   const messages: Record<string, string> = {
     "functions/unauthenticated":
       "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
@@ -122,11 +115,39 @@ export function firebaseErrorMessage(error: unknown) {
       "Bạn thao tác quá nhiều lần. Vui lòng thử lại sau.",
   };
 
-  if (error.code.startsWith("functions/") && error.message) {
-    return error.message;
+  if (typeof error === "object" && error !== null) {
+    const callableError = error as {
+      code?: unknown;
+      details?: unknown;
+      message?: unknown;
+    };
+
+    if (typeof callableError.details === "string" && callableError.details.trim()) {
+      return callableError.details;
+    }
+    if (
+      typeof callableError.details === "object" &&
+      callableError.details !== null &&
+      "message" in callableError.details &&
+      typeof callableError.details.message === "string" &&
+      callableError.details.message.trim()
+    ) {
+      return callableError.details.message;
+    }
+
+    const code = typeof callableError.code === "string" ? callableError.code : "";
+    if (!code.startsWith("functions/") && messages[code]) return messages[code];
+
+    if (typeof callableError.message === "string" && callableError.message.trim()) {
+      return callableError.message
+        .replace(/^FirebaseError:\s*/i, "")
+        .replace(/^functions\/[a-z-]+:\s*/i, "");
+    }
+
+    if (messages[code]) return messages[code];
   }
 
-  return messages[error.code] || error.message;
+  return error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
 }
 
 export async function createTeacherAccount(input: {
@@ -317,7 +338,7 @@ export type ReviewDisciplineAppealInput = {
   resolutionNote: string;
 };
 
-const assignDisciplineRoleCallable = callable<AssignDisciplineRoleInput, { userUid: string; roleType: string; action: string }>("assignDisciplineRole");
+const assignDisciplineRoleCallable = callable<AssignDisciplineRoleInput, { message: string }>("assignDisciplineRole");
 const assignWeeklyDisciplineSignerCallable = callable<AssignWeeklyDisciplineSignerInput, { assignmentId: string }>("assignWeeklyDisciplineSigner");
 const recordDisciplineViolationCallable = callable<RecordDisciplineViolationInput, { entryId: string; totalPoints: number }>("recordDisciplineViolation");
 const reviewDisciplineViolationCallable = callable<ReviewDisciplineViolationInput, { entryId: string; status: string }>("reviewDisciplineViolation");
