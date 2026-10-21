@@ -158,6 +158,17 @@ function generateRandom8Chars(): string {
   return result;
 }
 
+function normalizeSaoDoUsername(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/\s+/g, ".")
+    .replace(/[^a-z0-9._@-]/g, "");
+}
+
 function DisciplineAssignmentsContent() {
   const { user, role, claims } = useAuth();
   const searchParams = useSearchParams();
@@ -464,11 +475,18 @@ function DisciplineAssignmentsContent() {
       return;
     }
 
-    const userUid = teacher.userId || teacher.id;
-    if (!userUid) {
-      toast.error("Giáo viên này chưa được liên kết tài khoản đăng nhập (chưa có UID).");
+    if (!teacher.userId && !teacher.email?.trim()) {
+      toast.error("Giáo viên chưa có tài khoản đăng nhập và chưa có email. Vui lòng cập nhật email giáo viên trước khi phân quyền.");
       return;
     }
+
+    const effectiveSchoolYearId = selectedSchoolYearId || (schoolYears.find((year) => year.isActive) || schoolYears[0])?.id;
+    if (!effectiveSchoolYearId) {
+      toast.error("Hệ thống chưa có thông tin năm học. Vui lòng thiết lập năm học trước.");
+      return;
+    }
+
+    const userUid = teacher.userId || teacher.id;
 
     setIsSubmittingRole(true);
     try {
@@ -477,19 +495,11 @@ function DisciplineAssignmentsContent() {
         roleType: selectedRoleType,
         action: "assign",
         assignedClassIds: isAllClasses ? [] : assignedClassIds,
-        schoolYearId: selectedSchoolYearId,
+        schoolYearId: effectiveSchoolYearId,
       };
 
-      await assignDisciplineRole(payload);
-      const roleNameMap: Record<string, string> = {
-        discipline_committee: "Ban Kỷ luật",
-        competition_committee: "Ban Thi đua",
-        discipline_head: "Trưởng ban Kỷ luật",
-        competition_head: "Trưởng ban Thi đua",
-        discipline_and_competition_head: "Trưởng ban Kỷ luật & Thi đua",
-      };
-      const roleName = roleNameMap[selectedRoleType] || selectedRoleType;
-      toast.success(`Đã phân quyền ${roleName} cho ${teacher.fullName}.`);
+      const res = await assignDisciplineRole(payload);
+      toast.success(res.message || "Đã phân quyền thành công!");
       setIsAssignRoleModalOpen(false);
       setSelectedTeacherId("");
       setAssignedClassIds([]);
@@ -692,8 +702,21 @@ function DisciplineAssignmentsContent() {
       toast.error("Vui lòng nhập họ và tên học sinh.");
       return;
     }
-    if (!saoDoUsername.trim()) {
+    const normalizedUsername = normalizeSaoDoUsername(saoDoUsername);
+    if (!normalizedUsername) {
       toast.error("Vui lòng nhập tên đăng nhập cho Sao Đỏ.");
+      return;
+    }
+    if (normalizedUsername.length < 3) {
+      toast.error("Tên đăng nhập phải có ít nhất 3 ký tự.");
+      return;
+    }
+    if ((normalizedUsername.match(/@/g) || []).length > 1) {
+      toast.error("Tên đăng nhập hoặc email không hợp lệ.");
+      return;
+    }
+    if (saoDoPassword.trim().length < 6) {
+      toast.error("Mật khẩu phải có ít nhất 6 ký tự.");
       return;
     }
     if (!selectedSchoolYearId) {
@@ -708,7 +731,7 @@ function DisciplineAssignmentsContent() {
 
       const payload: CreateSaoDoAccountInput = {
         fullName: saoDoFullName.trim(),
-        username: saoDoUsername.trim(),
+        username: normalizedUsername,
         password: saoDoPassword.trim() || undefined,
         studentClassId: saoDoStudentClassId || null,
         studentClassName,
@@ -1606,6 +1629,7 @@ function DisciplineAssignmentsContent() {
                       value={saoDoPassword}
                       onChange={(e) => setSaoDoPassword(e.target.value)}
                       required
+                    minLength={6}
                       className="pr-10 font-mono text-xs"
                     />
                     <button
