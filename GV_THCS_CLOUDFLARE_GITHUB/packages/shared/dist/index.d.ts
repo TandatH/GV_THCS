@@ -357,7 +357,8 @@ export declare const disciplineEntryStatusLabels: Record<DisciplineEntryStatus, 
 export declare const disciplineApprovalStatuses: readonly ["draft", "signed", "locked", "superseded"];
 export type DisciplineApprovalStatus = (typeof disciplineApprovalStatuses)[number];
 export declare const disciplineApprovalStatusLabels: Record<DisciplineApprovalStatus, string>;
-export declare const disciplineRoleTypes: readonly ["discipline_committee", "competition_committee"];
+export declare const DEFAULT_WEEKLY_BASE_SCORE = 600;
+export declare const disciplineRoleTypes: readonly ["discipline_committee", "competition_committee", "discipline_head", "competition_head", "discipline_and_competition_head"];
 export type DisciplineRoleType = (typeof disciplineRoleTypes)[number];
 export declare const disciplineRoleTypeLabels: Record<DisciplineRoleType, string>;
 export declare const disciplineAppealStatuses: readonly ["pending", "approved", "rejected"];
@@ -443,6 +444,9 @@ export declare const disciplineAssignmentSchema: z.ZodObject<{
     roleType: z.ZodEnum<{
         discipline_committee: "discipline_committee";
         competition_committee: "competition_committee";
+        discipline_head: "discipline_head";
+        competition_head: "competition_head";
+        discipline_and_competition_head: "discipline_and_competition_head";
     }>;
     assignedClassIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
     schoolYearId: z.ZodString;

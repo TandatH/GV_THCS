@@ -437,10 +437,20 @@ export const disciplineApprovalStatusLabels = {
     locked: "Đã khóa sổ",
     superseded: "Đã thay thế",
 };
-export const disciplineRoleTypes = ["discipline_committee", "competition_committee"];
+export const DEFAULT_WEEKLY_BASE_SCORE = 600;
+export const disciplineRoleTypes = [
+    "discipline_committee",
+    "competition_committee",
+    "discipline_head",
+    "competition_head",
+    "discipline_and_competition_head",
+];
 export const disciplineRoleTypeLabels = {
     discipline_committee: "Ban Kỷ luật (Ghi nhận vi phạm)",
     competition_committee: "Ban Thi đua (Duyệt & Tổng kết)",
+    discipline_head: "Trưởng ban Kỷ luật (Cài đặt & Quản trị kỷ luật)",
+    competition_head: "Trưởng ban Thi đua (Cài đặt & Quản trị thi đua)",
+    discipline_and_competition_head: "Trưởng ban Kỷ luật & Thi đua (Toàn quyền điều hành)",
 };
 export const disciplineAppealStatuses = ["pending", "approved", "rejected"];
 export const studentStatuses = ["studying", "transferred", "graduated", "suspended"];
