@@ -65,8 +65,8 @@ import { recordDisciplineViolation, type RecordDisciplineViolationInput } from "
 import { firestore } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
 
-type OptionRow = DocumentData & { id: string; name?: string; code?: string; isActive?: boolean };
-type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; status?: string };
+type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; isActive?: boolean };
+type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string };
 type StudentOption = DocumentData & { id: string; studentCode: string; fullName: string; classId: string; className: string };
 type CriterionOption = DocumentData & {
   id: string;
@@ -79,6 +79,13 @@ type CriterionOption = DocumentData & {
   scope: "student" | "class" | "both";
   isActive?: boolean;
 };
+
+function isSecondaryClass(row: OptionRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
 
 function RecordDisciplineForm() {
   const router = useRouter();
@@ -251,7 +258,8 @@ function RecordDisciplineForm() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === "secondary");
       rows.sort((a, b) => a.weekNumber - b.weekNumber);
       setWeeks(rows);
       if (rows.length > 0 && !selectedWeekId) {
@@ -266,7 +274,8 @@ function RecordDisciplineForm() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubClasses = onSnapshot(qClasses, (snapshot) => {
-      const allRows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
+      const allRows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[])
+        .filter(isSecondaryClass);
 
       // LỌC THEO PHẠM VI LỚP ĐƯỢC PHÂN CÔNG (ASSIGNED CLASSES SCOPE)
       let availableClasses = allRows;

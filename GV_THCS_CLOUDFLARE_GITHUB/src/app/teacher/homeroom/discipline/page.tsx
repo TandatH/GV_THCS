@@ -92,8 +92,8 @@ import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { cn, formatDate } from "@/lib/utils";
 
-type ClassRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; homeroomTeacherId?: string };
-type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; status?: string; isLocked?: boolean };
+type ClassRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; homeroomTeacherId?: string };
+type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string; isLocked?: boolean };
 type StudentRow = DocumentData & { id: string; studentCode: string; fullName: string; classId: string; className: string };
 type EntryRow = DocumentData & {
   id: string;
@@ -154,6 +154,13 @@ type ClassScoreRow = DocumentData & {
   totalMinus: number;
 };
 
+function isSecondaryClass(row: ClassRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
+
 function HomeroomDisciplineContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -208,7 +215,8 @@ function HomeroomDisciplineContent() {
 
         // Lấy danh sách lớp học
         const clsSnap = await getDocs(query(collection(firestore, "classes"), where("isActive", "==", true)));
-        const allCls = clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClassRow[];
+        const allCls = (clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClassRow[])
+          .filter(isSecondaryClass);
         allCls.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         // Lọc các lớp do giáo viên này làm GVCN
@@ -260,7 +268,8 @@ function HomeroomDisciplineContent() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === "secondary");
       rows.sort((a, b) => b.weekNumber - a.weekNumber);
       setWeeks(rows);
       if (rows.length > 0) {

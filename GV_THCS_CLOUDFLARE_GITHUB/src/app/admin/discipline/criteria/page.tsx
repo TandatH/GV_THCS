@@ -82,7 +82,7 @@ type CriterionRow = DocumentData & {
 };
 
 export default function DisciplineCriteriaPage() {
-  const { user, role, claims } = useAuth();
+  const { user, role, claims, refreshClaims } = useAuth();
   const [criteria, setCriteria] = useState<CriterionRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -140,13 +140,33 @@ export default function DisciplineCriteriaPage() {
       setHasCriteriaAccess(true);
       return;
     }
-    // Tra cứu thêm từ Firestore nếu claims chưa kịp làm mới
-    getDocs(query(collection(firestore, "disciplineAssignments"), where("userUid", "==", user.uid), where("isActive", "==", true)))
+
+    // Làm mới token ID để đồng bộ quyền mới nhất vừa được phân công từ Admin/BGH
+    refreshClaims()
+      .then(() => {
+        return getDocs(
+          query(
+            collection(firestore, "disciplineAssignments"),
+            where("userUid", "==", user.uid),
+            where("isActive", "==", true),
+          ),
+        );
+      })
       .then((snap) => {
         setHasCriteriaAccess(!snap.empty);
       })
-      .catch(() => setHasCriteriaAccess(false));
-  }, [user, role, claims]);
+      .catch(() => {
+        getDocs(
+          query(
+            collection(firestore, "disciplineAssignments"),
+            where("userUid", "==", user.uid),
+            where("isActive", "==", true),
+          ),
+        )
+          .then((snap) => setHasCriteriaAccess(!snap.empty))
+          .catch(() => setHasCriteriaAccess(false));
+      });
+  }, [user, role, claims, refreshClaims]);
 
   // Tải danh sách tiêu chí từ Firestore
   useEffect(() => {

@@ -77,8 +77,8 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { cn, formatDate } from "@/lib/utils";
 
-type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; homeroomTeacherId?: string };
-type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; status?: string };
+type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; homeroomTeacherId?: string };
+type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string };
 type EntryRow = DocumentData & {
   id: string;
   criterionId: string;
@@ -120,6 +120,13 @@ type ApprovalRow = DocumentData & {
     basePoints: number;
   };
 };
+
+function isSecondaryClass(row: OptionRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
 
 function WeeklyFinalizeContent() {
   const router = useRouter();
@@ -183,11 +190,12 @@ function WeeklyFinalizeContent() {
           setSelectedSchoolYearId(syRows[0].id);
         }
 
-        const clsRows = clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
-        clsRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-        setClasses(clsRows);
-        if (clsRows.length > 0 && !selectedClassId) {
-          setSelectedClassId(clsRows[0].id);
+        const allClsRows = clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
+        allClsRows.sort((a, b) => (a.name || "").localeCompare(b.name || "", "vi", { numeric: true }));
+        setClasses(allClsRows);
+        const firstSecondary = allClsRows.find(isSecondaryClass);
+        if (allClsRows.length > 0 && (!selectedClassId || !allClsRows.some((row) => row.id === selectedClassId))) {
+          setSelectedClassId(firstSecondary ? firstSecondary.id : allClsRows[0].id);
         }
 
         if (!critSnap.empty) {
@@ -213,7 +221,8 @@ function WeeklyFinalizeContent() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === "secondary");
       rows.sort((a, b) => b.weekNumber - a.weekNumber);
       setWeeks(rows);
       if (rows.length > 0) {
@@ -292,6 +301,11 @@ function WeeklyFinalizeContent() {
   const activeWeek = useMemo(() => weeks.find((w) => w.id === selectedWeekId), [weeks, selectedWeekId]);
   const activeClass = useMemo(() => classes.find((c) => c.id === selectedClassId), [classes, selectedClassId]);
 
+  // Phân cấp Cấp 1 và Cấp 2
+  const secondaryClasses = useMemo(() => classes.filter(isSecondaryClass), [classes]);
+  const primaryClasses = useMemo(() => classes.filter((c) => !isSecondaryClass(c)), [classes]);
+  const isCurrentClassSecondary = useMemo(() => (activeClass ? isSecondaryClass(activeClass) : true), [activeClass]);
+
   // Phân loại phiếu: Phiếu đã duyệt (approved), Phiếu chờ duyệt (pending), Phiếu bị từ chối/trả lại
   const approvedEntries = useMemo(() => entries.filter((e) => e.status === "approved"), [entries]);
   const pendingEntries = useMemo(() => entries.filter((e) => e.status === "pending"), [entries]);
@@ -332,6 +346,8 @@ function WeeklyFinalizeContent() {
 
   // Kiểm tra quyền ký xác nhận của user hiện tại
   const canSign = useMemo(() => {
+    // Lớp Cấp 1 tạm thời không tham gia thi đua và không cho phép ký
+    if (!isCurrentClassSecondary) return false;
     if (!user) return false;
     // Admin hoặc BGH luôn có quyền
     if (role === "admin" || role === "bgh") return true;
@@ -340,7 +356,7 @@ function WeeklyFinalizeContent() {
       return true;
     }
     return false;
-  }, [user, role, signerAssignment]);
+  }, [user, role, signerAssignment, isCurrentClassSecondary]);
 
   // THỰC HIỆN KÝ XÁC NHẬN BẢNG ĐIỂM
   async function handleConfirmSign() {
@@ -416,7 +432,7 @@ function WeeklyFinalizeContent() {
           <PageHeader
             eyebrow="Ban Thi đua"
             title="Tổng kết điểm & Ký xác nhận"
-            description="Tổng hợp điểm thi đua tuần theo đúng 33 tiêu chí quy chế, kiểm soát phiếu chờ duyệt và ký xác nhận bảo chứng SHA-256 chống làm giả."
+            description="Tổng hợp và ký xác nhận bắt buộc cho các lớp Cấp 2. Cấp 1 hiện chưa tham gia thi đua toàn trường."
             actions={
               <div className="flex items-center gap-2">
                 <Button
@@ -487,15 +503,41 @@ function WeeklyFinalizeContent() {
                   onChange={(e) => setSelectedClassId(e.target.value)}
                   className="mt-1 block w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-semibold focus:border-primary focus:ring-1 focus:ring-primary"
                 >
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Lớp {c.name}
-                    </option>
-                  ))}
+                  <optgroup label="Cấp 2 (THCS - Bắt buộc ký)">
+                    {secondaryClasses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        Lớp {c.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {primaryClasses.length > 0 && (
+                    <optgroup label="Cấp 1 (Tiểu học - Tạm chưa thi đua)">
+                      {primaryClasses.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Lớp {c.name} (Cấp 1 - Tạm khóa)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
           </Card>
+
+          {/* CẢNH BÁO NẾU ĐANG CHỌN LỚP CẤP 1 */}
+          {!isCurrentClassSecondary && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-4 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-bold text-sm">
+                  Lớp {activeClass?.name} thuộc Cấp 1 (Tiểu học) — Tạm thời chưa tham gia thi đua chung
+                </div>
+                <p>
+                  Theo quy định hiện hành, bảng xếp hạng và quy trình ký duyệt thi đua tuần chỉ áp dụng bắt buộc đối với Cấp 2 (Khối 6–9). Các thao tác ký xác nhận đối với Cấp 1 đang được làm mờ và tạm khóa cho đến khi Nhà trường có yêu cầu kích hoạt.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* KHỐI TRẠNG THÁI CHỮ KÝ VÀ BẢNG ĐIỂM TỔNG KẾT */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -539,7 +581,9 @@ function WeeklyFinalizeContent() {
                   <span className="text-xs font-bold text-foreground uppercase">Hồ sơ ký xác nhận</span>
                 </div>
                 <div>
-                  {activeApproval ? (
+                  {!isCurrentClassSecondary ? (
+                    <Badge tone="neutral">CẤP 1 (TẠM CHƯA THI ĐUA)</Badge>
+                  ) : activeApproval ? (
                     <Badge tone="success">ĐÃ KÝ XÁC NHẬN (v{activeApproval.version})</Badge>
                   ) : (
                     <Badge tone="warning">BẢNG TẠM TÍNH (CHƯA KÝ)</Badge>
@@ -586,7 +630,12 @@ function WeeklyFinalizeContent() {
               {/* NÚT THAO TÁC KÝ VÀ XÁC MINH */}
               <div className="pt-2 border-t flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {pendingEntries.length > 0 ? (
+                  {!isCurrentClassSecondary ? (
+                    <span className="text-muted-foreground font-semibold flex items-center gap-1">
+                      <Info className="h-3.5 w-3.5" />
+                      Lớp Cấp 1: Chưa áp dụng thi đua và không bắt buộc ký.
+                    </span>
+                  ) : pendingEntries.length > 0 ? (
                     <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
                       <AlertCircle className="h-3.5 w-3.5" />
                       Còn {pendingEntries.length} phiếu chờ duyệt. Không thể ký.
@@ -618,10 +667,18 @@ function WeeklyFinalizeContent() {
                     size="sm"
                     disabled={!canSign || pendingEntries.length > 0}
                     onClick={() => setIsSignModalOpen(true)}
-                    className="gap-1.5 text-xs shadow-sm"
+                    title={!isCurrentClassSecondary ? "Lớp thuộc Cấp 1 - Tạm thời chưa tham gia thi đua" : undefined}
+                    className={cn(
+                      "gap-1.5 text-xs shadow-sm",
+                      !isCurrentClassSecondary && "opacity-40 cursor-not-allowed hover:bg-primary"
+                    )}
                   >
                     <FileCheck className="h-3.5 w-3.5" />
-                    {activeApproval ? "Ký lại phiên bản mới" : "Ký xác nhận bảng điểm"}
+                    {!isCurrentClassSecondary
+                      ? "Cấp 1 tạm chưa ký"
+                      : activeApproval
+                        ? "Ký lại phiên bản mới"
+                        : "Ký xác nhận bảng điểm"}
                   </Button>
                 </div>
               </div>

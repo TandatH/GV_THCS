@@ -460,6 +460,7 @@ export async function deleteSaoDoAccount(input: DeleteSaoDoAccountInput) {
 
 export type InitializeDisciplineWeeksInput = {
   schoolYearId?: string;
+  schoolLevel?: "primary" | "secondary";
   upToWeek?: number;
   activeWeekNumber?: number;
 };

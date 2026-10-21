@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  PRIMARY_DISCIPLINE_ENABLED,
+} from "@school/shared";
+import {
   CalendarDays,
   Check,
   CheckCircle2,
@@ -75,12 +78,16 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
 
+type SchoolLevel = "primary" | "secondary";
+
 type TeacherRow = DocumentData & {
   id: string;
   fullName: string;
   teacherCode?: string;
   email?: string;
   userId?: string;
+  schoolLevel?: SchoolLevel | "all";
+  schoolLevels?: SchoolLevel[];
 };
 
 type OptionRow = DocumentData & {
@@ -89,6 +96,9 @@ type OptionRow = DocumentData & {
   code?: string;
   isActive?: boolean;
   homeroomTeacherId?: string;
+  schoolLevel?: SchoolLevel;
+  grade?: number | string;
+  gradeLevel?: number | string;
 };
 
 type AssignmentRow = DocumentData & {
@@ -104,6 +114,7 @@ type AssignmentRow = DocumentData & {
     | "discipline_and_competition_head";
   assignedClassIds?: string[];
   schoolYearId: string;
+  schoolLevel?: SchoolLevel;
   isSaoDo?: boolean;
   isActive: boolean;
   assignedByName?: string;
@@ -117,6 +128,7 @@ type WeekRow = DocumentData & {
   startDate?: string;
   endDate?: string;
   status?: "active" | "locked";
+  schoolLevel?: SchoolLevel;
 };
 
 type SignerAssignmentRow = DocumentData & {
@@ -144,6 +156,7 @@ type SaoDoUserRow = DocumentData & {
   studentClassName?: string;
   assignedClassIds?: string[];
   schoolYearId?: string;
+  schoolLevel?: SchoolLevel;
   isActive?: boolean;
   note?: string;
   createdAt?: unknown;
@@ -169,8 +182,29 @@ function normalizeSaoDoUsername(value: string): string {
     .replace(/[^a-z0-9._@-]/g, "");
 }
 
+function optionGrade(row: OptionRow): number {
+  return Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+}
+
+function optionSchoolLevel(row: OptionRow): SchoolLevel {
+  if (row.schoolLevel === "primary" || row.schoolLevel === "secondary") return row.schoolLevel;
+  const grade = optionGrade(row);
+  return Number.isFinite(grade) && grade >= 1 && grade <= 5 ? "primary" : "secondary";
+}
+
+function teacherSupportsSchoolLevel(teacher: TeacherRow, level: SchoolLevel): boolean {
+  if (teacher.schoolLevel === "all") return true;
+  if (Array.isArray(teacher.schoolLevels) && teacher.schoolLevels.length > 0) {
+    return teacher.schoolLevels.includes(level);
+  }
+  if (teacher.schoolLevel === "primary" || teacher.schoolLevel === "secondary") {
+    return teacher.schoolLevel === level;
+  }
+  return level === "secondary";
+}
+
 function DisciplineAssignmentsContent() {
-  const { user, role, claims } = useAuth();
+  const { user, role, claims, refreshClaims } = useAuth();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
 
@@ -192,12 +226,32 @@ function DisciplineAssignmentsContent() {
       setHasAccess(true);
       return;
     }
-    getDocs(query(collection(firestore, "disciplineAssignments"), where("userUid", "==", user.uid), where("isActive", "==", true)))
+
+    refreshClaims()
+      .then(() => {
+        return getDocs(
+          query(
+            collection(firestore, "disciplineAssignments"),
+            where("userUid", "==", user.uid),
+            where("isActive", "==", true),
+          ),
+        );
+      })
       .then((snap) => {
         setHasAccess(!snap.empty);
       })
-      .catch(() => setHasAccess(false));
-  }, [user, role, claims]);
+      .catch(() => {
+        getDocs(
+          query(
+            collection(firestore, "disciplineAssignments"),
+            where("userUid", "==", user.uid),
+            where("isActive", "==", true),
+          ),
+        )
+          .then((snap) => setHasAccess(!snap.empty))
+          .catch(() => setHasAccess(false));
+      });
+  }, [user, role, claims, refreshClaims]);
 
   const [activeTab, setActiveTab] = useState<"roles" | "signers" | "saodo">(
     tabParam === "saodo" ? "saodo" : tabParam === "signers" ? "signers" : "roles",
@@ -205,12 +259,22 @@ function DisciplineAssignmentsContent() {
 
   // Dữ liệu danh mục
   const [schoolYears, setSchoolYears] = useState<OptionRow[]>([]);
-  const [classes, setClasses] = useState<OptionRow[]>([]);
-  const [teachers, setTeachers] = useState<TeacherRow[]>([]);
+  const [allClasses, setAllClasses] = useState<OptionRow[]>([]);
+  const [allTeachers, setAllTeachers] = useState<TeacherRow[]>([]);
   const [weeks, setWeeks] = useState<WeekRow[]>([]);
 
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState<string>("");
+  const [selectedSchoolLevel, setSelectedSchoolLevel] = useState<SchoolLevel>("secondary");
   const [selectedWeekId, setSelectedWeekId] = useState<string>("");
+
+  const classes = useMemo(
+    () => allClasses.filter((row) => optionSchoolLevel(row) === selectedSchoolLevel),
+    [allClasses, selectedSchoolLevel],
+  );
+  const teachers = useMemo(
+    () => allTeachers.filter((teacher) => teacherSupportsSchoolLevel(teacher, selectedSchoolLevel)),
+    [allTeachers, selectedSchoolLevel],
+  );
 
   // Tab 1: Phân quyền Ban Kỷ luật & Ban Thi đua (Giáo viên)
   const [roleAssignments, setRoleAssignments] = useState<AssignmentRow[]>([]);
@@ -287,6 +351,14 @@ function DisciplineAssignmentsContent() {
     }
   }, [tabParam, activeTab]);
 
+  useEffect(() => {
+    if (PRIMARY_DISCIPLINE_ENABLED && (claims?.schoolLevel === "primary" || claims?.schoolLevel === "secondary")) {
+      setSelectedSchoolLevel(claims.schoolLevel);
+    } else if (!PRIMARY_DISCIPLINE_ENABLED) {
+      setSelectedSchoolLevel("secondary");
+    }
+  }, [claims?.schoolLevel]);
+
   // 1. Tải Năm học
   useEffect(() => {
     const unsub = onSnapshot(collection(firestore, "schoolYears"), (snapshot) => {
@@ -307,11 +379,11 @@ function DisciplineAssignmentsContent() {
     const unsubClasses = onSnapshot(qClasses, (snapshot) => {
       const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
       rows.sort((a, b) => (a.name || a.code || "").localeCompare(b.name || b.code || ""));
-      setClasses(rows);
+      setAllClasses(rows);
     });
 
     const unsubTeachers = onSnapshot(collection(firestore, "teachers"), (snapshot) => {
-      setTeachers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as TeacherRow[]);
+      setAllTeachers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as TeacherRow[]);
     });
 
     return () => {
@@ -325,7 +397,8 @@ function DisciplineAssignmentsContent() {
     if (!selectedSchoolYearId) return;
     const qWeeks = query(collection(firestore, "disciplineWeeks"), where("schoolYearId", "==", selectedSchoolYearId));
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === selectedSchoolLevel);
       rows.sort((a, b) => a.weekNumber - b.weekNumber);
       setWeeks(rows);
       if (rows.length > 0) {
@@ -338,7 +411,7 @@ function DisciplineAssignmentsContent() {
     });
 
     return () => unsubWeeks();
-  }, [selectedSchoolYearId, selectedWeekId]);
+  }, [selectedSchoolYearId, selectedSchoolLevel, selectedWeekId]);
 
   // 4. Tải Phân quyền Ban Kỷ luật & Ban Thi đua (Tab 1)
   useEffect(() => {
@@ -408,23 +481,28 @@ function DisciplineAssignmentsContent() {
   // Map tìm tên lớp theo ID
   const classMap = useMemo(() => {
     const map = new Map<string, string>();
-    classes.forEach((c) => map.set(c.id, c.name || c.code || c.id));
+    allClasses.forEach((c) => map.set(c.id, c.name || c.code || c.id));
     return map;
-  }, [classes]);
+  }, [allClasses]);
 
-  // Nhóm lớp theo khối (Khối 6, 7, 8, 9)
+  const classLevelMap = useMemo(() => {
+    const map = new Map<string, SchoolLevel>();
+    allClasses.forEach((row) => map.set(row.id, optionSchoolLevel(row)));
+    return map;
+  }, [allClasses]);
+
+  // Nhóm lớp theo khối của cấp học đang chọn.
   const classesByGrade = useMemo(() => {
-    const groups: Record<string, OptionRow[]> = { "Khối 6": [], "Khối 7": [], "Khối 8": [], "Khối 9": [], "Khác": [] };
+    const gradeNumbers = selectedSchoolLevel === "primary" ? [1, 2, 3, 4, 5] : [6, 7, 8, 9];
+    const groups: Record<string, OptionRow[]> = Object.fromEntries(
+      [...gradeNumbers.map((grade) => [`Khối ${grade}`, [] as OptionRow[]]), ["Khác", [] as OptionRow[]]],
+    );
     classes.forEach((c) => {
-      const name = (c.name || c.code || "").trim();
-      if (name.startsWith("6")) groups["Khối 6"].push(c);
-      else if (name.startsWith("7")) groups["Khối 7"].push(c);
-      else if (name.startsWith("8")) groups["Khối 8"].push(c);
-      else if (name.startsWith("9")) groups["Khối 9"].push(c);
-      else groups["Khác"].push(c);
+      const key = `Khối ${optionGrade(c)}`;
+      (groups[key] || groups.Khác).push(c);
     });
     return groups;
-  }, [classes]);
+  }, [classes, selectedSchoolLevel]);
 
   // Map tìm giáo viên theo ID
   const teacherMap = useMemo(() => {
@@ -446,20 +524,36 @@ function DisciplineAssignmentsContent() {
 
   // Lọc chỉ giáo viên trong Tab 1 (loại bỏ Sao Đỏ khỏi bảng nhân sự giáo viên)
   const teacherRoleAssignments = useMemo(() => {
-    return roleAssignments.filter((r) => !r.isSaoDo);
-  }, [roleAssignments]);
+    return roleAssignments.filter((assignment) => {
+      if (assignment.isSaoDo) return false;
+      if (assignment.schoolLevel) return assignment.schoolLevel === selectedSchoolLevel;
+      const scopedClassIds = assignment.assignedClassIds || [];
+      if (scopedClassIds.length === 0) return true;
+      return scopedClassIds.some((classId) => classLevelMap.get(classId) === selectedSchoolLevel);
+    });
+  }, [roleAssignments, selectedSchoolLevel, classLevelMap]);
 
   // Lọc danh sách Sao Đỏ theo từ khóa tìm kiếm
   const filteredSaoDoUsers = useMemo(() => {
-    if (!saoDoSearchTerm.trim()) return saoDoUsers;
+    const levelUsers = saoDoUsers.filter((saoDo) => {
+      if (saoDo.schoolLevel) return saoDo.schoolLevel === selectedSchoolLevel;
+      if (saoDo.studentClassId && classLevelMap.has(saoDo.studentClassId)) {
+        return classLevelMap.get(saoDo.studentClassId) === selectedSchoolLevel;
+      }
+      const scopedClassId = saoDo.assignedClassIds?.find((classId) => classLevelMap.has(classId));
+      return scopedClassId
+        ? classLevelMap.get(scopedClassId) === selectedSchoolLevel
+        : selectedSchoolLevel === "secondary";
+    });
+    if (!saoDoSearchTerm.trim()) return levelUsers;
     const term = saoDoSearchTerm.toLowerCase();
-    return saoDoUsers.filter(
+    return levelUsers.filter(
       (s) =>
         (s.fullName || "").toLowerCase().includes(term) ||
         (s.username || "").toLowerCase().includes(term) ||
         (s.email || "").toLowerCase().includes(term),
     );
-  }, [saoDoUsers, saoDoSearchTerm]);
+  }, [saoDoUsers, saoDoSearchTerm, selectedSchoolLevel, classLevelMap]);
 
   // Xử lý Cấp quyền Ban Kỷ luật / Ban Thi đua (Giáo viên)
   async function handleAssignRole(e: React.FormEvent) {
@@ -518,6 +612,7 @@ function DisciplineAssignmentsContent() {
     try {
       const res = await initializeDisciplineWeeks({
         schoolYearId: selectedSchoolYearId || undefined,
+        schoolLevel: selectedSchoolLevel,
         upToWeek: 7,
         activeWeekNumber: 7,
       });
@@ -655,13 +750,16 @@ function DisciplineAssignmentsContent() {
       return;
     }
     const nextNum = weeks.length + 1;
-    const weekId = `week_${selectedSchoolYearId}_${nextNum}`;
+    const weekId = selectedSchoolLevel === "primary"
+      ? `week_${selectedSchoolYearId}_primary_${nextNum}`
+      : `week_${selectedSchoolYearId}_${nextNum}`;
     try {
       await setDoc(
         doc(firestore, "disciplineWeeks", weekId),
         {
           weekNumber: nextNum,
           schoolYearId: selectedSchoolYearId,
+          schoolLevel: selectedSchoolLevel,
           status: "active",
           createdAt: serverTimestamp(),
           createdBy: user?.uid || "admin",
@@ -723,6 +821,10 @@ function DisciplineAssignmentsContent() {
       toast.error("Vui lòng chọn năm học.");
       return;
     }
+    if (saoDoAssignedClassIds.length === 0) {
+      toast.error(`Vui lòng chọn ít nhất một lớp ${selectedSchoolLevelLabel} để Sao Đỏ phụ trách.`);
+      return;
+    }
 
     setIsSubmittingCreateSaoDo(true);
     try {
@@ -737,6 +839,7 @@ function DisciplineAssignmentsContent() {
         studentClassName: studentClassName || undefined,
         assignedClassIds: saoDoAssignedClassIds,
         schoolYearId: selectedSchoolYearId,
+        schoolLevel: selectedSchoolLevel,
         note: saoDoNote.trim() ? saoDoNote.trim() : undefined,
       };
 
@@ -777,6 +880,10 @@ function DisciplineAssignmentsContent() {
   async function handleUpdateSaoDoSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingSaoDo) return;
+    if (editAssignedClassIds.length === 0) {
+      toast.error(`Vui lòng chọn ít nhất một lớp ${selectedSchoolLevelLabel} để Sao Đỏ phụ trách.`);
+      return;
+    }
 
     setIsSubmittingEditSaoDo(true);
     try {
@@ -790,6 +897,7 @@ function DisciplineAssignmentsContent() {
         studentClassName: studentClassName || undefined,
         assignedClassIds: editAssignedClassIds,
         schoolYearId: selectedSchoolYearId,
+        schoolLevel: selectedSchoolLevel,
         isActive: editIsActive,
         note: editNote.trim() ? editNote.trim() : undefined,
       };
@@ -873,7 +981,7 @@ function DisciplineAssignmentsContent() {
       `Tên đăng nhập: ${creds.username}`,
       `Email hệ thống: ${creds.email}`,
       `Mật khẩu khởi tạo: ${creds.temporaryPassword || "—"}`,
-      `Lớp phân công chấm: ${creds.assignedClassNames.length > 0 ? creds.assignedClassNames.join(", ") : "Toàn trường"}`,
+      `Lớp phân công chấm: ${creds.assignedClassNames.length > 0 ? creds.assignedClassNames.join(", ") : "Chưa phân công"}`,
       `Học sinh có thể đăng nhập bằng tên "${creds.username}" tại trang đăng nhập hệ thống.`,
     ].join("\n");
 
@@ -895,6 +1003,29 @@ function DisciplineAssignmentsContent() {
     }
   }
 
+  const selectedSchoolLevelLabel = selectedSchoolLevel === "primary" ? "Cấp 1" : "Cấp 2";
+  const scopedSchoolLevel = claims?.schoolLevel === "primary" || claims?.schoolLevel === "secondary"
+    ? claims.schoolLevel
+    : null;
+
+  function handleSchoolLevelChange(level: SchoolLevel) {
+    if (!PRIMARY_DISCIPLINE_ENABLED && level === "primary") {
+      toast.info("Cấp 1 chưa mở tham gia thi đua. Các chức năng Cấp 1 hiện đang tạm khóa.");
+      return;
+    }
+    if (scopedSchoolLevel && scopedSchoolLevel !== level) {
+      toast.error(`Tài khoản chỉ được phân công quản lý ${scopedSchoolLevel === "primary" ? "Cấp 1" : "Cấp 2"}.`);
+      return;
+    }
+    setSelectedSchoolLevel(level);
+    setSelectedWeekId("");
+    setAssignedClassIds([]);
+    setSaoDoStudentClassId("");
+    setSaoDoAssignedClassIds([]);
+    setEditStudentClassId("");
+    setEditAssignedClassIds([]);
+  }
+
   return (
     <RoleGuard allowedRoles={["admin", "bgh", "totruong", "giaovien"]}>
       <Shell>
@@ -910,7 +1041,7 @@ function DisciplineAssignmentsContent() {
             <>
               <PageHeader
             title="Phân công nhân sự Thi đua & Kỷ luật"
-            description="Ủy quyền thành viên Ban Kỷ luật, Ban Thi đua, phân công người ký xác nhận bảng điểm và quản lý tài khoản Đội Sao Đỏ."
+            description={`Đang quản lý ${selectedSchoolLevelLabel}: phân quyền nhân sự, người ký xác nhận và tài khoản Đội Sao Đỏ.`}
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 {activeTab === "roles" ? (
@@ -928,7 +1059,7 @@ function DisciplineAssignmentsContent() {
                       className="gap-2 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                     >
                       <RefreshCw className={cn("h-4 w-4", isSyncingWeeks && "animate-spin")} />
-                      {isSyncingWeeks ? "Đang đồng bộ..." : "Kích hoạt Tuần 7 (Hiện tại)"}
+                      {isSyncingWeeks ? "Đang đồng bộ..." : `Kích hoạt Tuần 7 - ${selectedSchoolLevelLabel}`}
                     </Button>
                     <Button
                       variant="secondary"
@@ -950,6 +1081,39 @@ function DisciplineAssignmentsContent() {
               </div>
             }
           />
+
+          {/* TÁCH PHẠM VI CẤP 1 / CẤP 2 */}
+          <div className="rounded-xl border bg-card p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Phạm vi cấp học</div>
+              <p className="text-xs text-muted-foreground">
+                Dữ liệu lớp, người ký, tuần thi đua và tài khoản Sao Đỏ được hiển thị riêng theo từng cấp.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 min-w-64">
+              {(["primary", "secondary"] as const).map((level) => {
+                const label = level === "primary" ? "Cấp 1 (Chưa mở)" : "Cấp 2 (Khối 6–9)";
+                const disabled = (!PRIMARY_DISCIPLINE_ENABLED && level === "primary") || Boolean(scopedSchoolLevel && scopedSchoolLevel !== level);
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => handleSchoolLevelChange(level)}
+                    className={cn(
+                      "rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+                      selectedSchoolLevel === level
+                        ? "bg-background text-primary shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                      disabled && "cursor-not-allowed opacity-40",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* BỘ LỌC NĂM HỌC & CHỌN TAB CHÍNH */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -994,7 +1158,7 @@ function DisciplineAssignmentsContent() {
                 )}
               >
                 <Star className="h-4 w-4 fill-current" />
-                Đội Sao Đỏ ({saoDoUsers.filter((s) => s.isActive !== false).length})
+                Đội Sao Đỏ ({filteredSaoDoUsers.filter((s) => s.isActive !== false).length})
               </button>
             </div>
 
@@ -1020,7 +1184,7 @@ function DisciplineAssignmentsContent() {
             <Card className="overflow-hidden">
               <div className="p-4 border-b bg-muted/30 flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-base">Danh sách nhân sự giáo viên được phân quyền</h3>
+                  <h3 className="font-semibold text-base">Danh sách nhân sự giáo viên được phân quyền – {selectedSchoolLevelLabel}</h3>
                   <p className="text-xs text-muted-foreground">
                     Cấp quyền ghi nhận vi phạm (Ban Kỷ luật) hoặc duyệt điểm (Ban Thi đua) cho giáo viên mà không thay đổi vai trò tài khoản gốc.
                   </p>
@@ -1259,7 +1423,7 @@ function DisciplineAssignmentsContent() {
                 <div>
                   <h3 className="font-semibold text-base flex items-center gap-2">
                     <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
-                    Danh sách tài khoản Đội Sao Đỏ
+                    Danh sách tài khoản Đội Sao Đỏ – {selectedSchoolLevelLabel}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Tạo tài khoản học sinh, cấp mật khẩu và phân công phạm vi các lớp theo dõi kỷ luật, nề nếp.
@@ -1351,7 +1515,7 @@ function DisciplineAssignmentsContent() {
                                   ))}
                                 </div>
                               ) : (
-                                <span className="text-xs text-amber-600 font-medium">Toàn trường (Tất cả lớp)</span>
+                                <span className="text-xs text-amber-600 font-medium">Chưa phân công lớp</span>
                               )}
                             </td>
                             <td className="py-3 px-4 text-center">
@@ -1570,7 +1734,7 @@ function DisciplineAssignmentsContent() {
           <Modal
             open={isCreateSaoDoModalOpen}
             onOpenChange={setIsCreateSaoDoModalOpen}
-            title="Tạo tài khoản học sinh Đội Sao Đỏ"
+            title={`Tạo tài khoản học sinh Đội Sao Đỏ – ${selectedSchoolLevelLabel}`}
           >
             <form onSubmit={handleCreateSaoDoSubmit} className="space-y-4 pt-2 max-h-[80vh] overflow-y-auto pr-1">
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs space-y-1">
@@ -1622,6 +1786,7 @@ function DisciplineAssignmentsContent() {
                       Sinh mật khẩu mới
                     </button>
                   </div>
+                  <div className="font-medium text-amber-900">Phạm vi: {selectedSchoolLevelLabel}</div>
                   <div className="relative mt-1">
                     <Input
                       id="saoDoPassword"

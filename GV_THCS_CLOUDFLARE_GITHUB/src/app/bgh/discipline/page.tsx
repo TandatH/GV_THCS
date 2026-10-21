@@ -88,6 +88,8 @@ type ClassRow = DocumentData & {
   name?: string;
   code?: string;
   grade?: number | string;
+  gradeLevel?: number | string;
+  schoolLevel?: string;
   homeroomTeacherId?: string;
 };
 
@@ -96,6 +98,7 @@ type WeekRow = DocumentData & {
   name?: string;
   weekNumber: number;
   schoolYearId: string;
+  schoolLevel?: string;
   status?: string;
   isLocked?: boolean;
 };
@@ -158,6 +161,13 @@ type AppealRow = DocumentData & {
   classId: string;
   status: "pending" | "approved" | "rejected";
 };
+
+function isSecondaryClass(row: ClassRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
 
 export default function BghDisciplinePage() {
   return (
@@ -238,7 +248,9 @@ function BghDisciplineContent() {
         });
         setTeachersMap(tMap);
 
-        const cList = cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ClassRow));
+        const cList = cSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as ClassRow))
+          .filter(isSecondaryClass);
         cList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "vi", { numeric: true }));
         setClasses(cList);
       } catch (err) {
@@ -258,7 +270,9 @@ function BghDisciplineContent() {
         const wSnap = await getDocs(
           query(collection(firestore, "disciplineWeeks"), where("schoolYearId", "==", selectedYearId))
         );
-        const wList = wSnap.docs.map((d) => ({ id: d.id, ...d.data() } as WeekRow));
+        const wList = wSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as WeekRow))
+          .filter((week) => (week.schoolLevel || "secondary") === "secondary");
         wList.sort((a, b) => (b.weekNumber || 0) - (a.weekNumber || 0));
         setWeeks(wList);
 
@@ -351,6 +365,7 @@ function BghDisciplineContent() {
   const currentYear = useMemo(() => schoolYears.find((y) => y.id === selectedYearId) || null, [schoolYears, selectedYearId]);
 
   const isWeekLocked = Boolean(currentWeek?.status === "locked" || currentWeek?.isLocked);
+  const secondaryClassIds = useMemo(() => new Set(classes.map((row) => row.id)), [classes]);
 
   // 4. TÍNH TOÁN BẢNG XẾP HẠNG VÀ TIẾN ĐỘ TỔNG KẾT
   const classesProgressList = useMemo(() => {
@@ -445,6 +460,7 @@ function BghDisciplineContent() {
     let totalSchoolMinus = 0;
 
     entries.forEach((e) => {
+      if (!secondaryClassIds.has(e.classId)) return;
       if (e.status === "approved") {
         totalViolations += 1;
         if (e.points > 0) totalSchoolPlus += e.points;
@@ -452,7 +468,7 @@ function BghDisciplineContent() {
       }
     });
 
-    const pendingAppealsCount = appeals.filter((a) => a.status === "pending").length;
+    const pendingAppealsCount = appeals.filter((a) => secondaryClassIds.has(a.classId) && a.status === "pending").length;
 
     return {
       totalClasses,
@@ -464,7 +480,7 @@ function BghDisciplineContent() {
       totalSchoolMinus,
       pendingAppealsCount,
     };
-  }, [classes.length, classesProgressList, isWeekLocked, entries, appeals]);
+  }, [classes.length, classesProgressList, isWeekLocked, entries, appeals, secondaryClassIds]);
 
   // BIỂU ĐỒ SO SÁNH ĐIỂM TRUNG BÌNH CÁC KHỐI
   const gradeChartData = useMemo(() => {
@@ -485,14 +501,11 @@ function BghDisciplineContent() {
   async function handleLockWeek() {
     if (!currentWeek) return;
     if (kpiStats.unfinalizedCount > 0) {
-      const confirmForce = confirm(
-        `Hiện vẫn còn ${kpiStats.unfinalizedCount} lớp chưa ký xác nhận tổng kết. Bạn có chắc chắn muốn khóa sổ toàn trường cho tuần này?`
-      );
-      if (!confirmForce) return;
-    } else {
-      if (!confirm(`Bạn có chắc chắn muốn khóa sổ tuần ${currentWeek.weekNumber}? Sau khi khóa, toàn bộ điểm số sẽ trở thành chính thức và đóng băng.`)) {
-        return;
-      }
+      toast.error(`Cấp 2 còn ${kpiStats.unfinalizedCount} lớp chưa ký xác nhận. Phải ký đủ trước khi khóa tuần.`);
+      return;
+    }
+    if (!confirm(`Bạn có chắc chắn muốn khóa sổ tuần ${currentWeek.weekNumber}? Sau khi khóa, kết quả toàn trường Cấp 2 sẽ trở thành chính thức.`)) {
+      return;
     }
 
     setLockingWeek(true);
@@ -780,7 +793,7 @@ function BghDisciplineContent() {
                   <BarChart data={gradeChartData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                     <XAxis dataKey="grade" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[60, 105]} tick={{ fontSize: 12 }} />
+                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Bar dataKey="avgScore" name="Điểm trung bình" fill="#10b981" radius={[6, 6, 0, 0]} />
                   </BarChart>

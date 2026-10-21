@@ -68,8 +68,8 @@ import {
 import { firestore } from "@/lib/firebase/client";
 import { cn, formatDate } from "@/lib/utils";
 
-type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; homeroomTeacherId?: string };
-type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; status?: string; isLocked?: boolean; lockedAt?: any; lockedByName?: string };
+type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; homeroomTeacherId?: string };
+type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string; isLocked?: boolean; lockedAt?: any; lockedByName?: string };
 type ClassScoreRow = DocumentData & {
   id: string;
   weekId: string;
@@ -90,6 +90,13 @@ type ClassScoreRow = DocumentData & {
 };
 
 type TeacherRow = DocumentData & { id: string; fullName?: string; email?: string };
+
+function isSecondaryClass(row: OptionRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
 
 export default function CompetitionLeaderboardPage() {
   const router = useRouter();
@@ -136,7 +143,8 @@ export default function CompetitionLeaderboardPage() {
           setSelectedSchoolYearId(syRows[0].id);
         }
 
-        const clsRows = clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
+        const clsRows = (clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[])
+          .filter(isSecondaryClass);
         clsRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setClasses(clsRows);
 
@@ -160,7 +168,8 @@ export default function CompetitionLeaderboardPage() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === "secondary");
       rows.sort((a, b) => b.weekNumber - a.weekNumber);
       setWeeks(rows);
       if (rows.length > 0) {
@@ -202,14 +211,15 @@ export default function CompetitionLeaderboardPage() {
       where("status", "==", "pending"),
     );
     const unsubPending = onSnapshot(qPending, (snapshot) => {
-      setPendingEntriesCount(snapshot.size);
+      const secondaryClassIds = new Set(classes.map((row) => row.id));
+      setPendingEntriesCount(snapshot.docs.filter((doc) => secondaryClassIds.has(String(doc.data().classId || ""))).length);
     });
 
     return () => {
       unsubScores();
       unsubPending();
     };
-  }, [selectedWeekId]);
+  }, [selectedWeekId, classes]);
 
   // Tuần đang chọn
   const activeWeek = useMemo(() => weeks.find((w) => w.id === selectedWeekId), [weeks, selectedWeekId]);
@@ -455,7 +465,7 @@ export default function CompetitionLeaderboardPage() {
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {isWeekLocked
                       ? "Tuần thi đua đã được Ban Giám Hiệu khóa sổ chính thức. Bảng điểm và mã hash được lưu trữ bất biến."
-                      : `Đã ký xác nhận ${signingProgress.signedClasses}/${signingProgress.totalClasses} lớp. Còn ${pendingEntriesCount} phiếu vi phạm đang chờ duyệt.`}
+                      : `Cấp 2 đã ký xác nhận ${signingProgress.signedClasses}/${signingProgress.totalClasses} lớp. Còn ${pendingEntriesCount} phiếu vi phạm đang chờ duyệt.`}
                   </p>
                 </div>
               </div>
@@ -553,7 +563,7 @@ export default function CompetitionLeaderboardPage() {
                 <Trophy className="h-5 w-5 text-amber-500" />
                 <div>
                   <h3 className="font-bold text-sm text-foreground">
-                    Bảng xếp hạng: Tuần {activeWeek?.weekNumber} {selectedGrade !== "all" ? `(Khối ${selectedGrade})` : "(Toàn trường)"}
+                    Bảng xếp hạng: Tuần {activeWeek?.weekNumber} {selectedGrade !== "all" ? `(Khối ${selectedGrade})` : "(Toàn trường Cấp 2)"}
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Tổng số {mergedClassRankings.length} lớp tham gia xếp hạng thi đua.
