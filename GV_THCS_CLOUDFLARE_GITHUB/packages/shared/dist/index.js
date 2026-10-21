@@ -3,6 +3,8 @@ export const roles = ["admin", "bgh", "totruong", "giaovien"];
 export const teacherTypes = ["co_huu", "thinh_giang"];
 export const activityStatuses = ["active", "inactive"];
 export const schoolLevels = ["primary", "secondary"];
+// Bật thành true khi nhà trường chính thức đưa Cấp 1 vào quy trình thi đua.
+export const PRIMARY_DISCIPLINE_ENABLED = false;
 export const teachingRoles = ["chu_nhiem", "bo_mon", "ca_hai"];
 export const bghPositions = ["hieutruong", "phohieutruong"];
 export const roleSchema = z.enum(roles);
@@ -941,6 +943,7 @@ export const disciplineAssignmentSchema = z.object({
 // ============================================================================
 // 5.1. SCHEMA & TYPES: QUẢN LÝ TÀI KHOẢN SAO ĐỎ (ĐỘI CÁN SỰ SAO ĐỎ)
 // ============================================================================
+const nullishString = (schema) => z.preprocess((value) => (value === null || value === "" ? undefined : value), schema.optional());
 export const createSaoDoAccountSchema = z.object({
     fullName: z.string().trim().min(2, "Họ và tên học sinh phải có ít nhất 2 ký tự").max(120),
     username: z
@@ -949,22 +952,24 @@ export const createSaoDoAccountSchema = z.object({
         .min(3, "Tên đăng nhập phải có ít nhất 3 ký tự")
         .max(50)
         .regex(/^[a-zA-Z0-9._@-]+$/, "Tên đăng nhập chỉ gồm chữ cái không dấu, số, dấu chấm, gạch dưới hoặc gạch ngang"),
-    password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128).optional(),
-    studentClassId: z.string().trim().optional().nullable(),
-    studentClassName: z.string().trim().optional(),
+    password: nullishString(z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128)),
+    studentClassId: nullishString(z.string().trim()),
+    studentClassName: nullishString(z.string().trim()),
     assignedClassIds: z.array(z.string().trim()).default([]),
     schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
-    note: z.string().trim().max(500).optional(),
+    schoolLevel: schoolLevelSchema.default("secondary"),
+    note: nullishString(z.string().trim().max(500)),
 });
 export const updateSaoDoAccountSchema = z.object({
     uid: z.string().trim().min(1, "UID không được để trống"),
     fullName: z.string().trim().min(2, "Họ và tên phải có ít nhất 2 ký tự").max(120).optional(),
-    studentClassId: z.string().trim().optional().nullable(),
-    studentClassName: z.string().trim().optional(),
+    studentClassId: nullishString(z.string().trim()),
+    studentClassName: nullishString(z.string().trim()),
     assignedClassIds: z.array(z.string().trim()),
     schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+    schoolLevel: schoolLevelSchema.optional(),
     isActive: z.boolean().optional(),
-    note: z.string().trim().max(500).optional(),
+    note: nullishString(z.string().trim().max(500)),
 });
 export const resetSaoDoPasswordSchema = z.object({
     uid: z.string().trim().min(1, "UID không được để trống"),
@@ -1081,7 +1086,7 @@ export const disciplineWeeklySnapshotSchema = z.object({
     classId: z.string().trim().min(1),
     className: z.string().trim().min(1),
     schoolYearId: z.string().trim().min(1),
-    basePoints: z.number().int().default(100),
+    basePoints: z.number().int().default(600),
     totalPlus: z.number().int().min(0).default(0),
     totalMinus: z.number().int().min(0).default(0), // Lưu giá trị dương tuyệt đối
     finalScore: z.number().int(),
@@ -1228,4 +1233,15 @@ export async function verifySnapshotHash(snapshot, expectedHash) {
         isValid: computedHash.toLowerCase() === expectedHash.toLowerCase(),
         computedHash,
     };
+}
+/**
+ * Phân định cấp học (primary / secondary) của lớp học hoặc dữ liệu liên quan
+ */
+export function disciplineSchoolLevel(data) {
+    if (data.schoolLevel === "primary" || data.schoolLevel === "secondary") {
+        return data.schoolLevel;
+    }
+    const rawGrade = data.grade ?? data.gradeLevel ?? String(data.name || data.code || "").match(/\d+/)?.[0];
+    const grade = Number(rawGrade);
+    return Number.isFinite(grade) && grade >= 1 && grade <= 5 ? "primary" : "secondary";
 }

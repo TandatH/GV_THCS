@@ -4,6 +4,8 @@ export const roles = ["admin", "bgh", "totruong", "giaovien"] as const;
 export const teacherTypes = ["co_huu", "thinh_giang"] as const;
 export const activityStatuses = ["active", "inactive"] as const;
 export const schoolLevels = ["primary", "secondary"] as const;
+// Bật thành true khi nhà trường chính thức đưa Cấp 1 vào quy trình thi đua.
+export const PRIMARY_DISCIPLINE_ENABLED = false;
 export const teachingRoles = ["chu_nhiem", "bo_mon", "ca_hai"] as const;
 export const bghPositions = ["hieutruong", "phohieutruong"] as const;
 
@@ -1144,6 +1146,7 @@ export const createSaoDoAccountSchema = z.object({
   studentClassName: nullishString(z.string().trim()),
   assignedClassIds: z.array(z.string().trim()).default([]),
   schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+  schoolLevel: schoolLevelSchema.default("secondary"),
   note: nullishString(z.string().trim().max(500)),
 });
 export type CreateSaoDoAccountInput = z.infer<typeof createSaoDoAccountSchema>;
@@ -1155,6 +1158,7 @@ export const updateSaoDoAccountSchema = z.object({
   studentClassName: nullishString(z.string().trim()),
   assignedClassIds: z.array(z.string().trim()),
   schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
+  schoolLevel: schoolLevelSchema.optional(),
   isActive: z.boolean().optional(),
   note: nullishString(z.string().trim().max(500)),
 });
@@ -1317,7 +1321,7 @@ export const disciplineWeeklySnapshotSchema = z.object({
   classId: z.string().trim().min(1),
   className: z.string().trim().min(1),
   schoolYearId: z.string().trim().min(1),
-  basePoints: z.number().int().default(100),
+  basePoints: z.number().int().default(600),
   totalPlus: z.number().int().min(0).default(0),
   totalMinus: z.number().int().min(0).default(0), // Lưu giá trị dương tuyệt đối
   finalScore: z.number().int(),
@@ -1505,6 +1509,18 @@ export async function verifySnapshotHash(
     isValid: computedHash.toLowerCase() === expectedHash.toLowerCase(),
     computedHash,
   };
+}
+
+/**
+ * Phân định cấp học (primary / secondary) của lớp học hoặc dữ liệu liên quan
+ */
+export function disciplineSchoolLevel(data: Record<string, unknown>): "primary" | "secondary" {
+  if (data.schoolLevel === "primary" || data.schoolLevel === "secondary") {
+    return data.schoolLevel as "primary" | "secondary";
+  }
+  const rawGrade = data.grade ?? data.gradeLevel ?? String(data.name || data.code || "").match(/\d+/)?.[0];
+  const grade = Number(rawGrade);
+  return Number.isFinite(grade) && grade >= 1 && grade <= 5 ? "primary" : "secondary";
 }
 
 

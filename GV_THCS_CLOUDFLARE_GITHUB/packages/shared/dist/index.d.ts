@@ -3,6 +3,7 @@ export declare const roles: readonly ["admin", "bgh", "totruong", "giaovien"];
 export declare const teacherTypes: readonly ["co_huu", "thinh_giang"];
 export declare const activityStatuses: readonly ["active", "inactive"];
 export declare const schoolLevels: readonly ["primary", "secondary"];
+export declare const PRIMARY_DISCIPLINE_ENABLED = false;
 export declare const teachingRoles: readonly ["chu_nhiem", "bo_mon", "ca_hai"];
 export declare const bghPositions: readonly ["hieutruong", "phohieutruong"];
 export type Role = (typeof roles)[number];
@@ -466,23 +467,31 @@ export interface DisciplineAssignment extends DisciplineAssignmentInput {
 export declare const createSaoDoAccountSchema: z.ZodObject<{
     fullName: z.ZodString;
     username: z.ZodString;
-    password: z.ZodOptional<z.ZodString>;
-    studentClassId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
-    studentClassName: z.ZodOptional<z.ZodString>;
+    password: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    studentClassId: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    studentClassName: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     assignedClassIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
     schoolYearId: z.ZodString;
-    note: z.ZodOptional<z.ZodString>;
+    schoolLevel: z.ZodDefault<z.ZodEnum<{
+        primary: "primary";
+        secondary: "secondary";
+    }>>;
+    note: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
 }, z.core.$strip>;
 export type CreateSaoDoAccountInput = z.infer<typeof createSaoDoAccountSchema>;
 export declare const updateSaoDoAccountSchema: z.ZodObject<{
     uid: z.ZodString;
     fullName: z.ZodOptional<z.ZodString>;
-    studentClassId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
-    studentClassName: z.ZodOptional<z.ZodString>;
+    studentClassId: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
+    studentClassName: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     assignedClassIds: z.ZodArray<z.ZodString>;
     schoolYearId: z.ZodString;
+    schoolLevel: z.ZodOptional<z.ZodEnum<{
+        primary: "primary";
+        secondary: "secondary";
+    }>>;
     isActive: z.ZodOptional<z.ZodBoolean>;
-    note: z.ZodOptional<z.ZodString>;
+    note: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
 }, z.core.$strip>;
 export type UpdateSaoDoAccountInput = z.infer<typeof updateSaoDoAccountSchema>;
 export declare const resetSaoDoPasswordSchema: z.ZodObject<{
@@ -805,3 +814,7 @@ export declare function verifySnapshotHash(snapshot: DisciplineWeeklySnapshot, e
     isValid: boolean;
     computedHash: string;
 }>;
+/**
+ * Phân định cấp học (primary / secondary) của lớp học hoặc dữ liệu liên quan
+ */
+export declare function disciplineSchoolLevel(data: Record<string, unknown>): "primary" | "secondary";
