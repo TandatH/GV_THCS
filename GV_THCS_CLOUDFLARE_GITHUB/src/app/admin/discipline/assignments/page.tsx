@@ -727,17 +727,17 @@ function DisciplineAssignmentsContent() {
     setIsSubmittingCreateSaoDo(true);
     try {
       const studentClass = classes.find((c) => c.id === saoDoStudentClassId);
-      const studentClassName = studentClass ? (studentClass.name || studentClass.code || "") : "";
+      const studentClassName = studentClass ? (studentClass.name || studentClass.code || "") : undefined;
 
       const payload: CreateSaoDoAccountInput = {
         fullName: saoDoFullName.trim(),
         username: normalizedUsername,
         password: saoDoPassword.trim() || undefined,
-        studentClassId: saoDoStudentClassId || null,
-        studentClassName,
+        studentClassId: saoDoStudentClassId.trim() || undefined,
+        studentClassName: studentClassName || undefined,
         assignedClassIds: saoDoAssignedClassIds,
         schoolYearId: selectedSchoolYearId,
-        note: saoDoNote.trim() || undefined,
+        note: saoDoNote.trim() ? saoDoNote.trim() : undefined,
       };
 
       const res = await createSaoDoAccount(payload);
@@ -781,17 +781,17 @@ function DisciplineAssignmentsContent() {
     setIsSubmittingEditSaoDo(true);
     try {
       const studentClass = classes.find((c) => c.id === editStudentClassId);
-      const studentClassName = studentClass ? (studentClass.name || studentClass.code || "") : "";
+      const studentClassName = studentClass ? (studentClass.name || studentClass.code || "") : undefined;
 
       const payload: UpdateSaoDoAccountInput = {
         uid: editingSaoDo.id,
         fullName: editFullName.trim(),
-        studentClassId: editStudentClassId || null,
-        studentClassName,
+        studentClassId: editStudentClassId.trim() || undefined,
+        studentClassName: studentClassName || undefined,
         assignedClassIds: editAssignedClassIds,
         schoolYearId: selectedSchoolYearId,
         isActive: editIsActive,
-        note: editNote.trim() || undefined,
+        note: editNote.trim() ? editNote.trim() : undefined,
       };
 
       const res = await updateSaoDoAccount(payload);
