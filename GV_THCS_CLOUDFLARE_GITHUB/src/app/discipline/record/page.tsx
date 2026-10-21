@@ -13,6 +13,7 @@ import {
   Info,
   Layers,
   ListChecks,
+  Minus,
   Plus,
   RefreshCw,
   Search,
@@ -125,6 +126,7 @@ function RecordDisciplineForm() {
   const [scope, setScope] = useState<"student" | "class">("student");
   const [selectedStudents, setSelectedStudents] = useState<StudentOption[]>([]);
   const [studentSearchTerm, setStudentSearchTerm] = useState<string>("");
+  const [manualStudentName, setManualStudentName] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
 
   // Ghi chú & minh chứng
@@ -346,12 +348,14 @@ function RecordDisciplineForm() {
     return classes.find((c) => c.id === selectedClassId);
   }, [classes, selectedClassId]);
 
-  // Tự động đồng bộ số lượng khi chọn học sinh cá nhân
+  // Tính tổng số lượt vi phạm (hỗ trợ 1 học sinh nhiều lần hoặc tập thể lớp)
   const effectiveQuantity = useMemo(() => {
+    const times = Math.max(1, quantity);
     if (scope === "student") {
-      return Math.max(1, selectedStudents.length);
+      const count = Math.max(1, selectedStudents.length);
+      return count * times;
     }
-    return Math.max(1, quantity);
+    return times;
   }, [scope, selectedStudents.length, quantity]);
 
   // Tính điểm tổng dự kiến
@@ -397,6 +401,25 @@ function RecordDisciplineForm() {
     setSelectedStudents(selectedStudents.filter((s) => s.id !== studentId));
   }
 
+  // Thêm học sinh thủ công bằng tên khi lớp chưa kịp import danh sách
+  function handleAddManualStudent() {
+    const name = manualStudentName.trim();
+    if (!name) return;
+    const newId = `manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setSelectedStudents((prev) => [
+      ...prev,
+      {
+        id: newId,
+        studentCode: "Tự do",
+        fullName: name,
+        classId: selectedClassId,
+        className: activeClass?.name || "",
+      },
+    ]);
+    setManualStudentName("");
+    toast.success(`Đã thêm học sinh "${name}" vào danh sách ghi nhận.`);
+  }
+
   // GỬI PHIẾU GHI NHẬN VI PHẠM
   async function handleSubmitRecord(e: React.FormEvent) {
     e.preventDefault();
@@ -422,7 +445,7 @@ function RecordDisciplineForm() {
     }
 
     if (scope === "student" && selectedStudents.length === 0) {
-      toast.error("Vui lòng chọn ít nhất một học sinh vi phạm.");
+      toast.error("Vui lòng chọn hoặc nhập ít nhất một học sinh vi phạm.");
       return;
     }
 
@@ -432,6 +455,22 @@ function RecordDisciplineForm() {
     const idempotencyKey = `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
+      const times = Math.max(1, quantity);
+      const studentCount = selectedStudents.length;
+      let displayStudentNames =
+        scope === "student"
+          ? selectedStudents.map((s) => s.fullName).join("; ")
+          : "Tập thể lớp";
+
+      if (scope === "student" && times > 1 && studentCount > 0) {
+        displayStudentNames =
+          studentCount === 1
+            ? `${displayStudentNames} (${times} lần)`
+            : `${displayStudentNames} (mỗi HS ${times} lần)`;
+      }
+
+      const cleanDate = (occurredDate || new Date().toISOString().split("T")[0]).split("T")[0];
+
       const payload: RecordDisciplineViolationInput = {
         entryId: editId || undefined,
         classId: selectedClassId,
@@ -441,16 +480,16 @@ function RecordDisciplineForm() {
         criterionCode: activeCriterion.code,
         scope,
         studentIds: scope === "student" ? selectedStudents.map((s) => s.id) : [],
-        studentNamesText: scope === "student" ? selectedStudents.map((s) => s.fullName).join("; ") : "Tập thể lớp",
-        quantity: effectiveQuantity,
-        occurredDate,
-        date: occurredDate,
-        period: period ? Number(period) : undefined,
+        studentNamesText: displayStudentNames,
+        quantity: times,
+        occurredDate: cleanDate,
+        date: cleanDate,
+        period: period && !Number.isNaN(Number(period)) && Number(period) >= 1 ? Number(period) : undefined,
         students:
           scope === "student"
             ? selectedStudents.map((s) => ({ studentId: s.id, studentName: s.fullName }))
             : [],
-        note: note.trim(),
+        note: note.trim() || undefined,
         attachmentUrls: attachmentUrl.trim() ? [attachmentUrl.trim()] : [],
         idempotencyKey,
       };
@@ -889,6 +928,115 @@ function RecordDisciplineForm() {
                         )}
                       </div>
                     </div>
+
+                    {/* NHẬP HỌ TÊN HỌC SINH THỦ CÔNG (KHI LỚP CHƯA CÓ DANH SÁCH HOẶC TÌM KHÔNG THẤY) */}
+                    <div className="p-2.5 rounded-xl border border-dashed bg-muted/20 space-y-1.5">
+                      <Label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                        <UserPlus className="h-3.5 w-3.5" />
+                        Nhập học sinh thủ công (nếu chưa có trong danh sách):
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Nhập họ và tên học sinh..."
+                          value={manualStudentName}
+                          onChange={(e) => setManualStudentName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddManualStudent();
+                            }
+                          }}
+                          className="text-xs bg-background"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleAddManualStudent}
+                          disabled={!manualStudentName.trim()}
+                          className="shrink-0 text-xs gap-1 font-semibold"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Thêm vào danh sách
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* SỐ LẦN VI PHẠM CỦA HỌC SINH (1 LỖI NHƯNG NHIỀU LẦN) */}
+                    <div className="p-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <span>Số lần vi phạm của mỗi học sinh:</span>
+                          <span className="text-muted-foreground font-normal text-[11px] hidden sm:inline">(Áp dụng khi học sinh vi phạm lỗi này nhiều lần)</span>
+                        </Label>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                          {quantity} lần
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Các nút bấm chọn nhanh */}
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setQuantity(num)}
+                              className={cn(
+                                "px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all",
+                                quantity === num
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                  : "bg-background hover:bg-muted text-foreground border-border"
+                              )}
+                            >
+                              {num} lần
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Bộ điều khiển tăng giảm Stepper [-] [+] */}
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card hover:bg-muted text-foreground transition-all disabled:opacity-40 disabled:pointer-events-none"
+                            onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                            disabled={quantity <= 1}
+                            title="Giảm 1 lần"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={quantity}
+                            onChange={(e) => setQuantity(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                            className="h-8 w-16 text-center font-bold font-mono text-xs px-1"
+                          />
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card hover:bg-muted text-foreground transition-all disabled:opacity-40 disabled:pointer-events-none"
+                            onClick={() => setQuantity((prev) => Math.min(50, prev + 1))}
+                            disabled={quantity >= 50}
+                            title="Tăng 1 lần"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Hiển thị công thức tính trực quan */}
+                      <div className="text-[11px] text-muted-foreground flex flex-wrap items-center justify-between gap-1 pt-1.5 border-t border-amber-500/20">
+                        <span>
+                          Công thức tính: <strong className="text-foreground">{selectedStudents.length > 0 ? `${selectedStudents.length} học sinh` : "Số HS"}</strong> × <strong className="text-foreground">{quantity} lần</strong> = <strong className="text-primary font-bold">{effectiveQuantity} lượt vi phạm</strong>
+                        </span>
+                        {activeCriterion && (
+                          <span className="font-semibold text-foreground">
+                            (Tổng điểm: {estimatedTotalPoints > 0 ? `+${estimatedTotalPoints}` : estimatedTotalPoints} đ)
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   /* LỖI TẬP THỂ LỚP */
@@ -898,19 +1046,65 @@ function RecordDisciplineForm() {
                       Lỗi vi phạm áp dụng cho: <strong>Tập thể lớp {activeClass?.name}</strong>
                     </div>
 
-                    <div>
-                      <Label htmlFor="collectiveQuantity" className="text-xs font-semibold">
-                        Số lượng / Số lần vi phạm:
-                      </Label>
-                      <Input
-                        id="collectiveQuantity"
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={quantity}
-                        onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-                        className="w-32 font-bold text-center"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="collectiveQuantity" className="text-xs font-semibold">
+                          Số lượng / Số lần vi phạm của lớp:
+                        </Label>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                          {quantity} lần
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setQuantity(num)}
+                              className={cn(
+                                "px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all",
+                                quantity === num
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                  : "bg-background hover:bg-muted text-foreground border-border"
+                              )}
+                            >
+                              {num} lần
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card hover:bg-muted text-foreground transition-all disabled:opacity-40 disabled:pointer-events-none"
+                            onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                            disabled={quantity <= 1}
+                            title="Giảm 1 lần"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <Input
+                            id="collectiveQuantity"
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={quantity}
+                            onChange={(e) => setQuantity(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                            className="h-8 w-16 text-center font-bold font-mono text-xs px-1"
+                          />
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card hover:bg-muted text-foreground transition-all disabled:opacity-40 disabled:pointer-events-none"
+                            onClick={() => setQuantity((prev) => Math.min(100, prev + 1))}
+                            disabled={quantity >= 100}
+                            title="Tăng 1 lần"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
