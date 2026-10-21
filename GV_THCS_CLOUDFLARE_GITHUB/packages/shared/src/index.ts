@@ -1125,6 +1125,12 @@ export interface DisciplineAssignment extends DisciplineAssignmentInput {
 // 5.1. SCHEMA & TYPES: QUẢN LÝ TÀI KHOẢN SAO ĐỎ (ĐỘI CÁN SỰ SAO ĐỎ)
 // ============================================================================
 
+const nullishString = (schema: z.ZodString) =>
+  z.preprocess(
+    (value) => (value === null || value === "" ? undefined : value),
+    schema.optional(),
+  );
+
 export const createSaoDoAccountSchema = z.object({
   fullName: z.string().trim().min(2, "Họ và tên học sinh phải có ít nhất 2 ký tự").max(120),
   username: z
@@ -1133,24 +1139,24 @@ export const createSaoDoAccountSchema = z.object({
     .min(3, "Tên đăng nhập phải có ít nhất 3 ký tự")
     .max(50)
     .regex(/^[a-zA-Z0-9._@-]+$/, "Tên đăng nhập chỉ gồm chữ cái không dấu, số, dấu chấm, gạch dưới hoặc gạch ngang"),
-  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128).optional(),
-  studentClassId: z.string().trim().optional().nullable(),
-  studentClassName: z.string().trim().optional(),
+  password: nullishString(z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự").max(128)),
+  studentClassId: nullishString(z.string().trim()),
+  studentClassName: nullishString(z.string().trim()),
   assignedClassIds: z.array(z.string().trim()).default([]),
   schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
-  note: z.string().trim().max(500).optional(),
+  note: nullishString(z.string().trim().max(500)),
 });
 export type CreateSaoDoAccountInput = z.infer<typeof createSaoDoAccountSchema>;
 
 export const updateSaoDoAccountSchema = z.object({
   uid: z.string().trim().min(1, "UID không được để trống"),
   fullName: z.string().trim().min(2, "Họ và tên phải có ít nhất 2 ký tự").max(120).optional(),
-  studentClassId: z.string().trim().optional().nullable(),
-  studentClassName: z.string().trim().optional(),
+  studentClassId: nullishString(z.string().trim()),
+  studentClassName: nullishString(z.string().trim()),
   assignedClassIds: z.array(z.string().trim()),
   schoolYearId: z.string().trim().min(1, "Năm học không được để trống"),
   isActive: z.boolean().optional(),
-  note: z.string().trim().max(500).optional(),
+  note: nullishString(z.string().trim().max(500)),
 });
 export type UpdateSaoDoAccountInput = z.infer<typeof updateSaoDoAccountSchema>;
 
