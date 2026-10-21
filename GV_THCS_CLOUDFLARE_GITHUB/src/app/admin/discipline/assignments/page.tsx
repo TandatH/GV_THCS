@@ -61,6 +61,7 @@ import { useAuth } from "@/features/auth/use-auth";
 import {
   assignDisciplineRole,
   assignWeeklyDisciplineSigner,
+  initializeDisciplineWeeks,
   createSaoDoAccount,
   updateSaoDoAccount,
   resetSaoDoPassword,
@@ -95,7 +96,12 @@ type AssignmentRow = DocumentData & {
   userUid: string;
   userEmail: string;
   userFullName: string;
-  roleType: "discipline_committee" | "competition_committee";
+  roleType:
+    | "discipline_committee"
+    | "competition_committee"
+    | "discipline_head"
+    | "competition_head"
+    | "discipline_and_competition_head";
   assignedClassIds?: string[];
   schoolYearId: string;
   isSaoDo?: boolean;
@@ -153,9 +159,34 @@ function generateRandom8Chars(): string {
 }
 
 function DisciplineAssignmentsContent() {
-  const { user } = useAuth();
+  const { user, role, claims } = useAuth();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
+
+  const [hasAccess, setHasAccess] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!user) return;
+    if (role === "admin" || role === "bgh") {
+      setHasAccess(true);
+      return;
+    }
+    const isHead = Boolean(
+      claims?.isDisciplineHead ||
+      claims?.isCompetitionHead ||
+      claims?.canManageCriteria ||
+      claims?.isCompetitionCommittee
+    );
+    if (isHead) {
+      setHasAccess(true);
+      return;
+    }
+    getDocs(query(collection(firestore, "disciplineAssignments"), where("userUid", "==", user.uid), where("isActive", "==", true)))
+      .then((snap) => {
+        setHasAccess(!snap.empty);
+      })
+      .catch(() => setHasAccess(false));
+  }, [user, role, claims]);
 
   const [activeTab, setActiveTab] = useState<"roles" | "signers" | "saodo">(
     tabParam === "saodo" ? "saodo" : tabParam === "signers" ? "signers" : "roles",
@@ -175,10 +206,17 @@ function DisciplineAssignmentsContent() {
   const [loadingRoles, setLoadingRoles] = useState<boolean>(true);
   const [isAssignRoleModalOpen, setIsAssignRoleModalOpen] = useState<boolean>(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
-  const [selectedRoleType, setSelectedRoleType] = useState<"discipline_committee" | "competition_committee">("discipline_committee");
+  const [selectedRoleType, setSelectedRoleType] = useState<
+    | "discipline_committee"
+    | "competition_committee"
+    | "discipline_head"
+    | "competition_head"
+    | "discipline_and_competition_head"
+  >("discipline_committee");
   const [assignedClassIds, setAssignedClassIds] = useState<string[]>([]);
   const [isAllClasses, setIsAllClasses] = useState<boolean>(true);
   const [isSubmittingRole, setIsSubmittingRole] = useState<boolean>(false);
+  const [isSyncingWeeks, setIsSyncingWeeks] = useState<boolean>(false);
 
   // Tab 2: Phân công người ký theo tuần và lớp
   const [signerAssignments, setSignerAssignments] = useState<SignerAssignmentRow[]>([]);
@@ -443,9 +481,15 @@ function DisciplineAssignmentsContent() {
       };
 
       await assignDisciplineRole(payload);
-      toast.success(
-        `Đã phân quyền ${selectedRoleType === "discipline_committee" ? "Ban Kỷ luật" : "Ban Thi đua"} cho ${teacher.fullName}.`,
-      );
+      const roleNameMap: Record<string, string> = {
+        discipline_committee: "Ban Kỷ luật",
+        competition_committee: "Ban Thi đua",
+        discipline_head: "Trưởng ban Kỷ luật",
+        competition_head: "Trưởng ban Thi đua",
+        discipline_and_competition_head: "Trưởng ban Kỷ luật & Thi đua",
+      };
+      const roleName = roleNameMap[selectedRoleType] || selectedRoleType;
+      toast.success(`Đã phân quyền ${roleName} cho ${teacher.fullName}.`);
       setIsAssignRoleModalOpen(false);
       setSelectedTeacherId("");
       setAssignedClassIds([]);
@@ -455,6 +499,25 @@ function DisciplineAssignmentsContent() {
       toast.error("Lỗi khi phân quyền: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingRole(false);
+    }
+  }
+
+  // Đồng bộ Tuần 1 đến Tuần 7 và kích hoạt Tuần 7
+  async function handleSyncUpToWeek7() {
+    setIsSyncingWeeks(true);
+    try {
+      const res = await initializeDisciplineWeeks({
+        schoolYearId: selectedSchoolYearId || undefined,
+        upToWeek: 7,
+        activeWeekNumber: 7,
+      });
+      toast.success(res.message);
+      if (res.activeWeekId) setSelectedWeekId(res.activeWeekId);
+    } catch (err: unknown) {
+      console.error("Lỗi đồng bộ tuần:", err);
+      toast.error("Lỗi đồng bộ tuần: " + firebaseErrorMessage(err));
+    } finally {
+      setIsSyncingWeeks(false);
     }
   }
 
@@ -810,10 +873,19 @@ function DisciplineAssignmentsContent() {
   }
 
   return (
-    <RoleGuard allowedRoles={["admin", "bgh"]}>
+    <RoleGuard allowedRoles={["admin", "bgh", "totruong", "giaovien"]}>
       <Shell>
         <div className="space-y-6">
-          <PageHeader
+          {!hasAccess ? (
+            <Card className="p-8 text-center space-y-4">
+              <div className="text-amber-600 font-semibold text-lg">Không có quyền truy cập Phân công thi đua</div>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Chỉ Quản trị viên, Ban Giám hiệu hoặc Giáo viên được giao phụ trách Trưởng ban Kỷ luật, Trưởng ban Thi đua mới có quyền quản lý phân công nhân sự và tài khoản Sao Đỏ.
+              </p>
+            </Card>
+          ) : (
+            <>
+              <PageHeader
             title="Phân công nhân sự Thi đua & Kỷ luật"
             description="Ủy quyền thành viên Ban Kỷ luật, Ban Thi đua, phân công người ký xác nhận bảng điểm và quản lý tài khoản Đội Sao Đỏ."
             actions={
@@ -825,12 +897,16 @@ function DisciplineAssignmentsContent() {
                   </Button>
                 ) : activeTab === "signers" ? (
                   <div className="flex items-center gap-2">
-                    {weeks.length === 0 && (
-                      <Button variant="secondary" size="sm" onClick={handleCreateWeekFast} className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        Tạo Tuần thi đua
-                      </Button>
-                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleSyncUpToWeek7}
+                      disabled={isSyncingWeeks}
+                      className="gap-2 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                    >
+                      <RefreshCw className={cn("h-4 w-4", isSyncingWeeks && "animate-spin")} />
+                      {isSyncingWeeks ? "Đang đồng bộ..." : "Kích hoạt Tuần 7 (Hiện tại)"}
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -962,9 +1038,21 @@ function DisciplineAssignmentsContent() {
                             <td className="py-3 px-4 font-semibold text-foreground">{r.userFullName}</td>
                             <td className="py-3 px-4 text-muted-foreground">{r.userEmail}</td>
                             <td className="py-3 px-4">
-                              {isDiscipline ? (
+                              {r.roleType === "discipline_and_competition_head" ? (
+                                <Badge tone="warning">
+                                  👑 Trưởng ban Kỷ luật & Thi đua
+                                </Badge>
+                              ) : r.roleType === "discipline_head" ? (
                                 <Badge tone="danger">
-                                  Ban Kỷ luật (Ghi nhận vi phạm)
+                                  ⭐ Trưởng ban Kỷ luật
+                                </Badge>
+                              ) : r.roleType === "competition_head" ? (
+                                <Badge tone="info">
+                                  ⭐ Trưởng ban Thi đua
+                                </Badge>
+                              ) : isDiscipline ? (
+                                <Badge tone="danger">
+                                  Ban Kỷ luật (Ghi nhận)
                                 </Badge>
                               ) : (
                                 <Badge tone="info">
@@ -1325,15 +1413,29 @@ function DisciplineAssignmentsContent() {
                 <select
                   id="roleTypeSelect"
                   value={selectedRoleType}
-                  onChange={(e) => setSelectedRoleType(e.target.value as "discipline_committee" | "competition_committee")}
+                  onChange={(e) =>
+                    setSelectedRoleType(
+                      e.target.value as
+                        | "discipline_committee"
+                        | "competition_committee"
+                        | "discipline_head"
+                        | "competition_head"
+                        | "discipline_and_competition_head"
+                    )
+                  }
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-medium"
                 >
                   <option value="discipline_committee">Ban Kỷ luật (Ghi nhận vi phạm học sinh)</option>
-                  <option value="competition_committee">Ban Thi đua (Duyệt điểm & Tổng kết thi đua)</option>
+                  <option value="competition_committee">Ban Thi đua (Duyệt điểm & Cài đặt điều khoản thi đua)</option>
+                  <option value="discipline_head">Trưởng ban Kỷ luật (Cài đặt & Quản trị kỷ luật)</option>
+                  <option value="competition_head">Trưởng ban Thi đua (Cài đặt & Quản trị thi đua)</option>
+                  <option value="discipline_and_competition_head">Trưởng ban Kỷ luật & Thi đua (Toàn quyền điều hành)</option>
                 </select>
               </div>
 
-              {selectedRoleType === "discipline_committee" && (
+              {(selectedRoleType === "discipline_committee" ||
+                selectedRoleType === "discipline_head" ||
+                selectedRoleType === "discipline_and_competition_head") && (
                 <div className="space-y-2 p-3 bg-muted/40 rounded-lg border">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold">Phạm vi lớp theo dõi & ghi nhận</Label>
@@ -1936,6 +2038,8 @@ function DisciplineAssignmentsContent() {
               </div>
             </form>
           </Modal>
+            </>
+          )}
         </div>
       </Shell>
     </RoleGuard>

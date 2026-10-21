@@ -398,7 +398,7 @@ function HomeroomDisciplineContent() {
       }
     }
 
-    const finalScore = 100 + plus - minus;
+    const finalScore = 600 + plus - minus;
 
     // Tính thứ hạng trong khối
     let gradeRank = "—";
@@ -510,7 +510,7 @@ function HomeroomDisciplineContent() {
       } else {
         list.push({
           name: `T${w.weekNumber}`,
-          "Điểm chốt": 100,
+          "Điểm chốt": 600,
           "Điểm cộng": 0,
           "Điểm trừ": 0,
         });
@@ -615,7 +615,7 @@ function HomeroomDisciplineContent() {
       finalScore: kpiStats.finalScore,
       totalPlus: kpiStats.totalPlus,
       totalMinus: kpiStats.totalMinus,
-      basePoints: 100,
+      basePoints: 600,
     });
 
     toast.success("Đã xuất file Excel bảng điểm thi đua thành công!");
@@ -733,7 +733,7 @@ function HomeroomDisciplineContent() {
                 <Card className="p-3.5 border bg-primary/5 border-primary/20 text-center">
                   <div className="text-[11px] font-bold text-primary uppercase">Tổng điểm tuần</div>
                   <div className="text-3xl font-black text-primary mt-1">{kpiStats.finalScore}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">Điểm gốc: 100đ</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Điểm gốc: 600đ</div>
                 </Card>
 
                 {/* 2. ĐIỂM CỘNG */}
@@ -795,14 +795,14 @@ function HomeroomDisciplineContent() {
                     <h3 className="font-bold text-xs text-foreground uppercase">
                       Xu hướng điểm thi đua qua các tuần
                     </h3>
-                    <span className="text-[11px] text-muted-foreground">Mốc chuẩn: 100 điểm</span>
+                    <span className="text-[11px] text-muted-foreground">Mốc chuẩn: 600 điểm</span>
                   </div>
                   <div className="h-56 w-full pt-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={weeklyTrendsChartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="name" fontSize={11} />
-                        <YAxis domain={[60, 140]} fontSize={11} />
+                        <YAxis domain={["auto", "auto"]} fontSize={11} />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Line type="monotone" dataKey="Điểm chốt" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} />

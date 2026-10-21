@@ -234,7 +234,12 @@ export async function respondToScheduleAssignment(
 
 export type AssignDisciplineRoleInput = {
   userUid: string;
-  roleType: "discipline_committee" | "competition_committee";
+  roleType:
+    | "discipline_committee"
+    | "competition_committee"
+    | "discipline_head"
+    | "competition_head"
+    | "discipline_and_competition_head";
   action: "assign" | "revoke";
   assignedClassIds?: string[];
   schoolYearId: string;
@@ -430,4 +435,26 @@ export async function resetSaoDoPassword(input: ResetSaoDoPasswordInput) {
 
 export async function deleteSaoDoAccount(input: DeleteSaoDoAccountInput) {
   return (await deleteSaoDoAccountCallable(input)).data;
+}
+
+export type InitializeDisciplineWeeksInput = {
+  schoolYearId?: string;
+  upToWeek?: number;
+  activeWeekNumber?: number;
+};
+
+const initializeDisciplineWeeksCallable = callable<
+  InitializeDisciplineWeeksInput,
+  {
+    ok: boolean;
+    schoolYearId: string;
+    totalWeeks: number;
+    activeWeekNumber: number;
+    activeWeekId: string;
+    message: string;
+  }
+>("initializeDisciplineWeeks");
+
+export async function initializeDisciplineWeeks(input?: InitializeDisciplineWeeksInput) {
+  return (await initializeDisciplineWeeksCallable(input || {})).data;
 }

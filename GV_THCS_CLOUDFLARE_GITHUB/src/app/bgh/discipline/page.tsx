@@ -361,15 +361,15 @@ function BghDisciplineContent() {
       const signerAssignment = signerAssignmentsMap[cls.id];
 
       // Tính điểm trực tiếp từ entries hoặc từ snapshot nếu đã ký
-      let basePoints = 100;
+      let basePoints = 600;
       let totalPlus = 0;
       let totalMinus = 0;
-      let finalScore = 100;
+      let finalScore = 600;
 
       if (snapshot) {
         totalPlus = snapshot.totalPlus || 0;
         totalMinus = snapshot.totalMinus || 0;
-        finalScore = snapshot.finalScore ?? snapshot.totalScore ?? 100;
+        finalScore = snapshot.finalScore ?? snapshot.totalScore ?? 600;
       } else {
         const clsEntries = entries.filter((e) => e.classId === cls.id && e.status === "approved");
         for (const e of clsEntries) {
@@ -471,7 +471,7 @@ function BghDisciplineContent() {
     const grades = [6, 7, 8, 9];
     return grades.map((g) => {
       const clsInGrade = rankedClasses.filter((c) => Number(c.grade) === g);
-      if (clsInGrade.length === 0) return { grade: `Khối ${g}`, avgScore: 100, classCount: 0 };
+      if (clsInGrade.length === 0) return { grade: `Khối ${g}`, avgScore: 600, classCount: 0 };
       const sum = clsInGrade.reduce((acc, cur) => acc + cur.finalScore, 0);
       return {
         grade: `Khối ${g}`,

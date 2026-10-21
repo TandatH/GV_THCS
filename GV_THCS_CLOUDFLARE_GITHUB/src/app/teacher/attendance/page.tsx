@@ -3,13 +3,13 @@
 import { CalendarDays, CheckCircle2, ClipboardCheck, Search } from "lucide-react";
 import {
   collection,
-  limit,
   onSnapshot,
   query,
   where,
   type DocumentData,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
+import { formatPeriodDisplay, indexMonthlyCheckins, payrollScheduleDate, resolveTeachingAttendance, teacherAttendanceTotals } from "@school/shared";
 
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
@@ -19,7 +19,6 @@ import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
-import { dateOnlyFromDate } from "@/lib/date-only";
 import { formatDate } from "@/lib/utils";
 
 type Row = DocumentData & { id: string };
@@ -30,14 +29,7 @@ function currentMonth() {
 }
 
 function scheduleDate(schedule: Row) {
-  const date = new Date(String(schedule.weekStart || ""));
-  if (Number.isNaN(date.getTime())) return "";
-  date.setDate(date.getDate() + Number(schedule.dayOfWeek || 2) - 2);
-  return dateOnlyFromDate(date);
-}
-
-function periodCount(schedule: Row) {
-  return Math.max(0, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+  return payrollScheduleDate(schedule);
 }
 
 function statusLabel(status: unknown) {
@@ -45,6 +37,8 @@ function statusLabel(status: unknown) {
     confirmed: "Đã xác nhận",
     adjusted: "Dạy thay / Điều chỉnh",
     absent: "Vắng / Nghỉ phép",
+    pending: "Chưa đối soát",
+    cancelled: "Đã hủy",
   };
   return typeof status === "string" ? labels[status] || status : "Chưa đối soát";
 }
@@ -62,6 +56,10 @@ export default function TeacherAttendancePage() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [schedules, setSchedules] = useState<Row[]>([]);
   const [actualSchedules, setActualSchedules] = useState<Row[]>([]);
+  const [originalSchedules, setOriginalSchedules] = useState<Row[]>([]);
+  const [attendanceSchedules, setAttendanceSchedules] = useState<Row[]>([]);
+  const [classes, setClasses] = useState<Row[]>([]);
+  const [checkinsLoading, setCheckinsLoading] = useState(true);
   const [checkins, setCheckins] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [contextLoading, setContextLoading] = useState(true);
@@ -89,43 +87,65 @@ export default function TeacherAttendancePage() {
     if (!teacherId) return;
     setLoading(true);
     setError("");
-    const unsubscribers = [
-      onSnapshot(query(collection(firestore, "schedules"), where("teacherId", "==", teacherId), limit(500)), (snapshot) => {
-        setSchedules(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
-        setLoading(false);
-      }, (snapshotError) => { setError(firebaseDataErrorMessage(snapshotError)); setLoading(false); }),
-      onSnapshot(query(collection(firestore, "schedules"), where("actualTeacherId", "==", teacherId), limit(500)), (snapshot) => {
-        setActualSchedules(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
-      onSnapshot(query(collection(firestore, "checkins"), where("teacherId", "==", teacherId), limit(500)), (snapshot) => {
-        setCheckins(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
-      }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))),
+    const loaded = new Set<string>();
+    const listeners = [
+      { field: "teacherId", setter: setSchedules },
+      { field: "actualTeacherId", setter: setActualSchedules },
+      { field: "originalTeacherId", setter: setOriginalSchedules },
+      { field: "attendanceTeacherId", setter: setAttendanceSchedules },
     ];
+    const unsubscribers = listeners.map(({ field, setter }) => onSnapshot(
+      query(collection(firestore, "schedules"), where(field, "==", teacherId)), (snapshot) => {
+        setter(snapshot.docs.map((document) => ({ ...document.data(), id: document.id })));
+        loaded.add(field);
+        if (loaded.size === listeners.length) setLoading(false);
+      }, (snapshotError) => { setError(firebaseDataErrorMessage(snapshotError)); setLoading(false); }));
+    unsubscribers.push(onSnapshot(collection(firestore, "classes"), (snapshot) => {
+      setClasses(snapshot.docs.map((document) => ({ ...document.data(), id: document.id })));
+    }, (snapshotError) => setError(firebaseDataErrorMessage(snapshotError))));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [teacherId]);
 
   const allSchedules = useMemo(() => {
     const map = new Map<string, Row>();
-    [...schedules, ...actualSchedules].forEach((schedule) => map.set(schedule.id, schedule));
+    [...schedules, ...actualSchedules, ...originalSchedules, ...attendanceSchedules].forEach((schedule) => map.set(schedule.id, schedule));
     return Array.from(map.values());
-  }, [actualSchedules, schedules]);
+  }, [actualSchedules, schedules, originalSchedules, attendanceSchedules]);
 
-  const checkinBySchedule = useMemo(() => new Map(checkins.map((checkin) => [String(checkin.scheduleId), checkin])), [checkins]);
+  const checkinBySchedule = useMemo(() => indexMonthlyCheckins(checkins, selectedMonth) as Map<string, Row>, [checkins, selectedMonth]);
+  const classById = useMemo(() => new Map(classes.map((row) => [row.id, row])), [classes]);
 
   const monthSchedules = useMemo(() => allSchedules
-    .filter((schedule) => schedule.status !== "cancelled" && scheduleDate(schedule).startsWith(selectedMonth))
+    .filter((schedule) => schedule.status !== "cancelled" && schedule.isActive !== false && scheduleDate(schedule).startsWith(selectedMonth))
     .sort((a, b) => scheduleDate(a).localeCompare(scheduleDate(b))), [allSchedules, selectedMonth]);
 
-  const monthCheckins = useMemo(() => checkins.filter((checkin) => checkin.month === selectedMonth), [checkins, selectedMonth]);
+  const monthScheduleIds = monthSchedules.map((schedule) => schedule.id).sort().join(",");
+  useEffect(() => {
+    setCheckins([]);
+    const scheduleIds = monthScheduleIds ? monthScheduleIds.split(",") : [];
+    setCheckinsLoading(scheduleIds.length > 0);
+    const results = new Map<number, Row[]>();
+    const unsubscribers: Array<() => void> = [];
+    // Đọc theo lịch để A cũng thấy checkin của B, kể cả bản cũ thiếu originalTeacherId.
+    // Nhóm nhỏ giữ số lượt đọc kiểm tra quyền Firestore trong giới hạn.
+    for (let offset = 0; offset < scheduleIds.length; offset += 5) {
+      const chunk = scheduleIds.slice(offset, offset + 5);
+      unsubscribers.push(onSnapshot(query(collection(firestore, "checkins"), where("scheduleId", "in", chunk)), (snapshot) => {
+        results.set(offset, snapshot.docs.map((document) => ({ ...document.data(), id: document.id })));
+        setCheckins(Array.from(results.values()).flat());
+        if (results.size === Math.ceil(scheduleIds.length / 5)) setCheckinsLoading(false);
+      }, (snapshotError) => { setError(firebaseDataErrorMessage(snapshotError)); setCheckinsLoading(false); }));
+    }
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [monthScheduleIds, selectedMonth]);
 
   const rows = useMemo(() => {
-    const scheduleRows = monthSchedules.map((schedule) => ({ schedule, checkin: checkinBySchedule.get(schedule.id) ?? null }));
-    const scheduleIds = new Set(monthSchedules.map((schedule) => schedule.id));
-    const extraCheckins = monthCheckins
-      .filter((checkin) => !scheduleIds.has(String(checkin.scheduleId)))
-      .map((checkin) => ({ schedule: null, checkin }));
-    return [...scheduleRows, ...extraCheckins];
-  }, [checkinBySchedule, monthCheckins, monthSchedules]);
+    return monthSchedules.map((schedule) => {
+      const checkin = checkinBySchedule.get(schedule.id) ?? null;
+      const attendance = resolveTeachingAttendance(schedule, checkin ?? undefined, classById.get(String(schedule.classId)));
+      return { schedule, checkin, attendance };
+    });
+  }, [checkinBySchedule, monthSchedules, classById]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
@@ -142,10 +162,11 @@ export default function TeacherAttendancePage() {
     ].filter(Boolean).some((value) => String(value).toLocaleLowerCase("vi").includes(keyword)));
   }, [rows, search]);
 
-  const confirmedPeriods = monthCheckins
-    .filter((checkin) => ["confirmed", "adjusted"].includes(String(checkin.status)))
-    .reduce((sum, checkin) => sum + Number(checkin.payablePeriods ?? checkin.periodCount ?? 0), 0);
-  const pendingSchedules = monthSchedules.filter((schedule) => !checkinBySchedule.has(schedule.id)).length;
+  // Cùng quy tắc bù–trừ với Admin và server: A không hưởng tiết do B thực dạy.
+  const totals = teacherAttendanceTotals(teacherId, rows.map((row) => row.attendance));
+  const confirmedPeriods = totals.actualPeriods;
+  const pendingSchedules = rows.filter((row) => row.attendance.status === "pending")
+    .reduce((sum, row) => sum + row.attendance.periodCount, 0);
 
   return (
     <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
@@ -158,10 +179,12 @@ export default function TeacherAttendancePage() {
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
-        <div className="mb-5 grid gap-4 md:grid-cols-3">
+        <div className="mb-5 grid gap-4 md:grid-cols-5">
           <Card className="p-5"><p className="text-sm text-muted-foreground">Giáo viên</p><p className="mt-2 text-lg font-bold">{teacherName || "—"}</p></Card>
           <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết đã xác nhận</p><p className="mt-2 text-3xl font-extrabold">{confirmedPeriods}</p></Card>
           <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết chưa đối soát</p><p className="mt-2 text-3xl font-extrabold">{pendingSchedules}</p></Card>
+          <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết dạy thế</p><p className="mt-2 text-3xl font-extrabold">{totals.substituteCount}</p></Card>
+          <Card className="p-5"><p className="text-sm text-muted-foreground">Tiết vắng / Được dạy thay</p><p className="mt-2 text-3xl font-extrabold">{totals.absentCount}</p></Card>
         </div>
 
         <Card className="mb-5 p-4">
@@ -175,7 +198,7 @@ export default function TeacherAttendancePage() {
         </Card>
 
         <Card className="overflow-hidden">
-          {loading || contextLoading ? (
+          {loading || contextLoading || checkinsLoading ? (
             <div className="space-y-3 p-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-16" />)}</div>
           ) : error ? null : filteredRows.length === 0 ? (
             <EmptyState
@@ -188,20 +211,20 @@ export default function TeacherAttendancePage() {
               <table className="data-table min-w-[980px]">
                 <thead><tr><th>Ngày</th><th>Lớp</th><th>Môn học</th><th>Tiết</th><th>Số tiết ghi nhận</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead>
                 <tbody>
-                  {filteredRows.map(({ schedule, checkin }) => {
+                  {filteredRows.map(({ schedule, checkin, attendance }) => {
                     const date = checkin?.date || (schedule ? scheduleDate(schedule) : "");
-                    const status = checkin?.status;
-                    const payable = checkin ? ["confirmed", "adjusted"].includes(String(checkin.status)) : false;
-                    const periods = checkin ? (payable ? Number(checkin.payablePeriods ?? checkin.periodCount ?? 0) : 0) : 0;
+                    const wasReplaced = attendance.originalTeacherId === teacherId && attendance.isSubstituted;
+                    const status = wasReplaced ? "absent" : attendance.status;
+                    const periods = attendance.effectiveTeacherId === teacherId ? attendance.payablePeriods : 0;
                     return (
                       <tr key={schedule?.id || checkin?.id}>
                         <td>{formatDate(date)}</td>
                         <td>{checkin?.className || schedule?.className || schedule?.classId || "—"}</td>
                         <td>{checkin?.subjectName || schedule?.subjectName || schedule?.subjectId || "—"}</td>
-                        <td>{schedule ? `${schedule.startPeriod || "?"}-${Math.max(Number(schedule.startPeriod || 1), Number(schedule.endPeriod || 1) - 1)}` : "—"}</td>
+                        <td>{formatPeriodDisplay(schedule).label}</td>
                         <td>{periods}</td>
                         <td><Badge tone={statusTone(status)}>{statusLabel(status)}</Badge></td>
-                        <td><p className="max-w-xs truncate">{checkin?.note || checkin?.adjustmentReason || (status ? "—" : "Chờ đối soát")}</p></td>
+                        <td><p className="max-w-xs truncate">{wasReplaced ? `Được dạy thay bởi ${checkin?.teacherId === attendance.effectiveTeacherId ? checkin.teacherName || attendance.effectiveTeacherId : attendance.effectiveTeacherId}` : checkin?.note || checkin?.adjustmentReason || "—"}</p></td>
                       </tr>
                     );
                   })}

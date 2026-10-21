@@ -247,10 +247,10 @@ export default function CompetitionLeaderboardPage() {
           className: c.name || score.className,
           grade,
           teacherName,
-          basePoints: score.basePoints || 100,
+          basePoints: score.basePoints || 600,
           totalPlus: score.totalPlus || 0,
           totalMinus: score.totalMinus || 0,
-          finalScore: score.finalScore ?? 100,
+          finalScore: score.finalScore ?? 600,
           isSigned: Boolean(score.isSigned),
           isLocked: isWeekLocked || Boolean(score.isLocked),
           activeVersion: score.activeVersion,
@@ -258,16 +258,16 @@ export default function CompetitionLeaderboardPage() {
         };
       }
 
-      // Lớp chưa có bản ghi điểm: mặc định 100 điểm, chưa ký
+      // Lớp chưa có bản ghi điểm: mặc định 600 điểm, chưa ký
       return {
         classId: c.id,
         className: c.name || c.id,
         grade,
         teacherName,
-        basePoints: 100,
+        basePoints: 600,
         totalPlus: 0,
         totalMinus: 0,
-        finalScore: 100,
+        finalScore: 600,
         isSigned: false,
         isLocked: isWeekLocked,
         activeVersion: undefined,

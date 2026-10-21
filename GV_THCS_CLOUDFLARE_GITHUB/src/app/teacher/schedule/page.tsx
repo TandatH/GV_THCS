@@ -40,6 +40,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { formatPeriodDisplay, normalizeSchedulePeriodRange, scheduledPeriodCount } from "@school/shared";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -384,15 +385,11 @@ function catalogName(rows: Row[], id: unknown) {
 }
 
 function periodText(schedule: Row) {
-  const start = Number(schedule.startPeriod || 0);
-  const end = Number(schedule.endPeriod || start + 1);
-  const last = Math.max(start, end - 1);
-  if (start <= 0) return "Chưa rõ tiết";
-  return start === last ? `Tiết ${start}` : `Tiết ${start} - ${last}`;
+  return formatPeriodDisplay(schedule).label;
 }
 
 function periodCount(schedule: Row) {
-  return Math.max(1, Number(schedule.endPeriod || 0) - Number(schedule.startPeriod || 0));
+  return scheduledPeriodCount(schedule);
 }
 
 function confirmationLabel(status: unknown) {
@@ -568,7 +565,7 @@ export default function TeacherSchedulePage() {
 
   const allSchedules = useMemo(() => {
     const map = new Map<string, Row>();
-    [...legacySchedules, ...primarySchedules].forEach((schedule) => map.set(schedule.id, schedule));
+    [...legacySchedules, ...primarySchedules].forEach((schedule) => map.set(schedule.id, normalizeSchedulePeriodRange(schedule)));
     return Array.from(map.values())
       .filter((schedule) => schedule.status !== "cancelled")
       .filter((schedule) =>

@@ -316,7 +316,7 @@ function WeeklyFinalizeContent() {
 
   // Tính điểm tổng kết
   const scoreStats = useMemo(() => {
-    const basePoints = 100;
+    const basePoints = 600;
     let totalPlus = 0;
     let totalMinus = 0;
 
@@ -503,7 +503,7 @@ function WeeklyFinalizeContent() {
             <Card className="p-4 border space-y-3">
               <div className="flex items-center justify-between border-b pb-2">
                 <span className="text-xs font-bold text-muted-foreground uppercase">Tổng điểm thi đua</span>
-                <Badge tone={scoreStats.finalScore >= 100 ? "success" : "warning"}>
+                <Badge tone={scoreStats.finalScore >= 600 ? "success" : "warning"}>
                   Lớp {activeClass?.name} - Tuần {activeWeek?.weekNumber}
                 </Badge>
               </div>
@@ -753,7 +753,7 @@ function WeeklyFinalizeContent() {
                 <tfoot className="bg-muted/60 border-t font-black text-xs">
                   <tr>
                     <td colSpan={7} className="p-3 text-right uppercase">
-                      Tổng điểm tuần lớp {activeClass?.name} (100 + Điểm cộng - Điểm trừ):
+                      Tổng điểm tuần lớp {activeClass?.name} (600 + Điểm cộng - Điểm trừ):
                     </td>
                     <td className="p-3 text-right font-mono text-base text-primary">
                       {scoreStats.finalScore} điểm

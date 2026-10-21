@@ -121,6 +121,16 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/totruong/schedules", label: "Thời khóa biểu", icon: CalendarDays },
     { href: "/totruong/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/totruong/evaluations", label: "Đánh giá chuyên môn", icon: ClipboardCheck },
+    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+    { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
+    { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
+    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+    { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+    { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
+    { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ],
   giaovien: [
     { href: "/teacher/dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -135,6 +145,8 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
     { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
     { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
     { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
     { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
@@ -155,6 +167,22 @@ function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | nu
   }
   const isTeaching = Boolean(claims?.teacherId);
   const teachingSuffix = isTeaching && role !== "giaovien" ? " • Kiêm giảng dạy" : "";
+
+  if (claims?.disciplineRole === "discipline_and_competition_head") {
+    return `${roleLabel[role]} • Trưởng ban Kỷ luật & Thi đua`;
+  }
+  if (claims?.isDisciplineHead || claims?.disciplineRole === "discipline_head") {
+    return `${roleLabel[role]} • Trưởng ban Kỷ luật`;
+  }
+  if (claims?.isCompetitionHead || claims?.disciplineRole === "competition_head") {
+    return `${roleLabel[role]} • Trưởng ban Thi đua`;
+  }
+  if (claims?.isCompetitionCommittee) {
+    return `${roleLabel[role]} • Ban Thi đua`;
+  }
+  if (claims?.isDisciplineCommittee) {
+    return `${roleLabel[role]} • Ban Kỷ luật`;
+  }
 
   if (role === "bgh") {
     const position = claims?.bghPosition === "hieutruong" ? "Hiệu trưởng" : "Phó Hiệu trưởng";
