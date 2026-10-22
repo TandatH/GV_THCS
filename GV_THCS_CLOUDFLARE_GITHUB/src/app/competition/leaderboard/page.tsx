@@ -100,7 +100,8 @@ function isSecondaryClass(row: OptionRow): boolean {
 
 export default function CompetitionLeaderboardPage() {
   const router = useRouter();
-  const { user, role } = useAuth();
+  const { user, role, claims } = useAuth();
+  const isSaoDo = Boolean(claims?.isSaoDo || claims?.userType === "sao_do");
 
   // Danh mục nền
   const [schoolYears, setSchoolYears] = useState<OptionRow[]>([]);
@@ -129,6 +130,10 @@ export default function CompetitionLeaderboardPage() {
 
   // 1. TẢI DANH MỤC NỀN
   useEffect(() => {
+    if (isSaoDo) {
+      router.replace("/discipline/record");
+      return;
+    }
     async function fetchMetadata() {
       try {
         const [sySnap, clsSnap, tchSnap] = await Promise.all([
@@ -155,10 +160,11 @@ export default function CompetitionLeaderboardPage() {
       }
     }
     fetchMetadata();
-  }, []);
+  }, [isSaoDo, router]);
 
   // 2. TẢI DANH SÁCH TUẦN THEO NĂM HỌC
   useEffect(() => {
+    if (isSaoDo) return;
     if (!selectedSchoolYearId) {
       setWeeks([]);
       return;
@@ -181,10 +187,11 @@ export default function CompetitionLeaderboardPage() {
       }
     });
     return () => unsubWeeks();
-  }, [selectedSchoolYearId]);
+  }, [selectedSchoolYearId, isSaoDo]);
 
   // 3. TẢI ĐIỂM CÁC LỚP VÀ KIỂM TRA PHIẾU CHỜ DUYỆT TRONG TUẦN
   useEffect(() => {
+    if (isSaoDo) return;
     if (!selectedWeekId) {
       setClassScores([]);
       setLoadingScores(false);
@@ -219,7 +226,7 @@ export default function CompetitionLeaderboardPage() {
       unsubScores();
       unsubPending();
     };
-  }, [selectedWeekId, classes]);
+  }, [selectedWeekId, classes, isSaoDo]);
 
   // Tuần đang chọn
   const activeWeek = useMemo(() => weeks.find((w) => w.id === selectedWeekId), [weeks, selectedWeekId]);
@@ -257,10 +264,10 @@ export default function CompetitionLeaderboardPage() {
           className: c.name || score.className,
           grade,
           teacherName,
-          basePoints: score.basePoints || 600,
+          basePoints: 600,
           totalPlus: score.totalPlus || 0,
           totalMinus: score.totalMinus || 0,
-          finalScore: score.finalScore ?? 600,
+          finalScore: 600 + (Number(score.totalPlus) || 0) - (Number(score.totalMinus) || 0),
           isSigned: Boolean(score.isSigned),
           isLocked: isWeekLocked || Boolean(score.isLocked),
           activeVersion: score.activeVersion,

@@ -58,8 +58,8 @@ export function exportHomeroomDisciplineExcel(options: ExportDisciplineExcelOpti
     finalScore,
     totalPlus,
     totalMinus,
-    basePoints = 600,
   } = options;
+  const basePoints = 600;
 
   const wb = XLSX.utils.book_new();
 
@@ -106,7 +106,7 @@ export function exportHomeroomDisciplineExcel(options: ExportDisciplineExcelOpti
     ["", "", "", "", "", "Điểm gốc ban đầu:", "", `+${basePoints}`],
     ["", "", "", "", "", "Tổng điểm cộng:", "", `+${totalPlus}`],
     ["", "", "", "", "", "Tổng điểm trừ:", "", `-${totalMinus}`],
-    ["", "", "", "", "", "ĐIỂM CHỐT TUẦN (100 + Cộng - Trừ):", "", `${finalScore} điểm`],
+    ["", "", "", "", "", "ĐIỂM CHỐT TUẦN (600 + Cộng - Trừ):", "", `${finalScore} điểm`],
     [],
     [
       "",
@@ -343,7 +343,7 @@ export function exportSchoolDisciplineExcel(options: ExportSchoolDisciplineExcel
       `Khối ${item.grade}`,
       item.className,
       item.homeroomTeacherName || "Chưa phân công",
-      item.basePoints || 600,
+      600,
       item.totalPlus,
       item.totalMinus,
       item.finalScore,

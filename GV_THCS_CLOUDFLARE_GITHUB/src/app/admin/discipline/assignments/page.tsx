@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CURRENT_DISCIPLINE_WEEK,
   PRIMARY_DISCIPLINE_ENABLED,
 } from "@school/shared";
 import {
@@ -38,8 +39,6 @@ import {
   getDocs,
   onSnapshot,
   query,
-  serverTimestamp,
-  setDoc,
   where,
   type DocumentData,
 } from "firebase/firestore";
@@ -218,9 +217,7 @@ function DisciplineAssignmentsContent() {
     }
     const isHead = Boolean(
       claims?.isDisciplineHead ||
-      claims?.isCompetitionHead ||
-      claims?.canManageCriteria ||
-      claims?.isCompetitionCommittee
+      claims?.disciplineRole === "discipline_and_competition_head"
     );
     if (isHead) {
       setHasAccess(true);
@@ -238,7 +235,9 @@ function DisciplineAssignmentsContent() {
         );
       })
       .then((snap) => {
-        setHasAccess(!snap.empty);
+        setHasAccess(snap.docs.some((doc) =>
+          ["discipline_head", "discipline_and_competition_head"].includes(String(doc.data().roleType || "")),
+        ));
       })
       .catch(() => {
         getDocs(
@@ -248,7 +247,9 @@ function DisciplineAssignmentsContent() {
             where("isActive", "==", true),
           ),
         )
-          .then((snap) => setHasAccess(!snap.empty))
+          .then((snap) => setHasAccess(snap.docs.some((doc) =>
+            ["discipline_head", "discipline_and_competition_head"].includes(String(doc.data().roleType || "")),
+          )))
           .catch(() => setHasAccess(false));
       });
   }, [user, role, claims, refreshClaims]);
@@ -403,7 +404,9 @@ function DisciplineAssignmentsContent() {
       setWeeks(rows);
       if (rows.length > 0) {
         if (!selectedWeekId || !rows.some((w) => w.id === selectedWeekId)) {
-          setSelectedWeekId(rows[0].id);
+          setSelectedWeekId(
+            rows.find((w) => w.weekNumber === CURRENT_DISCIPLINE_WEEK)?.id || rows[rows.length - 1].id,
+          );
         }
       } else {
         setSelectedWeekId("");
@@ -743,40 +746,6 @@ function DisciplineAssignmentsContent() {
     }
   }
 
-  // Tạo nhanh tuần thi đua nếu chưa có
-  async function handleCreateWeekFast() {
-    if (!selectedSchoolYearId) {
-      toast.error("Vui lòng chọn năm học trước.");
-      return;
-    }
-    const nextNum = weeks.length + 1;
-    const weekId = selectedSchoolLevel === "primary"
-      ? `week_${selectedSchoolYearId}_primary_${nextNum}`
-      : `week_${selectedSchoolYearId}_${nextNum}`;
-    try {
-      await setDoc(
-        doc(firestore, "disciplineWeeks", weekId),
-        {
-          weekNumber: nextNum,
-          schoolYearId: selectedSchoolYearId,
-          schoolLevel: selectedSchoolLevel,
-          status: "active",
-          createdAt: serverTimestamp(),
-          createdBy: user?.uid || "admin",
-          updatedAt: serverTimestamp(),
-          updatedBy: user?.uid || "admin",
-          isActive: true,
-        },
-        { merge: true },
-      );
-      toast.success(`Đã tạo Tuần thi đua ${nextNum}.`);
-      setSelectedWeekId(weekId);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("Lỗi tạo tuần: " + msg);
-    }
-  }
-
   // =========================================================================
   // XỬ LÝ QUẢN LÝ TÀI KHOẢN SAO ĐỎ (TAB 3)
   // =========================================================================
@@ -1004,6 +973,7 @@ function DisciplineAssignmentsContent() {
   }
 
   const selectedSchoolLevelLabel = selectedSchoolLevel === "primary" ? "Cấp 1" : "Cấp 2";
+  const canManageSaoDoAccounts = role === "admin" || role === "bgh";
   const scopedSchoolLevel = claims?.schoolLevel === "primary" || claims?.schoolLevel === "secondary"
     ? claims.schoolLevel
     : null;
@@ -1034,7 +1004,7 @@ function DisciplineAssignmentsContent() {
             <Card className="p-8 text-center space-y-4">
               <div className="text-amber-600 font-semibold text-lg">Không có quyền truy cập Phân công thi đua</div>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Chỉ Quản trị viên, Ban Giám hiệu hoặc Giáo viên được giao phụ trách Trưởng ban Kỷ luật, Trưởng ban Thi đua mới có quyền quản lý phân công nhân sự và tài khoản Sao Đỏ.
+                Chỉ Quản trị viên, Ban Giám hiệu hoặc Trưởng ban Kỷ luật & Thi đua mới có quyền quản lý phân công nhân sự và phạm vi lớp của Sao Đỏ.
               </p>
             </Card>
           ) : (
@@ -1072,12 +1042,12 @@ function DisciplineAssignmentsContent() {
                       {isAutoAssigning ? "Đang gán..." : "Gán nhanh tất cả GVCN"}
                     </Button>
                   </div>
-                ) : (
+                ) : canManageSaoDoAccounts ? (
                   <Button size="sm" onClick={handleOpenCreateSaoDo} className="gap-2">
                     <UserPlus className="h-4 w-4" />
                     Tạo tài khoản Sao Đỏ
                   </Button>
-                )}
+                ) : null}
               </div>
             }
           />
@@ -1400,9 +1370,9 @@ function DisciplineAssignmentsContent() {
                                   variant="secondary"
                                   size="sm"
                                   onClick={() => handleOpenAssignSigner(c)}
-                                  disabled={!selectedWeek}
+                                  disabled={!selectedWeek || !c.homeroomTeacherId}
                                 >
-                                  {signerAssignment ? "Đổi người ký" : "Phân công"}
+                                  {signerAssignment ? "Gán lại GVCN" : "Phân công GVCN"}
                                 </Button>
                               </td>
                             </tr>
@@ -1537,25 +1507,29 @@ function DisciplineAssignmentsContent() {
                                   <Edit className="h-3.5 w-3.5" />
                                   Sửa
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleOpenResetPassword(s)}
-                                  className="h-8 px-2 text-amber-600 hover:bg-amber-50 gap-1 text-xs"
-                                  title="Đổi mật khẩu"
-                                >
-                                  <KeyRound className="h-3.5 w-3.5" />
-                                  Mật khẩu
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteSaoDo(s)}
-                                  className="h-8 px-2 text-destructive hover:bg-destructive/10 text-xs"
-                                  title={isActive ? "Vô hiệu hóa hoặc Xóa" : "Xóa vĩnh viễn"}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                                {canManageSaoDoAccounts ? (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleOpenResetPassword(s)}
+                                      className="h-8 px-2 text-amber-600 hover:bg-amber-50 gap-1 text-xs"
+                                      title="Đổi mật khẩu"
+                                    >
+                                      <KeyRound className="h-3.5 w-3.5" />
+                                      Mật khẩu
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDeleteSaoDo(s)}
+                                      className="h-8 px-2 text-destructive hover:bg-destructive/10 text-xs"
+                                      title={isActive ? "Vô hiệu hóa hoặc Xóa" : "Xóa vĩnh viễn"}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -1613,7 +1587,7 @@ function DisciplineAssignmentsContent() {
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-medium"
                 >
                   <option value="discipline_committee">Ban Kỷ luật (Ghi nhận vi phạm học sinh)</option>
-                  <option value="competition_committee">Ban Thi đua (Duyệt điểm & Cài đặt điều khoản thi đua)</option>
+                  <option value="competition_committee">Ban Thi đua (Thẩm định phiếu & tổng kết điểm)</option>
                   <option value="discipline_head">Trưởng ban Kỷ luật (Cài đặt & Quản trị kỷ luật)</option>
                   <option value="competition_head">Trưởng ban Thi đua (Cài đặt & Quản trị thi đua)</option>
                   <option value="discipline_and_competition_head">Trưởng ban Kỷ luật & Thi đua (Toàn quyền điều hành)</option>
@@ -1689,7 +1663,7 @@ function DisciplineAssignmentsContent() {
               </div>
 
               <div>
-                <Label htmlFor="signerSelect">Chọn người tổng kết & ký xác nhận *</Label>
+                <Label htmlFor="signerSelect">Giáo viên chủ nhiệm ký xác nhận *</Label>
                 <select
                   id="signerSelect"
                   value={selectedSignerTeacherId}
@@ -1697,15 +1671,14 @@ function DisciplineAssignmentsContent() {
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   required
                 >
-                  <option value="">-- Chọn giáo viên / người ký --</option>
-                  {teachers.map((t) => {
-                    const isHomeroom = t.id === targetClassForSigner?.homeroomTeacherId;
-                    return (
+                  <option value="">-- Lớp chưa có GVCN --</option>
+                  {teachers
+                    .filter((t) => t.id === targetClassForSigner?.homeroomTeacherId)
+                    .map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.fullName} {isHomeroom ? "⭐ (GVCN lớp này)" : ""} - {t.email || ""}
+                        {t.fullName} ⭐ (GVCN lớp này) - {t.email || ""}
                       </option>
-                    );
-                  })}
+                    ))}
                 </select>
                 <p className="text-[11px] text-muted-foreground mt-1">
                   Khuyến nghị: Chọn Giáo viên chủ nhiệm của lớp hoặc Ủy viên Ban Thi đua phụ trách khối.

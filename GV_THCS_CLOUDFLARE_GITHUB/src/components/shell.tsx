@@ -204,7 +204,6 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
   const saoDoItems: MenuItem[] = [
     { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
     { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
-    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ];
   const items = isSaoDo ? saoDoItems : (role ? menuByRole[role] : []);

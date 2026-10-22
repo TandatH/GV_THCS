@@ -43,6 +43,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  CURRENT_DISCIPLINE_WEEK,
   disciplineCategories,
   disciplineCategoryLabels,
   disciplineEntryStatuses,
@@ -102,12 +103,20 @@ type DisciplineRecord = DocumentData & {
   updatedAt?: { seconds: number; nanoseconds: number } | string | null;
 };
 
-type OptionRow = DocumentData & { id: string; name?: string; code?: string; isActive?: boolean };
-type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; status?: string };
+type OptionRow = DocumentData & { id: string; name?: string; code?: string; isActive?: boolean; schoolLevel?: string; grade?: number | string; gradeLevel?: number | string };
+type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string };
+
+function isSecondaryClass(row: OptionRow): boolean {
+  if (row.schoolLevel === "primary") return false;
+  if (row.schoolLevel === "secondary") return true;
+  const grade = Number(row.grade ?? row.gradeLevel ?? String(row.name || row.code || "").match(/\d+/)?.[0]);
+  return !(Number.isFinite(grade) && grade >= 1 && grade <= 5);
+}
 
 export default function CompetitionReviewPage() {
   const router = useRouter();
   const { user, role } = useAuth();
+  const canReviewEntries = role !== "bgh";
 
   // Quyền Ban Thi đua
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -124,7 +133,7 @@ export default function CompetitionReviewPage() {
 
   // Bộ lọc
   const [selectedSchoolYearId, setSelectedSchoolYearId] = useState<string>("");
-  const [selectedWeekId, setSelectedWeekId] = useState<string>("all");
+  const [selectedWeekId, setSelectedWeekId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [activeTabStatus, setActiveTabStatus] = useState<DisciplineEntryStatus | "all">("pending");
@@ -153,21 +162,29 @@ export default function CompetitionReviewPage() {
       }
 
       try {
-        const tokenResult = await user.getIdTokenResult();
+        const tokenResult = await user.getIdTokenResult(true);
         const claims = tokenResult.claims;
 
         // Kiểm tra Custom Claims
-        if (claims.isCompetitionCommittee === true || claims.disciplineRole === "competition_committee") {
+        if (
+          claims.isCompetitionCommittee === true ||
+          claims.isDisciplineHead === true ||
+          ["competition_committee", "discipline_and_competition_head"].includes(String(claims.disciplineRole || ""))
+        ) {
           setHasPermission(true);
           setPermissionChecking(false);
           return;
         }
 
         // Kiểm tra Firestore Assignment
-        const assignDocRef = doc(firestore, "disciplineAssignments", `${user.uid}_competition_committee`);
-        const assignSnap = await getDoc(assignDocRef);
+        const assignmentRefs = [
+          doc(firestore, "disciplineAssignments", `${user.uid}_competition_committee`),
+          doc(firestore, "disciplineAssignments", `${user.uid}_discipline_head`),
+          doc(firestore, "disciplineAssignments", `${user.uid}_discipline_and_competition_head`),
+        ];
+        const assignmentSnaps = await Promise.all(assignmentRefs.map((ref) => getDoc(ref)));
 
-        if (assignSnap.exists() && assignSnap.data()?.isActive !== false) {
+        if (assignmentSnaps.some((snap) => snap.exists() && snap.data()?.isActive !== false)) {
           setHasPermission(true);
         } else {
           setHasPermission(false);
@@ -198,7 +215,8 @@ export default function CompetitionReviewPage() {
           setSelectedSchoolYearId(syRows[0].id);
         }
 
-        const clsRows = clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
+        const clsRows = (clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[])
+          .filter(isSecondaryClass);
         clsRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setClasses(clsRows);
       } catch (err) {
@@ -219,12 +237,18 @@ export default function CompetitionReviewPage() {
       where("schoolYearId", "==", selectedSchoolYearId),
     );
     const unsubWeeks = onSnapshot(qWeeks, (snapshot) => {
-      const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[];
+      const rows = (snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as WeekRow[])
+        .filter((week) => (week.schoolLevel || "secondary") === "secondary");
       rows.sort((a, b) => b.weekNumber - a.weekNumber);
       setWeeks(rows);
+      if (!selectedWeekId || (selectedWeekId !== "all" && !rows.some((week) => week.id === selectedWeekId))) {
+        setSelectedWeekId(
+          rows.find((week) => week.weekNumber === CURRENT_DISCIPLINE_WEEK)?.id || rows[0]?.id || "all",
+        );
+      }
     });
     return () => unsubWeeks();
-  }, [selectedSchoolYearId]);
+  }, [selectedSchoolYearId, selectedWeekId]);
 
   // 4. LẮNG NGHE DANH SÁCH PHIẾU VI PHẠM THEO NĂM HỌC
   useEffect(() => {
@@ -317,9 +341,13 @@ export default function CompetitionReviewPage() {
   // DUYỆT PHIẾU (APPROVE)
   async function handleApprove(record: DisciplineRecord) {
     if (!user) return;
+    if (!canReviewEntries) {
+      toast.error("Phiếu vi phạm phải do Ban Thi đua hoặc Trưởng ban thẩm định.");
+      return;
+    }
 
     // Chặn người lập tự duyệt (No Self-Approval)
-    if (record.reportedByUid === user.uid && role !== "admin") {
+    if (record.reportedByUid === user.uid) {
       toast.error("Vi phạm quy tắc liêm chính: Bạn là người ghi nhận phiếu này, không được phép tự duyệt phiếu của chính mình.");
       return;
     }
@@ -338,6 +366,10 @@ export default function CompetitionReviewPage() {
 
   // MỞ MODAL XỬ LÝ (TRẢ LẠI HOẶC TỪ CHỐI)
   function handleOpenActionModal(record: DisciplineRecord, type: "returned" | "rejected") {
+    if (!canReviewEntries) {
+      toast.error("Phiếu vi phạm phải do Ban Thi đua hoặc Trưởng ban thẩm định.");
+      return;
+    }
     setActionRecord(record);
     setActionType(type);
     setActionNote("");
@@ -463,6 +495,16 @@ export default function CompetitionReviewPage() {
             </Card>
           ) : (
             <>
+              {!canReviewEntries ? (
+                <Card className="p-4 border-blue-200 bg-blue-50/60 dark:bg-blue-950/20 text-sm">
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 mt-0.5 text-blue-600" />
+                    <p>
+                      BGH đang ở chế độ giám sát. Việc duyệt, trả lại hoặc từ chối phiếu phải do Ban Thi đua hoặc Trưởng ban Kỷ luật & Thi đua thực hiện.
+                    </p>
+                  </div>
+                </Card>
+              ) : null}
               {/* THỐNG KÊ KPI TỔNG QUAN THEO TRẠNG THÁI */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div
@@ -653,7 +695,7 @@ export default function CompetitionReviewPage() {
                 <div className="space-y-3">
                   {filteredEntries.map((item) => {
                     const isSelfRecorded = user && item.reportedByUid === user.uid;
-                    const canApprove = item.status === "pending" && (!isSelfRecorded || role === "admin");
+                    const canApprove = item.status === "pending" && !isSelfRecorded && canReviewEntries;
 
                     return (
                       <Card
@@ -779,7 +821,7 @@ export default function CompetitionReviewPage() {
                         )}
 
                         {/* CẢNH BÁO TỰ DUYỆT (SELF-APPROVAL WARNING) */}
-                        {item.status === "pending" && isSelfRecorded && role !== "admin" && (
+                        {item.status === "pending" && isSelfRecorded && (
                           <div className="p-2.5 rounded-lg border border-amber-300 bg-amber-100/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-2">
                             <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
                             <span>
@@ -795,6 +837,7 @@ export default function CompetitionReviewPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleOpenActionModal(item, "rejected")}
+                              disabled={!canReviewEntries}
                               className="h-8 gap-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                             >
                               <ThumbsDown className="h-3.5 w-3.5" />
@@ -805,6 +848,7 @@ export default function CompetitionReviewPage() {
                               variant="secondary"
                               size="sm"
                               onClick={() => handleOpenActionModal(item, "returned")}
+                              disabled={!canReviewEntries}
                               className="h-8 gap-1.5 text-xs text-orange-600 hover:text-orange-700"
                             >
                               <RotateCcw className="h-3.5 w-3.5" />

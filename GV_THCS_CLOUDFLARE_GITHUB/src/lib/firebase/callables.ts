@@ -367,7 +367,9 @@ export async function recordDisciplineViolation(input: RecordDisciplineViolation
     scope: input.scope || (input.students && input.students.length > 0 ? "student" : "class"),
     studentIds: input.studentIds || (input.students ? input.students.map((s) => s.studentId) : []),
     studentNamesText: input.studentNamesText || (input.students ? input.students.map((s) => s.studentName).join("; ") : ""),
-    quantity: input.quantity || (input.studentIds?.length || input.students?.length || 1),
+    // quantity là số lần vi phạm trên mỗi học sinh; số học sinh được backend
+    // nhân riêng, vì vậy mặc định luôn là 1 thay vì dùng độ dài danh sách.
+    quantity: input.quantity ?? 1,
     occurredDate: input.occurredDate || input.date,
     period: input.period,
     note: input.note || "",

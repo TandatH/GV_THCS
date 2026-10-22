@@ -42,6 +42,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  CURRENT_DISCIPLINE_WEEK,
   disciplineCategories,
   disciplineCategoryLabels,
   disciplineUnitTypeLabels,
@@ -92,7 +93,8 @@ function RecordDisciplineForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("editId");
-  const { user, role } = useAuth();
+  const { user, role, claims } = useAuth();
+  const isSaoDo = Boolean(claims?.isSaoDo || claims?.userType === "sao_do");
 
   // Kiểm tra phân quyền Ban Kỷ luật
   const [hasDisciplinePermission, setHasDisciplinePermission] = useState<boolean | null>(null);
@@ -157,7 +159,9 @@ function RecordDisciplineForm() {
           if (data.classId) setSelectedClassId(data.classId);
           if (data.criterionId) setSelectedCriterionId(data.criterionId);
           if (data.scope) setScope(data.scope);
-          if (data.quantity) setQuantity(data.quantity);
+          if (data.timesPerStudent || data.quantity) {
+            setQuantity(Number(data.timesPerStudent || data.quantity));
+          }
           if (data.note) setNote(data.note || "");
           if (data.attachmentUrls && data.attachmentUrls.length > 0) {
             setAttachmentUrl(data.attachmentUrls[0]);
@@ -186,7 +190,7 @@ function RecordDisciplineForm() {
       }
 
       try {
-        const tokenResult = await user.getIdTokenResult();
+        const tokenResult = await user.getIdTokenResult(true);
         const claims = tokenResult.claims;
 
         // Kiểm tra custom claims
@@ -265,7 +269,7 @@ function RecordDisciplineForm() {
       rows.sort((a, b) => a.weekNumber - b.weekNumber);
       setWeeks(rows);
       if (rows.length > 0 && !selectedWeekId) {
-        const activeWeek = rows.find((w) => w.status !== "locked") || rows[0];
+        const activeWeek = rows.find((w) => w.weekNumber === CURRENT_DISCIPLINE_WEEK) || rows[rows.length - 1];
         setSelectedWeekId(activeWeek.id);
       }
     });
@@ -280,7 +284,7 @@ function RecordDisciplineForm() {
         .filter(isSecondaryClass);
 
       // LỌC THEO PHẠM VI LỚP ĐƯỢC PHÂN CÔNG (ASSIGNED CLASSES SCOPE)
-      let availableClasses = allRows;
+      let availableClasses = isSaoDo && assignedClassIds.length === 0 ? [] : allRows;
       if (assignedClassIds.length > 0) {
         availableClasses = allRows.filter((c) => assignedClassIds.includes(c.id));
       }
@@ -299,7 +303,7 @@ function RecordDisciplineForm() {
       unsubWeeks();
       unsubClasses();
     };
-  }, [selectedSchoolYearId, selectedWeekId, selectedClassId, assignedClassIds]);
+  }, [selectedSchoolYearId, selectedWeekId, selectedClassId, assignedClassIds, isSaoDo]);
 
   // 4. KHI ĐỔI LỚP: BẮT BUỘC XÓA SẠCH HỌC SINH ĐÃ CHỌN TRƯỚC ĐÓ VÀ TẢI HỌC SINH MỚI
   useEffect(() => {
@@ -323,15 +327,26 @@ function RecordDisciplineForm() {
       setStudents(rows);
 
       if (editingEntry?.studentIds && Array.isArray(editingEntry.studentIds) && editingEntry.classId === selectedClassId) {
-        const matched = rows.filter((r) => editingEntry.studentIds.includes(r.id));
-        if (matched.length > 0) {
-          setSelectedStudents(matched);
-        }
+        const names = String(editingEntry.studentNamesText || "")
+          .replace(/\s*\(\d+\s+lần\)\s*$/i, "")
+          .split(/[;,\n]+/)
+          .map((name) => name.trim())
+          .filter(Boolean);
+        const restored = editingEntry.studentIds.map((studentId: string, index: number) =>
+          rows.find((row) => row.id === studentId) || {
+            id: studentId,
+            studentCode: "Tự do",
+            fullName: names[index] || studentId,
+            classId: selectedClassId,
+            className: editingEntry.className || "",
+          },
+        );
+        setSelectedStudents(restored);
       }
     });
 
     return () => unsubStudents();
-  }, [selectedClassId]);
+  }, [selectedClassId, editingEntry]);
 
   // Tiêu chí đang chọn
   const activeCriterion = useMemo(() => {

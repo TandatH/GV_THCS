@@ -384,7 +384,7 @@ function BghDisciplineContent() {
       if (snapshot) {
         totalPlus = snapshot.totalPlus || 0;
         totalMinus = snapshot.totalMinus || 0;
-        finalScore = snapshot.finalScore ?? snapshot.totalScore ?? 600;
+        finalScore = 600 + totalPlus - totalMinus;
       } else {
         const clsEntries = entries.filter((e) => e.classId === cls.id && e.status === "approved");
         for (const e of clsEntries) {

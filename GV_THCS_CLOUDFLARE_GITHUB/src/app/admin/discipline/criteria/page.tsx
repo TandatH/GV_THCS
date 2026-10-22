@@ -122,21 +122,18 @@ export default function DisciplineCriteriaPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [selectedHistoryCriterion, setSelectedHistoryCriterion] = useState<CriterionRow | null>(null);
 
-  // Kiểm tra quyền: Admin, BGH, Ban Kỷ luật, Ban Thi đua hoặc Trưởng ban
+  // Chỉ Admin, BGH hoặc Trưởng ban Kỷ luật & Thi đua được sửa quy chế.
   useEffect(() => {
     if (!user) return;
     if (role === "admin" || role === "bgh") {
       setHasCriteriaAccess(true);
       return;
     }
-    const isHeadOrCommittee = Boolean(
-      claims?.isCompetitionCommittee ||
-      claims?.isDisciplineCommittee ||
+    const isHead = Boolean(
       claims?.isDisciplineHead ||
-      claims?.isCompetitionHead ||
-      claims?.canManageCriteria
+      claims?.disciplineRole === "discipline_and_competition_head"
     );
-    if (isHeadOrCommittee) {
+    if (isHead) {
       setHasCriteriaAccess(true);
       return;
     }
@@ -153,7 +150,9 @@ export default function DisciplineCriteriaPage() {
         );
       })
       .then((snap) => {
-        setHasCriteriaAccess(!snap.empty);
+        setHasCriteriaAccess(snap.docs.some((doc) =>
+          ["discipline_head", "discipline_and_competition_head"].includes(String(doc.data().roleType || "")),
+        ));
       })
       .catch(() => {
         getDocs(
@@ -163,7 +162,9 @@ export default function DisciplineCriteriaPage() {
             where("isActive", "==", true),
           ),
         )
-          .then((snap) => setHasCriteriaAccess(!snap.empty))
+          .then((snap) => setHasCriteriaAccess(snap.docs.some((doc) =>
+            ["discipline_head", "discipline_and_competition_head"].includes(String(doc.data().roleType || "")),
+          )))
           .catch(() => setHasCriteriaAccess(false));
       });
   }, [user, role, claims, refreshClaims]);
@@ -473,7 +474,7 @@ export default function DisciplineCriteriaPage() {
             <>
               <PageHeader
                 title="Danh mục tiêu chí thi đua"
-                description="Hệ thống các điều khoản cộng/trừ điểm theo Quy chế thi đua của nhà trường. Ban Kỷ luật & Ban Thi đua có thể cài đặt, điều chỉnh mức điểm hoặc thêm mới điều khoản quy chế."
+                description="Hệ thống các điều khoản cộng/trừ điểm theo Quy chế thi đua của nhà trường. Admin, BGH và Trưởng ban Kỷ luật & Thi đua có thể cài đặt, điều chỉnh hoặc thêm điều khoản."
                 actions={
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
