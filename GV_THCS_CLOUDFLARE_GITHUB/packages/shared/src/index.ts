@@ -6,6 +6,7 @@ export const activityStatuses = ["active", "inactive"] as const;
 export const schoolLevels = ["primary", "secondary"] as const;
 // Bật thành true khi nhà trường chính thức đưa Cấp 1 vào quy trình thi đua.
 export const PRIMARY_DISCIPLINE_ENABLED = false;
+export const CURRENT_DISCIPLINE_WEEK = 7;
 export const teachingRoles = ["chu_nhiem", "bo_mon", "ca_hai"] as const;
 export const bghPositions = ["hieutruong", "phohieutruong"] as const;
 
@@ -1215,6 +1216,8 @@ export const disciplineEntrySchema = z.object({
   unitType: z.enum(disciplineUnitTypes),
   unitPoints: z.number().int(),
   quantity: z.number().int().min(1, "Số lượng/số lần phải lớn hơn hoặc bằng 1").default(1),
+  timesPerStudent: z.number().int().min(1).default(1),
+  studentCount: z.number().int().min(0).default(0),
   totalPoints: z.number().int(),
   scope: z.enum(["student", "class"]),
   studentIds: z.array(z.string().trim()).default([]),
@@ -1321,7 +1324,7 @@ export const disciplineWeeklySnapshotSchema = z.object({
   classId: z.string().trim().min(1),
   className: z.string().trim().min(1),
   schoolYearId: z.string().trim().min(1),
-  basePoints: z.number().int().default(600),
+  basePoints: z.literal(DEFAULT_WEEKLY_BASE_SCORE).default(DEFAULT_WEEKLY_BASE_SCORE),
   totalPlus: z.number().int().min(0).default(0),
   totalMinus: z.number().int().min(0).default(0), // Lưu giá trị dương tuyệt đối
   finalScore: z.number().int(),

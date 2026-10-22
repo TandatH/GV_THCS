@@ -4,6 +4,7 @@ export declare const teacherTypes: readonly ["co_huu", "thinh_giang"];
 export declare const activityStatuses: readonly ["active", "inactive"];
 export declare const schoolLevels: readonly ["primary", "secondary"];
 export declare const PRIMARY_DISCIPLINE_ENABLED = false;
+export declare const CURRENT_DISCIPLINE_WEEK = 7;
 export declare const teachingRoles: readonly ["chu_nhiem", "bo_mon", "ca_hai"];
 export declare const bghPositions: readonly ["hieutruong", "phohieutruong"];
 export type Role = (typeof roles)[number];
@@ -359,6 +360,7 @@ export declare const disciplineApprovalStatuses: readonly ["draft", "signed", "l
 export type DisciplineApprovalStatus = (typeof disciplineApprovalStatuses)[number];
 export declare const disciplineApprovalStatusLabels: Record<DisciplineApprovalStatus, string>;
 export declare const DEFAULT_WEEKLY_BASE_SCORE = 600;
+export declare const CURRENT_DISCIPLINE_WEEK = 7;
 export declare const disciplineRoleTypes: readonly ["discipline_committee", "competition_committee", "discipline_head", "competition_head", "discipline_and_competition_head"];
 export type DisciplineRoleType = (typeof disciplineRoleTypes)[number];
 export declare const disciplineRoleTypeLabels: Record<DisciplineRoleType, string>;
@@ -544,6 +546,8 @@ export declare const disciplineEntrySchema: z.ZodObject<{
     }>;
     unitPoints: z.ZodNumber;
     quantity: z.ZodDefault<z.ZodNumber>;
+    timesPerStudent: z.ZodDefault<z.ZodNumber>;
+    studentCount: z.ZodDefault<z.ZodNumber>;
     totalPoints: z.ZodNumber;
     scope: z.ZodEnum<{
         student: "student";
@@ -650,7 +654,7 @@ export declare const disciplineWeeklySnapshotSchema: z.ZodObject<{
     classId: z.ZodString;
     className: z.ZodString;
     schoolYearId: z.ZodString;
-    basePoints: z.ZodDefault<z.ZodNumber>;
+    basePoints: z.ZodDefault<z.ZodLiteral<600>>;
     totalPlus: z.ZodDefault<z.ZodNumber>;
     totalMinus: z.ZodDefault<z.ZodNumber>;
     finalScore: z.ZodNumber;
@@ -697,7 +701,7 @@ export declare const disciplineWeeklyApprovalSchema: z.ZodObject<{
         classId: z.ZodString;
         className: z.ZodString;
         schoolYearId: z.ZodString;
-        basePoints: z.ZodDefault<z.ZodNumber>;
+        basePoints: z.ZodDefault<z.ZodLiteral<600>>;
         totalPlus: z.ZodDefault<z.ZodNumber>;
         totalMinus: z.ZodDefault<z.ZodNumber>;
         finalScore: z.ZodNumber;
