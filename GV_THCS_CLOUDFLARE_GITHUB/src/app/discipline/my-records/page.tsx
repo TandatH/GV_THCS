@@ -26,6 +26,7 @@ import {
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -105,6 +106,10 @@ export default function MyDisciplineRecordsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [records, setRecords] = useState<DisciplineRecord[]>([]);
 
+  // Quyền xem toàn trường và Chế độ xem
+  const [canViewAll, setCanViewAll] = useState<boolean>(false);
+  const [viewScope, setViewScope] = useState<"my" | "all">("my");
+
   // Danh mục lọc
   const [schoolYears, setSchoolYears] = useState<OptionRow[]>([]);
   const [weeks, setWeeks] = useState<WeekRow[]>([]);
@@ -119,6 +124,45 @@ export default function MyDisciplineRecordsPage() {
 
   // Modal chi tiết phiếu
   const [viewingRecord, setViewingRecord] = useState<DisciplineRecord | null>(null);
+
+  // KIỂM TRA QUYỀN XEM TOÀN TRƯỜNG (Admin, BGH, Ban Thi đua, Trưởng ban Kỷ luật)
+  useEffect(() => {
+    async function checkViewAll() {
+      if (!user) return;
+      if (role === "admin" || role === "bgh") {
+        setCanViewAll(true);
+        return;
+      }
+      try {
+        const tokenResult = await user.getIdTokenResult();
+        const claims = tokenResult.claims;
+        if (
+          claims.isCompetitionCommittee === true ||
+          claims.isDisciplineHead === true ||
+          claims.isDisciplineCommittee === true ||
+          ["competition_committee", "discipline_head", "discipline_and_competition_head"].includes(
+            String(claims.disciplineRole || ""),
+          )
+        ) {
+          setCanViewAll(true);
+          return;
+        }
+
+        const assignmentRefs = [
+          doc(firestore, "disciplineAssignments", `${user.uid}_competition_committee`),
+          doc(firestore, "disciplineAssignments", `${user.uid}_discipline_head`),
+          doc(firestore, "disciplineAssignments", `${user.uid}_discipline_and_competition_head`),
+        ];
+        const snaps = await Promise.all(assignmentRefs.map((ref) => getDoc(ref)));
+        if (snaps.some((s) => s.exists() && s.data()?.isActive !== false)) {
+          setCanViewAll(true);
+        }
+      } catch (err) {
+        console.error("Lỗi kiểm tra quyền xem lịch sử toàn trường:", err);
+      }
+    }
+    checkViewAll();
+  }, [user, role]);
 
   // 1. TẢI DANH MỤC NỀN
   useEffect(() => {
@@ -163,7 +207,7 @@ export default function MyDisciplineRecordsPage() {
     return () => unsubWeeks();
   }, [selectedSchoolYearId]);
 
-  // 3. TẢI DANH SÁCH PHIẾU DO CHÍNH MÌNH GHI NHẬN (reportedByUid == user.uid)
+  // 3. TẢI DANH SÁCH PHIẾU GHI NHẬN (THEO PHẠM VI "MY" HOẶC "ALL")
   useEffect(() => {
     if (!user) {
       setLoading(false);
@@ -171,10 +215,16 @@ export default function MyDisciplineRecordsPage() {
     }
 
     setLoading(true);
-    const qEntries = query(
-      collection(firestore, "disciplineEntries"),
-      where("reportedByUid", "==", user.uid),
-    );
+    const qEntries =
+      viewScope === "all" && selectedSchoolYearId
+        ? query(
+            collection(firestore, "disciplineEntries"),
+            where("schoolYearId", "==", selectedSchoolYearId),
+          )
+        : query(
+            collection(firestore, "disciplineEntries"),
+            where("reportedByUid", "==", user.uid),
+          );
 
     const unsubEntries = onSnapshot(
       qEntries,
@@ -200,30 +250,37 @@ export default function MyDisciplineRecordsPage() {
     );
 
     return () => unsubEntries();
-  }, [user]);
+  }, [user, viewScope, selectedSchoolYearId]);
 
-  // Thống kê nhanh theo trạng thái
+  // Lọc phạm vi tuần và lớp trước khi tính KPI và lọc trạng thái
+  const scopedRecords = useMemo(() => {
+    return records.filter((r) => {
+      if (filterWeekId !== "all" && r.weekId !== filterWeekId) return false;
+      if (filterClassId !== "all" && r.classId !== filterClassId) return false;
+      return true;
+    });
+  }, [records, filterWeekId, filterClassId]);
+
+  // Thống kê nhanh theo trạng thái TRONG PHẠM VI BỘ LỌC ĐANG CHỌN (Tuần, Lớp)
   const stats = useMemo(() => {
     let pending = 0;
     let approved = 0;
     let returned = 0;
     let rejected = 0;
 
-    for (const r of records) {
+    for (const r of scopedRecords) {
       if (r.status === "pending") pending++;
       else if (r.status === "approved") approved++;
       else if (r.status === "returned") returned++;
       else if (r.status === "rejected") rejected++;
     }
 
-    return { total: records.length, pending, approved, returned, rejected };
-  }, [records]);
+    return { total: scopedRecords.length, pending, approved, returned, rejected };
+  }, [scopedRecords]);
 
-  // Danh sách đã lọc
+  // Danh sách đã lọc theo trạng thái và từ khóa tìm kiếm
   const filteredRecords = useMemo(() => {
-    return records.filter((r) => {
-      if (filterWeekId !== "all" && r.weekId !== filterWeekId) return false;
-      if (filterClassId !== "all" && r.classId !== filterClassId) return false;
+    return scopedRecords.filter((r) => {
       if (filterStatus !== "all" && r.status !== filterStatus) return false;
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
@@ -237,7 +294,7 @@ export default function MyDisciplineRecordsPage() {
       }
       return true;
     });
-  }, [records, filterWeekId, filterClassId, filterStatus, searchTerm]);
+  }, [scopedRecords, filterStatus, searchTerm]);
 
   // Helper hiển thị tone Badge theo status
   function getStatusBadge(status: DisciplineEntryStatus) {
@@ -277,11 +334,43 @@ export default function MyDisciplineRecordsPage() {
         <div className="space-y-6 pb-16">
           {/* HEADER */}
           <PageHeader
-            eyebrow="Ban Kỷ luật"
+            eyebrow={viewScope === "all" ? "Quản lý thi đua" : "Ban Kỷ luật"}
             title="Lịch sử ghi nhận vi phạm"
-            description="Theo dõi tất cả các phiếu ghi nhận do bạn gửi lên, xem tiến độ phê duyệt của Ban Thi đua và chỉnh sửa bổ sung các phiếu bị trả lại."
+            description={
+              viewScope === "all"
+                ? "Theo dõi toàn bộ các phiếu ghi nhận vi phạm của toàn trường trong năm học, xem tiến độ thẩm định của Ban Thi đua."
+                : "Theo dõi tất cả các phiếu ghi nhận do bạn gửi lên, xem tiến độ phê duyệt của Ban Thi đua và chỉnh sửa bổ sung các phiếu bị trả lại."
+            }
             actions={
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {canViewAll && (
+                  <div className="flex items-center bg-muted/70 p-1 rounded-xl border border-input">
+                    <button
+                      type="button"
+                      onClick={() => setViewScope("my")}
+                      className={cn(
+                        "px-3 py-1 text-xs font-semibold rounded-lg transition-all",
+                        viewScope === "my"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Phiếu của tôi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewScope("all")}
+                      className={cn(
+                        "px-3 py-1 text-xs font-semibold rounded-lg transition-all",
+                        viewScope === "all"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Toàn trường
+                    </button>
+                  </div>
+                )}
                 <Button
                   variant="primary"
                   size="sm"
@@ -415,6 +504,8 @@ export default function MyDisciplineRecordsPage() {
                 description={
                   searchTerm || filterStatus !== "all" || filterClassId !== "all" || filterWeekId !== "all"
                     ? "Không tìm thấy phiếu vi phạm nào phù hợp với bộ lọc hiện tại."
+                    : viewScope === "all"
+                    ? "Chưa có phiếu vi phạm nào được ghi nhận trên toàn trường trong năm học này."
                     : "Bạn chưa gửi phiếu ghi nhận vi phạm nào. Hãy bấm 'Ghi nhận vi phạm mới' để bắt đầu."
                 }
                 action={
@@ -504,19 +595,27 @@ export default function MyDisciplineRecordsPage() {
                         <span>{item.criterionName}</span>
                       </div>
 
-                      <div className="text-xs text-muted-foreground">
-                        <strong>Đối tượng: </strong>
-                        <span className="text-foreground">
-                          {item.scope === "student" ? (
-                            item.studentNamesText || `${item.studentIds?.length || 0} học sinh`
-                          ) : (
-                            "Tập thể lớp"
-                          )}
-                        </span>
-                        {item.quantity > 1 && (
-                          <span className="ml-2 font-medium text-muted-foreground">
-                            (Số lượng: {item.quantity})
+                      <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <div>
+                          <strong>Đối tượng: </strong>
+                          <span className="text-foreground">
+                            {item.scope === "student" ? (
+                              item.studentNamesText || `${item.studentIds?.length || 0} học sinh`
+                            ) : (
+                              "Tập thể lớp"
+                            )}
                           </span>
+                          {item.quantity > 1 && (
+                            <span className="ml-2 font-medium text-muted-foreground">
+                              (Số lượng: {item.quantity})
+                            </span>
+                          )}
+                        </div>
+                        {viewScope === "all" && item.reportedByName && (
+                          <div className="text-xs">
+                            <strong>Người lập: </strong>
+                            <span className="text-foreground font-medium">{item.reportedByName}</span>
+                          </div>
                         )}
                       </div>
 
