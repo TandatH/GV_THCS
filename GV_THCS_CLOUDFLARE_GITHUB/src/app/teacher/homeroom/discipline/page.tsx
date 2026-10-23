@@ -718,7 +718,7 @@ function HomeroomDisciplineContent() {
                   </div>
 
                   {/* THÔNG TIN TRẠNG THÁI BẢNG ĐIỂM */}
-                  <div className="flex items-center gap-2 self-end sm:self-center">
+                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
                     {isWeekLocked ? (
                       <Badge tone="success">
                         🔒 KẾT QUẢ CHÍNH THỨC (ĐÃ KHÓA SỔ)
@@ -731,6 +731,22 @@ function HomeroomDisciplineContent() {
                       <Badge tone="warning">
                         ⏳ BẢNG ĐIỂM TẠM TÍNH (CHƯA CHỐT)
                       </Badge>
+                    )}
+
+                    {!isWeekLocked && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          router.push(
+                            `/competition/weekly-finalize?weekId=${selectedWeekId}&classId=${activeClassId}`,
+                          )
+                        }
+                        className="text-xs h-7 px-2.5 gap-1 shadow-none"
+                      >
+                        <FileCheck className="h-3.5 w-3.5 text-primary" />
+                        {activeApproval ? "Xem biên bản ký" : "Ký xác nhận điểm"}
+                      </Button>
                     )}
                   </div>
                 </div>
