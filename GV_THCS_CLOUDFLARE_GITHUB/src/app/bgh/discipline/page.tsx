@@ -150,9 +150,30 @@ type EntryRow = DocumentData & {
   weekId: string;
   classId: string;
   status: string;
-  points: number;
+  points?: number;
+  totalPoints?: number;
   category: string;
   criterionCode?: string;
+};
+
+type ClassScoreRow = DocumentData & {
+  id: string;
+  weekId: string;
+  classId: string;
+  className?: string;
+  basePoints?: number;
+  totalPlus?: number;
+  totalMinus?: number;
+  finalScore?: number;
+  activeApprovalId?: string;
+  activeVersion?: number;
+  contentHashSha256?: string;
+  isSigned?: boolean;
+  isLocked?: boolean;
+  signerName?: string;
+  signerUid?: string;
+  signerRole?: string;
+  syncedToBgh?: boolean;
 };
 
 type AppealRow = DocumentData & {
@@ -193,9 +214,12 @@ function BghDisciplineContent() {
   // Dữ liệu thời gian thực
   const [approvalsMap, setApprovalsMap] = useState<Record<string, ApprovalRow>>({});
   const [snapshotsMap, setSnapshotsMap] = useState<Record<string, SnapshotRow>>({});
+  const [scoresMap, setScoresMap] = useState<Record<string, ClassScoreRow>>({});
   const [signerAssignmentsMap, setSignerAssignmentsMap] = useState<Record<string, SignerAssignmentRow>>({});
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [appeals, setAppeals] = useState<AppealRow[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>("");
 
   // Bộ lọc
   const [selectedGrade, setSelectedGrade] = useState<string>("all");
@@ -326,7 +350,18 @@ function BghDisciplineContent() {
       setSnapshotsMap(map);
     });
 
-    // c. Signer Assignments (Phân công người ký)
+    // c. Điểm tuần chính thức từ Ban Thi đua (classWeeklyScores)
+    const qScores = query(collection(firestore, "classWeeklyScores"), where("weekId", "==", selectedWeekId));
+    const unsubScores = onSnapshot(qScores, (snap) => {
+      const map: Record<string, ClassScoreRow> = {};
+      snap.docs.forEach((d) => {
+        const dat = d.data() as ClassScoreRow;
+        map[dat.classId] = { ...dat, id: d.id };
+      });
+      setScoresMap(map);
+    });
+
+    // d. Signer Assignments (Phân công người ký)
     const qSigners = query(collection(firestore, "disciplineWeeklySignerAssignments"), where("weekId", "==", selectedWeekId));
     const unsubSigners = onSnapshot(qSigners, (snap) => {
       const map: Record<string, SignerAssignmentRow> = {};
@@ -337,14 +372,14 @@ function BghDisciplineContent() {
       setSignerAssignmentsMap(map);
     });
 
-    // d. Entries (Toàn bộ phiếu vi phạm trong tuần)
+    // e. Entries (Toàn bộ phiếu vi phạm trong tuần)
     const qEntries = query(collection(firestore, "disciplineEntries"), where("weekId", "==", selectedWeekId));
     const unsubEntries = onSnapshot(qEntries, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EntryRow));
       setEntries(list);
     });
 
-    // e. Appeals (Khiếu nại trong tuần)
+    // f. Appeals (Khiếu nại trong tuần)
     const qAppeals = query(collection(firestore, "disciplineAppeals"));
     const unsubAppeals = onSnapshot(qAppeals, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppealRow));
@@ -355,6 +390,7 @@ function BghDisciplineContent() {
     return () => {
       unsubAppr();
       unsubSnap();
+      unsubScores();
       unsubSigners();
       unsubEntries();
       unsubAppeals();
@@ -372,30 +408,40 @@ function BghDisciplineContent() {
     return classes.map((cls) => {
       const grade = cls.grade || (cls.name ? parseInt(cls.name.replace(/\D/g, "")[0], 10) : 6) || 6;
       const approval = approvalsMap[cls.id];
-      const snapshot = snapshotsMap[cls.id];
+      const snapshot = snapshotsMap[cls.id] || (approval?.snapshot as SnapshotRow | undefined);
       const signerAssignment = signerAssignmentsMap[cls.id];
+      const classScore = scoresMap[cls.id];
 
-      // Tính điểm trực tiếp từ entries hoặc từ snapshot nếu đã ký
+      // Tính điểm trực tiếp từ classWeeklyScores, snapshot nếu đã ký, hoặc từ entries bằng totalPoints
       let basePoints = 600;
       let totalPlus = 0;
       let totalMinus = 0;
       let finalScore = 600;
 
-      if (snapshot) {
+      if (classScore && classScore.isSigned) {
+        basePoints = classScore.basePoints || 600;
+        totalPlus = classScore.totalPlus || 0;
+        totalMinus = classScore.totalMinus || 0;
+        finalScore = classScore.finalScore ?? (basePoints + totalPlus - totalMinus);
+      } else if (snapshot) {
         totalPlus = snapshot.totalPlus || 0;
         totalMinus = snapshot.totalMinus || 0;
         finalScore = 600 + totalPlus - totalMinus;
       } else {
         const clsEntries = entries.filter((e) => e.classId === cls.id && e.status === "approved");
         for (const e of clsEntries) {
-          if (e.points > 0) totalPlus += e.points;
-          else if (e.points < 0) totalMinus += Math.abs(e.points);
+          const pts = Number(e.totalPoints ?? e.points ?? 0);
+          if (pts > 0) totalPlus += pts;
+          else if (pts < 0) totalMinus += Math.abs(pts);
         }
         finalScore = basePoints + totalPlus - totalMinus;
       }
 
-      const isSigned = Boolean(approval && (approval.status === "signed" || approval.status === "locked"));
-      const isClassLocked = isWeekLocked || Boolean(approval?.status === "locked");
+      const isSigned = Boolean(
+        (classScore && classScore.isSigned) ||
+        (approval && (approval.status === "signed" || approval.status === "locked"))
+      );
+      const isClassLocked = isWeekLocked || Boolean(classScore?.isLocked || approval?.status === "locked");
 
       const homeroomTeacherName = cls.homeroomTeacherId ? teachersMap[cls.homeroomTeacherId] || "Chưa phân công" : "Chưa phân công";
 
@@ -405,15 +451,15 @@ function BghDisciplineContent() {
         grade,
         homeroomTeacherId: cls.homeroomTeacherId,
         homeroomTeacherName,
-        assignedSignerName: signerAssignment?.signerName || "Chưa phân công",
-        assignedSignerUid: signerAssignment?.signerUid,
+        assignedSignerName: signerAssignment?.signerName || classScore?.signerName || "Chưa phân công",
+        assignedSignerUid: signerAssignment?.signerUid || classScore?.signerUid,
         approval,
         snapshot,
         isSigned,
         isLocked: isClassLocked,
-        version: snapshot?.version || approval?.version || 1,
-        contentHashSha256: snapshot?.snapshotHash || approval?.snapshotHash || "",
-        signerName: approval?.signerName,
+        version: classScore?.activeVersion || snapshot?.version || approval?.version || 1,
+        contentHashSha256: classScore?.contentHashSha256 || snapshot?.snapshotHash || approval?.snapshotHash || "",
+        signerName: classScore?.signerName || approval?.signerName,
         signedAt: approval?.signedAt ? formatDate(approval.signedAt.toDate ? approval.signedAt.toDate() : approval.signedAt) : undefined,
         basePoints,
         totalPlus,
@@ -421,7 +467,7 @@ function BghDisciplineContent() {
         finalScore,
       };
     });
-  }, [classes, approvalsMap, snapshotsMap, signerAssignmentsMap, entries, isWeekLocked, teachersMap]);
+  }, [classes, approvalsMap, snapshotsMap, scoresMap, signerAssignmentsMap, entries, isWeekLocked, teachersMap]);
 
   // Sắp xếp thứ hạng toàn trường
   const rankedClasses = useMemo(() => {
@@ -463,8 +509,9 @@ function BghDisciplineContent() {
       if (!secondaryClassIds.has(e.classId)) return;
       if (e.status === "approved") {
         totalViolations += 1;
-        if (e.points > 0) totalSchoolPlus += e.points;
-        else if (e.points < 0) totalSchoolMinus += Math.abs(e.points);
+        const pts = Number(e.totalPoints ?? e.points ?? 0);
+        if (pts > 0) totalSchoolPlus += pts;
+        else if (pts < 0) totalSchoolMinus += Math.abs(pts);
       }
     });
 
@@ -599,6 +646,46 @@ function BghDisciplineContent() {
     }
   }
 
+  // ĐỒNG BỘ ĐIỂM THI ĐUA TỪ BAN THI ĐUA SANG BGH
+  async function handleManualSyncBghScores() {
+    if (!selectedWeekId) return;
+    setIsSyncing(true);
+    try {
+      const [apprSnap, scoreSnap, entriesSnap] = await Promise.all([
+        getDocs(query(collection(firestore, "disciplineWeeklyApprovals"), where("weekId", "==", selectedWeekId))),
+        getDocs(query(collection(firestore, "classWeeklyScores"), where("weekId", "==", selectedWeekId))),
+        getDocs(query(collection(firestore, "disciplineEntries"), where("weekId", "==", selectedWeekId))),
+      ]);
+
+      const mapScores: Record<string, ClassScoreRow> = {};
+      scoreSnap.docs.forEach((d) => {
+        mapScores[d.data().classId] = { ...d.data(), id: d.id } as ClassScoreRow;
+      });
+      setScoresMap(mapScores);
+
+      const mapAppr: Record<string, ApprovalRow> = {};
+      apprSnap.docs.forEach((d) => {
+        const dat = d.data() as ApprovalRow;
+        if (dat.status !== "superseded" || !mapAppr[dat.classId]) {
+          mapAppr[dat.classId] = { ...dat, id: d.id };
+        }
+      });
+      setApprovalsMap(mapAppr);
+
+      const listEntries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as EntryRow));
+      setEntries(listEntries);
+
+      const now = new Date();
+      setLastSyncedTime(now.toLocaleTimeString("vi-VN"));
+      toast.success("Đã đồng bộ thành công điểm thi đua tất cả các lớp sang Ban Giám Hiệu!");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("Lỗi đồng bộ: " + msg);
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   // XUẤT BÁO CÁO EXCEL TOÀN TRƯỜNG
   function handleExportExcelAllSchool() {
     if (!currentWeek) {
@@ -646,6 +733,17 @@ function BghDisciplineContent() {
             description="Bảng điều hành Ban Giám hiệu: Theo dõi tiến độ ký xác nhận, kiểm soát tính toàn vẹn SHA-256, xếp hạng thi đua và khóa sổ toàn trường."
             actions={
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleManualSyncBghScores}
+                  disabled={isSyncing || !selectedWeekId}
+                  className="gap-2 border-primary/30 text-primary hover:bg-primary/5"
+                  title="Tải lại và đồng bộ tức thì toàn bộ điểm thi đua mới nhất từ Ban Thi đua sang BGH"
+                >
+                  <RefreshCw className={cn("h-4 w-4", isSyncing && "animate-spin")} />
+                  {isSyncing ? "Đang đồng bộ..." : "Đồng bộ điểm BGH"}
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -721,8 +819,20 @@ function BghDisciplineContent() {
                 </div>
               </div>
 
-              {/* TRẠNG THÁI KHÓA SỔ */}
-              <div className="flex items-center gap-2">
+              {/* TRẠNG THÁI KHÓA SỔ & ĐỒNG BỘ */}
+              <div className="flex flex-wrap items-center gap-2">
+                {lastSyncedTime ? (
+                  <Badge tone="success" className="gap-1.5 py-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Đồng bộ BGH: {lastSyncedTime}
+                  </Badge>
+                ) : (
+                  <Badge tone="info" className="gap-1.5 py-1">
+                    <RefreshCw className="h-3 w-3 animate-pulse text-primary" />
+                    Đồng bộ trực tiếp Ban Thi đua
+                  </Badge>
+                )}
+
                 {isWeekLocked ? (
                   <Badge tone="success">
                     🔒 TUẦN ĐÃ KHÓA SỔ (CHÍNH THỨC)

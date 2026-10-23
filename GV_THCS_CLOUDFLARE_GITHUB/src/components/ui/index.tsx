@@ -84,9 +84,11 @@ export function Card({ className, children }: { className?: string; children: Re
 export function Badge({
   children,
   tone = "neutral",
+  className,
 }: {
   children: ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger" | "info";
+  className?: string;
 }) {
   return (
     <span
@@ -97,6 +99,7 @@ export function Badge({
         tone === "warning" && "bg-amber-50 text-amber-700",
         tone === "danger" && "bg-rose-50 text-rose-700",
         tone === "info" && "bg-blue-50 text-blue-700",
+        className,
       )}
     >
       {children}

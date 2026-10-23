@@ -133,7 +133,37 @@ function WeeklyFinalizeContent() {
   const searchParams = useSearchParams();
   const queryWeekId = searchParams.get("weekId");
   const queryClassId = searchParams.get("classId");
-  const { user, role } = useAuth();
+  const { user, role, claims } = useAuth();
+  const [isCompetitionMember, setIsCompetitionMember] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setIsCompetitionMember(false);
+      return;
+    }
+    const hasClaim = Boolean(
+      claims?.isCompetitionCommittee ||
+      claims?.isCompetitionHead ||
+      claims?.isDisciplineHead ||
+      ["competition_committee", "competition_head", "discipline_and_competition_head"].includes(claims?.disciplineRole as string)
+    );
+    if (hasClaim) {
+      setIsCompetitionMember(true);
+      return;
+    }
+
+    const q = query(
+      collection(firestore, "disciplineAssignments"),
+      where("userUid", "==", user.uid),
+      where("isActive", "==", true),
+    );
+    getDocs(q).then((snap) => {
+      const match = snap.docs.some((d) =>
+        ["competition_committee", "competition_head", "discipline_and_competition_head"].includes(String(d.data().roleType || ""))
+      );
+      setIsCompetitionMember(match);
+    }).catch(() => setIsCompetitionMember(false));
+  }, [user, claims]);
 
   // Danh mục
   const [schoolYears, setSchoolYears] = useState<OptionRow[]>([]);
@@ -344,6 +374,11 @@ function WeeklyFinalizeContent() {
     return { basePoints, totalPlus, totalMinus, finalScore };
   }, [approvedEntries]);
 
+  const isHomeroomTeacher = useMemo(() => {
+    if (!user || !activeClass?.homeroomTeacherId) return false;
+    return claims?.teacherId === activeClass.homeroomTeacherId;
+  }, [user, activeClass, claims]);
+
   // Kiểm tra quyền ký xác nhận của user hiện tại
   const canSign = useMemo(() => {
     // Lớp Cấp 1 tạm thời không tham gia thi đua và không cho phép ký
@@ -351,12 +386,24 @@ function WeeklyFinalizeContent() {
     if (!user) return false;
     // Admin hoặc BGH luôn có quyền
     if (role === "admin" || role === "bgh") return true;
+    // Thành viên Ban Thi đua có quyền tổng kết & ký điểm
+    if (isCompetitionMember) return true;
     // Người được phân công ký lớp này trong tuần
     if (signerAssignment && signerAssignment.assignedSignerUid === user.uid && signerAssignment.isActive !== false) {
       return true;
     }
+    // Giáo viên chủ nhiệm của lớp
+    if (isHomeroomTeacher) return true;
     return false;
-  }, [user, role, signerAssignment, isCurrentClassSecondary]);
+  }, [user, role, signerAssignment, isCurrentClassSecondary, isCompetitionMember, isHomeroomTeacher]);
+
+  const userSigningRoleLabel = useMemo(() => {
+    if (role === "admin" || role === "bgh") return "Quản trị viên / BGH";
+    if (isCompetitionMember) return "Thành viên Ban Thi đua";
+    if (signerAssignment && signerAssignment.assignedSignerUid === user?.uid) return "Người được phân công tuần này";
+    if (isHomeroomTeacher) return "Giáo viên chủ nhiệm";
+    return "Giáo viên";
+  }, [role, isCompetitionMember, signerAssignment, user?.uid, isHomeroomTeacher]);
 
   // THỰC HIỆN KÝ XÁC NHẬN BẢNG ĐIỂM
   async function handleConfirmSign() {
@@ -374,7 +421,10 @@ function WeeklyFinalizeContent() {
         classId: selectedClassId,
       });
 
-      toast.success((result as any)?.message || "Đã ký xác nhận thành công bảng điểm tuần!");
+      toast.success(
+        (result as any)?.message ||
+          "Đã ký xác nhận thành công và tự động đồng bộ điểm thi đua sang BGH!",
+      );
       setIsSignModalOpen(false);
       setSignConfirmChecked(false);
     } catch (err: unknown) {
@@ -844,15 +894,17 @@ function WeeklyFinalizeContent() {
                     <div>Email: <strong className="text-foreground">{user?.email}</strong></div>
                     <div>Lớp ký nhận: <strong className="text-foreground">{activeClass?.name}</strong></div>
                     <div>Điểm chốt: <strong className="text-primary font-bold">{scoreStats.finalScore} điểm</strong></div>
+                    <div>Vai trò ký: <strong className="text-foreground">{userSigningRoleLabel}</strong></div>
+                    <div>Đồng bộ: <strong className="text-emerald-600 font-bold">Trực tiếp sang BGH</strong></div>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-xl border bg-muted/40 space-y-2 text-muted-foreground">
-                  <p className="font-semibold text-foreground">Quy trình ký điện tử và bảo chứng toàn vẹn:</p>
+                  <p className="font-semibold text-foreground">Quy trình ký điện tử và đồng bộ hệ thống:</p>
                   <ul className="list-disc pl-4 space-y-1">
                     <li>Dữ liệu 33 tiêu chí sẽ được đóng gói thành snapshot bất biến trên server.</li>
                     <li>Mã băm mật mã SHA-256 sẽ được tạo để chống can thiệp hoặc sửa đổi dữ liệu ngoài luồng.</li>
-                    <li>Phiên bản ký mới sẽ được lưu trữ và đánh dấu hợp lệ chính thức.</li>
+                    <li>Bảng điểm sau khi ký sẽ được tự động đồng bộ tức thời sang Ban Giám Hiệu (BGH) và Bảng xếp hạng.</li>
                   </ul>
                 </div>
 

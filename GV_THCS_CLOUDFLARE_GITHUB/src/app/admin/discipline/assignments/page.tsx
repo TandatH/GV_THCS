@@ -279,6 +279,26 @@ function DisciplineAssignmentsContent() {
 
   // Tab 1: Phân quyền Ban Kỷ luật & Ban Thi đua (Giáo viên)
   const [roleAssignments, setRoleAssignments] = useState<AssignmentRow[]>([]);
+
+  // Danh sách các giáo viên trong Ban Thi đua
+  const competitionCommitteeTeachers = useMemo(() => {
+    const committeeUserUids = new Set(
+      roleAssignments
+        .filter((r) => r.isActive !== false && ["competition_committee", "competition_head", "discipline_and_competition_head"].includes(r.roleType))
+        .map((r) => r.userUid)
+    );
+    const committeeEmails = new Set(
+      roleAssignments
+        .filter((r) => r.isActive !== false && ["competition_committee", "competition_head", "discipline_and_competition_head"].includes(r.roleType))
+        .map((r) => r.userEmail)
+    );
+    return teachers.filter(
+      (t) =>
+        (t.userId && committeeUserUids.has(t.userId)) ||
+        committeeUserUids.has(t.id) ||
+        (Boolean(t.email) && committeeEmails.has(t.email!))
+    );
+  }, [roleAssignments, teachers]);
   const [loadingRoles, setLoadingRoles] = useState<boolean>(true);
   const [isAssignRoleModalOpen, setIsAssignRoleModalOpen] = useState<boolean>(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
@@ -652,12 +672,92 @@ function DisciplineAssignmentsContent() {
   // Mở modal phân công người ký cho 1 lớp
   function handleOpenAssignSigner(targetClass: OptionRow) {
     setTargetClassForSigner(targetClass);
-    if (targetClass.homeroomTeacherId) {
+    const existingSigner = signerMap.get(targetClass.id);
+    if (existingSigner) {
+      const found = teachers.find(
+        (t) =>
+          (t.userId && t.userId === existingSigner.assignedSignerUid) ||
+          t.id === existingSigner.assignedSignerUid ||
+          (Boolean(t.email) && t.email === existingSigner.assignedSignerEmail)
+      );
+      if (found) {
+        setSelectedSignerTeacherId(found.id);
+      } else if (targetClass.homeroomTeacherId) {
+        setSelectedSignerTeacherId(targetClass.homeroomTeacherId);
+      } else {
+        setSelectedSignerTeacherId("");
+      }
+    } else if (targetClass.homeroomTeacherId) {
       setSelectedSignerTeacherId(targetClass.homeroomTeacherId);
+    } else if (competitionCommitteeTeachers.length > 0) {
+      setSelectedSignerTeacherId(competitionCommitteeTeachers[0].id);
     } else {
       setSelectedSignerTeacherId("");
     }
     setIsAssignSignerModalOpen(true);
+  }
+
+  // Tự động phân công các thành viên Ban Thi đua phụ trách các lớp
+  async function handleAutoAssignCompetitionCommittee() {
+    if (!selectedWeek) {
+      toast.error("Vui lòng chọn tuần thi đua trước.");
+      return;
+    }
+    if (competitionCommitteeTeachers.length === 0) {
+      toast.error("Chưa có giáo viên nào trong Ban Thi đua để gán. Hãy phân công Ban Thi đua ở Tab 1 trước.");
+      return;
+    }
+
+    if (!confirm(`Phân công ${competitionCommitteeTeachers.length} thành viên Ban Thi đua phụ trách tổng kết cho ${classes.length} lớp Tuần ${selectedWeek.weekNumber}?`)) {
+      return;
+    }
+
+    setIsAutoAssigning(true);
+    let successCount = 0;
+    try {
+      for (let i = 0; i < classes.length; i++) {
+        const cls = classes[i];
+        const specificMember = roleAssignments.find(
+          (r) =>
+            r.isActive !== false &&
+            ["competition_committee", "competition_head", "discipline_and_competition_head"].includes(r.roleType) &&
+            Array.isArray(r.assignedClassIds) &&
+            r.assignedClassIds.includes(cls.id)
+        );
+        let teacher: TeacherRow | undefined;
+        if (specificMember) {
+          teacher = teachers.find(
+            (t) =>
+              (t.userId && t.userId === specificMember.userUid) ||
+              (Boolean(t.email) && t.email === specificMember.userEmail) ||
+              t.id === specificMember.userUid
+          );
+        }
+        if (!teacher) {
+          teacher = competitionCommitteeTeachers[i % competitionCommitteeTeachers.length];
+        }
+
+        if (teacher) {
+          const signerUid = teacher.userId || teacher.id;
+          const signerEmail = teacher.email || `${signerUid}@school.edu.vn`;
+          await assignWeeklyDisciplineSigner({
+            schoolYearId: selectedSchoolYearId,
+            weekId: selectedWeek.id,
+            classId: cls.id,
+            signerUid,
+            signerName: teacher.fullName,
+            signerEmail,
+          });
+          successCount++;
+        }
+      }
+      toast.success(`Đã tự động phân công Ban Thi đua tổng kết cho ${successCount} lớp Tuần ${selectedWeek.weekNumber}.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("Lỗi khi gán Ban Thi đua: " + msg);
+    } finally {
+      setIsAutoAssigning(false);
+    }
   }
 
   // Lưu phân công người ký cho 1 lớp
@@ -1034,6 +1134,17 @@ function DisciplineAssignmentsContent() {
                     <Button
                       variant="secondary"
                       size="sm"
+                      onClick={handleAutoAssignCompetitionCommittee}
+                      disabled={isAutoAssigning || !selectedWeek || competitionCommitteeTeachers.length === 0}
+                      className="gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                      title="Tự động phân công các giáo viên trong Ban Thi đua phụ trách tổng kết các lớp"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Gán Ban Thi đua ({competitionCommitteeTeachers.length})
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={handleAutoAssignAllHomeroomTeachers}
                       disabled={isAutoAssigning || !selectedWeek}
                       className="gap-2"
@@ -1331,6 +1442,8 @@ function DisciplineAssignmentsContent() {
                         {classes.map((c, index) => {
                           const gvcn = c.homeroomTeacherId ? teacherMap.get(c.homeroomTeacherId) : null;
                           const signerAssignment = signerMap.get(c.id);
+                          const isSignerGvcn = Boolean(gvcn && signerAssignment && (signerAssignment.assignedSignerUid === gvcn.userId || signerAssignment.assignedSignerUid === gvcn.id || (Boolean(gvcn.email) && signerAssignment.assignedSignerEmail === gvcn.email)));
+                          const isSignerCompetition = Boolean(signerAssignment && competitionCommitteeTeachers.some((t) => (t.userId && t.userId === signerAssignment.assignedSignerUid) || t.id === signerAssignment.assignedSignerUid || (Boolean(t.email) && t.email === signerAssignment.assignedSignerEmail)));
 
                           return (
                             <tr key={c.id} className="hover:bg-muted/40 transition-colors">
@@ -1349,7 +1462,16 @@ function DisciplineAssignmentsContent() {
                               <td className="py-3 px-4">
                                 {signerAssignment ? (
                                   <div>
-                                    <div className="font-semibold text-primary">{signerAssignment.assignedSignerName}</div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold text-primary">{signerAssignment.assignedSignerName}</span>
+                                      {isSignerGvcn ? (
+                                        <Badge tone="neutral" className="text-[10px] px-1.5 py-0">GVCN</Badge>
+                                      ) : isSignerCompetition ? (
+                                        <Badge tone="info" className="text-[10px] px-1.5 py-0">Ban Thi đua</Badge>
+                                      ) : (
+                                        <Badge tone="warning" className="text-[10px] px-1.5 py-0">Được phân công</Badge>
+                                      )}
+                                    </div>
                                     <div className="text-xs text-muted-foreground">{signerAssignment.assignedSignerEmail}</div>
                                   </div>
                                 ) : (
@@ -1370,9 +1492,9 @@ function DisciplineAssignmentsContent() {
                                   variant="secondary"
                                   size="sm"
                                   onClick={() => handleOpenAssignSigner(c)}
-                                  disabled={!selectedWeek || !c.homeroomTeacherId}
+                                  disabled={!selectedWeek}
                                 >
-                                  {signerAssignment ? "Gán lại GVCN" : "Phân công GVCN"}
+                                  {signerAssignment ? "Đổi người ký" : "Phân công người ký"}
                                 </Button>
                               </td>
                             </tr>
@@ -1595,11 +1717,13 @@ function DisciplineAssignmentsContent() {
               </div>
 
               {(selectedRoleType === "discipline_committee" ||
+                selectedRoleType === "competition_committee" ||
                 selectedRoleType === "discipline_head" ||
+                selectedRoleType === "competition_head" ||
                 selectedRoleType === "discipline_and_competition_head") && (
                 <div className="space-y-2 p-3 bg-muted/40 rounded-lg border">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold">Phạm vi lớp theo dõi & ghi nhận</Label>
+                    <Label className="text-xs font-semibold">Phạm vi lớp theo dõi & phụ trách</Label>
                     <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                       <input
                         type="checkbox"
@@ -1654,7 +1778,7 @@ function DisciplineAssignmentsContent() {
           <Modal
             open={isAssignSignerModalOpen}
             onOpenChange={setIsAssignSignerModalOpen}
-            title={`Phân công người ký: Lớp ${targetClassForSigner?.name}`}
+            title={`Phân công người tổng kết & ký: Lớp ${targetClassForSigner?.name}`}
           >
             <form onSubmit={handleSaveSigner} className="space-y-4 pt-2">
               <div className="p-3 bg-muted/30 rounded-md text-xs space-y-1">
@@ -1663,7 +1787,7 @@ function DisciplineAssignmentsContent() {
               </div>
 
               <div>
-                <Label htmlFor="signerSelect">Giáo viên chủ nhiệm ký xác nhận *</Label>
+                <Label htmlFor="signerSelect">Người chịu trách nhiệm tổng kết & ký điểm *</Label>
                 <select
                   id="signerSelect"
                   value={selectedSignerTeacherId}
@@ -1671,17 +1795,46 @@ function DisciplineAssignmentsContent() {
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   required
                 >
-                  <option value="">-- Lớp chưa có GVCN --</option>
-                  {teachers
-                    .filter((t) => t.id === targetClassForSigner?.homeroomTeacherId)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.fullName} ⭐ (GVCN lớp này) - {t.email || ""}
+                  <option value="">-- Chọn người tổng kết & ký --</option>
+                  {/* Nhóm GVCN lớp */}
+                  {targetClassForSigner?.homeroomTeacherId && teacherMap.get(targetClassForSigner.homeroomTeacherId) && (
+                    <optgroup label="Giáo viên chủ nhiệm (GVCN)">
+                      <option value={targetClassForSigner.homeroomTeacherId}>
+                        {teacherMap.get(targetClassForSigner.homeroomTeacherId)!.fullName} ⭐ (GVCN lớp {targetClassForSigner.name}) - {teacherMap.get(targetClassForSigner.homeroomTeacherId)!.email || ""}
                       </option>
-                    ))}
+                    </optgroup>
+                  )}
+
+                  {/* Nhóm Ban Thi đua */}
+                  {competitionCommitteeTeachers.length > 0 && (
+                    <optgroup label="Thành viên Ban Thi đua (Tổng kết điểm)">
+                      {competitionCommitteeTeachers
+                        .filter((t) => t.id !== targetClassForSigner?.homeroomTeacherId)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.fullName} 🏆 (Ban Thi đua) - {t.email || ""}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+
+                  {/* Nhóm tất cả giáo viên */}
+                  <optgroup label="Tất cả giáo viên">
+                    {teachers
+                      .filter(
+                        (t) =>
+                          t.id !== targetClassForSigner?.homeroomTeacherId &&
+                          !competitionCommitteeTeachers.some((cct) => cct.id === t.id)
+                      )
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.fullName} {t.teacherCode ? `(${t.teacherCode})` : ""} - {t.email || ""}
+                        </option>
+                      ))}
+                  </optgroup>
                 </select>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Khuyến nghị: Chọn Giáo viên chủ nhiệm của lớp hoặc Ủy viên Ban Thi đua phụ trách khối.
+                  💡 Quy định: Chọn Giáo viên chủ nhiệm lớp hoặc thành viên Ban Thi đua phụ trách để thực hiện tổng kết điểm tuần và ký xác nhận.
                 </p>
               </div>
 

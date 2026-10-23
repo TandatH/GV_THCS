@@ -9,6 +9,7 @@ import {
   Info,
   ShieldCheck,
   Star,
+  Trophy,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -262,6 +263,21 @@ export default function BghDashboardPage() {
         {/* Quick Nav Modules */}
         <h2 className="mb-3 text-base font-bold text-slate-900">Phân hệ theo dõi nghiệp vụ</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Link href="/bgh/discipline" className="group rounded-2xl border border-border bg-card p-5 transition hover:border-indigo-300 hover:shadow-md">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition">
+                <Trophy className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold group-hover:text-indigo-600 transition">Thi đua & Kỷ luật</h3>
+                  <Badge tone="success" className="text-[10px] px-1.5 py-0">Đồng bộ BGH</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">Theo dõi điểm thi đua, tiến độ ký xác nhận và xếp hạng Cấp 2.</p>
+              </div>
+            </div>
+          </Link>
+
           <Link href="/bgh/schedules" className="group rounded-2xl border border-border bg-card p-5 transition hover:border-blue-300 hover:shadow-md">
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition">
