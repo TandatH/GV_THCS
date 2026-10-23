@@ -75,6 +75,7 @@ import {
   verifyWeeklyDisciplineSignature,
 } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
+import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { cn, formatDate } from "@/lib/utils";
 
 type OptionRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; homeroomTeacherId?: string };
@@ -135,6 +136,25 @@ function WeeklyFinalizeContent() {
   const queryClassId = searchParams.get("classId");
   const { user, role, claims } = useAuth();
   const [isCompetitionMember, setIsCompetitionMember] = useState(false);
+  const [userTeacherId, setUserTeacherId] = useState<string>("");
+
+  useEffect(() => {
+    if (!user) {
+      setUserTeacherId("");
+      return;
+    }
+    getCurrentTeacherContext(user.uid)
+      .then((ctx) => setUserTeacherId(ctx.teacherId))
+      .catch(() => {
+        getDoc(doc(firestore, "users", user.uid))
+          .then((snap) => {
+            if (snap.exists() && snap.data()?.teacherId) {
+              setUserTeacherId(snap.data()?.teacherId);
+            }
+          })
+          .catch(() => {});
+      });
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -376,8 +396,11 @@ function WeeklyFinalizeContent() {
 
   const isHomeroomTeacher = useMemo(() => {
     if (!user || !activeClass?.homeroomTeacherId) return false;
-    return claims?.teacherId === activeClass.homeroomTeacherId;
-  }, [user, activeClass, claims]);
+    return (
+      claims?.teacherId === activeClass.homeroomTeacherId ||
+      userTeacherId === activeClass.homeroomTeacherId
+    );
+  }, [user, activeClass, claims, userTeacherId]);
 
   // Kiểm tra quyền ký xác nhận của user hiện tại
   const canSign = useMemo(() => {
