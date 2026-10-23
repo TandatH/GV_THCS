@@ -292,8 +292,38 @@ export default function CompetitionReviewPage() {
     return () => unsubEntries();
   }, [selectedSchoolYearId]);
 
-  // Thống kê nhanh số lượng phiếu theo trạng thái
+  // 5. LỌC PHẠM VI (TUẦN, LỚP, NHÓM VI PHẠM) TRƯỚC KHI XÉT TAB TRẠNG THÁI VÀ TÌM KIẾM
+  const scopedEntries = useMemo(() => {
+    return entries.filter((r) => {
+      // Lọc tuần
+      if (selectedWeekId !== "all" && r.weekId !== selectedWeekId) return false;
+      // Lọc lớp
+      if (selectedClassId !== "all" && r.classId !== selectedClassId) return false;
+      // Lọc nhóm vi phạm
+      if (selectedCategory !== "all" && r.category !== selectedCategory) return false;
+      return true;
+    });
+  }, [entries, selectedWeekId, selectedClassId, selectedCategory]);
+
+  // Thống kê số lượng phiếu theo trạng thái TRONG PHẠM VI BỘ LỌC ĐANG CHỌN (Tuần, Lớp, Nhóm lỗi)
   const stats = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    let returned = 0;
+    let rejected = 0;
+
+    for (const r of scopedEntries) {
+      if (r.status === "pending") pending++;
+      else if (r.status === "approved") approved++;
+      else if (r.status === "returned") returned++;
+      else if (r.status === "rejected") rejected++;
+    }
+
+    return { total: scopedEntries.length, pending, approved, returned, rejected };
+  }, [scopedEntries]);
+
+  // Thống kê toàn năm học để cảnh báo số phiếu chờ duyệt còn lại ở các tuần khác
+  const yearStats = useMemo(() => {
     let pending = 0;
     let approved = 0;
     let returned = 0;
@@ -311,15 +341,9 @@ export default function CompetitionReviewPage() {
 
   // Danh sách đã lọc theo các tiêu chí và Tab
   const filteredEntries = useMemo(() => {
-    return entries.filter((r) => {
+    return scopedEntries.filter((r) => {
       // Lọc trạng thái theo Tab
       if (activeTabStatus !== "all" && r.status !== activeTabStatus) return false;
-      // Lọc tuần
-      if (selectedWeekId !== "all" && r.weekId !== selectedWeekId) return false;
-      // Lọc lớp
-      if (selectedClassId !== "all" && r.classId !== selectedClassId) return false;
-      // Lọc nhóm vi phạm
-      if (selectedCategory !== "all" && r.category !== selectedCategory) return false;
 
       // Lọc tìm kiếm
       if (searchTerm.trim()) {
@@ -336,7 +360,7 @@ export default function CompetitionReviewPage() {
 
       return true;
     });
-  }, [entries, activeTabStatus, selectedWeekId, selectedClassId, selectedCategory, searchTerm]);
+  }, [scopedEntries, activeTabStatus, searchTerm]);
 
   // DUYỆT PHIẾU (APPROVE)
   async function handleApprove(record: DisciplineRecord) {
@@ -572,6 +596,31 @@ export default function CompetitionReviewPage() {
                 </div>
               </div>
 
+              {/* THÔNG BÁO THÔNG MINH KHI TUẦN HIỆN TẠI ĐÃ DUYỆT XONG NHƯNG CÁC TUẦN KHÁC VẪN CÒN PHIẾU CHỜ DUYỆT */}
+              {selectedWeekId !== "all" && yearStats.pending > 0 && stats.pending === 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border border-amber-300 bg-amber-50/90 dark:border-amber-900/60 dark:bg-amber-950/30 text-amber-950 dark:text-amber-200 text-xs shadow-sm">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>
+                      Tuần bạn đang chọn đã thẩm định xong ({stats.approved} phiếu đã duyệt). Hiện toàn trường còn{" "}
+                      <strong className="underline decoration-amber-500 font-bold">{yearStats.pending} phiếu</strong>{" "}
+                      chờ duyệt ở các tuần khác trong năm học.
+                    </span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedWeekId("all");
+                      setActiveTabStatus("pending");
+                    }}
+                    className="text-xs h-7 px-3 whitespace-nowrap self-start sm:self-center font-medium shadow-none"
+                  >
+                    Xem {yearStats.pending} phiếu chờ duyệt
+                  </Button>
+                </div>
+              )}
+
               {/* BỘ LỌC ĐIỀU KIỆN */}
               <Card className="p-4 space-y-3">
                 <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
@@ -610,12 +659,17 @@ export default function CompetitionReviewPage() {
                         onChange={(e) => setSelectedWeekId(e.target.value)}
                         className="w-full text-xs rounded-xl border border-input bg-background px-2.5 py-2 focus:border-primary focus:ring-1 focus:ring-primary font-medium"
                       >
-                        <option value="all">Tất cả các tuần</option>
-                        {weeks.map((w) => (
-                          <option key={w.id} value={w.id}>
-                            Tuần {w.weekNumber} {w.status === "locked" ? "🔒 (Khóa)" : ""}
-                          </option>
-                        ))}
+                        <option value="all">
+                          Tất cả các tuần {yearStats.pending > 0 ? `(${yearStats.pending} chờ duyệt)` : ""}
+                        </option>
+                        {weeks.map((w) => {
+                          const weekPending = entries.filter((e) => e.weekId === w.id && e.status === "pending").length;
+                          return (
+                            <option key={w.id} value={w.id}>
+                              Tuần {w.weekNumber} {weekPending > 0 ? `(${weekPending} chờ duyệt)` : ""} {w.status === "locked" ? "🔒 (Khóa)" : ""}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
 
