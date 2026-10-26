@@ -64,6 +64,7 @@ import {
   assignDisciplineRole,
   assignWeeklyDisciplineSigner,
   initializeDisciplineWeeks,
+  createDisciplineWeek,
   createSaoDoAccount,
   updateSaoDoAccount,
   resetSaoDoPassword,
@@ -71,6 +72,7 @@ import {
   firebaseErrorMessage,
   type AssignDisciplineRoleInput,
   type AssignWeeklyDisciplineSignerInput,
+  type CreateDisciplineWeekInput,
   type CreateSaoDoAccountInput,
   type UpdateSaoDoAccountInput,
 } from "@/lib/firebase/callables";
@@ -313,6 +315,15 @@ function DisciplineAssignmentsContent() {
   const [isAllClasses, setIsAllClasses] = useState<boolean>(true);
   const [isSubmittingRole, setIsSubmittingRole] = useState<boolean>(false);
   const [isSyncingWeeks, setIsSyncingWeeks] = useState<boolean>(false);
+
+  // Modal Thêm tuần thi đua mới
+  const [isCreateWeekModalOpen, setIsCreateWeekModalOpen] = useState<boolean>(false);
+  const [createWeekNumber, setCreateWeekNumber] = useState<number>(8);
+  const [createWeekName, setCreateWeekName] = useState<string>("Tuần 8");
+  const [createWeekStartDate, setCreateWeekStartDate] = useState<string>("");
+  const [createWeekEndDate, setCreateWeekEndDate] = useState<string>("");
+  const [createWeekSetActive, setCreateWeekSetActive] = useState<boolean>(true);
+  const [isSubmittingCreateWeek, setIsSubmittingCreateWeek] = useState<boolean>(false);
 
   // Tab 2: Phân công người ký theo tuần và lớp
   const [signerAssignments, setSignerAssignments] = useState<SignerAssignmentRow[]>([]);
@@ -626,6 +637,62 @@ function DisciplineAssignmentsContent() {
       toast.error("Lỗi khi phân quyền: " + firebaseErrorMessage(err));
     } finally {
       setIsSubmittingRole(false);
+    }
+  }
+
+  // Mở modal thêm tuần thi đua
+  function handleOpenCreateWeekModal() {
+    const maxWeek = weeks.reduce((max, w) => (w.weekNumber > max ? w.weekNumber : max), 0);
+    const nextWeekNum = maxWeek > 0 ? maxWeek + 1 : 1;
+    setCreateWeekNumber(nextWeekNum);
+    setCreateWeekName(`Tuần ${nextWeekNum}`);
+
+    // Gợi ý ngày thứ 2 đến chủ nhật tuần tới
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7 || 7;
+    const nextMonday = new Date(now);
+    nextMonday.setDate(now.getDate() + (dayOfWeek === 1 ? 0 : diffToMonday));
+    const nextSunday = new Date(nextMonday);
+    nextSunday.setDate(nextMonday.getDate() + 6);
+
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    setCreateWeekStartDate(fmt(nextMonday));
+    setCreateWeekEndDate(fmt(nextSunday));
+    setCreateWeekSetActive(true);
+    setIsCreateWeekModalOpen(true);
+  }
+
+  // Xử lý tạo tuần thi đua mới
+  async function handleCreateWeek(e: React.FormEvent) {
+    e.preventDefault();
+    if (!createWeekNumber || createWeekNumber < 1 || createWeekNumber > 52) {
+      toast.error("Vui lòng nhập số tuần hợp lệ (1 - 52)");
+      return;
+    }
+    setIsSubmittingCreateWeek(true);
+    try {
+      const res = await createDisciplineWeek({
+        schoolYearId: selectedSchoolYearId || undefined,
+        schoolLevel: selectedSchoolLevel,
+        weekNumber: Number(createWeekNumber),
+        name: createWeekName.trim() || `Tuần ${createWeekNumber}`,
+        startDate: createWeekStartDate || undefined,
+        endDate: createWeekEndDate || undefined,
+        setActive: createWeekSetActive,
+      });
+      toast.success(res.message || `Đã tạo Tuần ${createWeekNumber} thành công!`);
+      setIsCreateWeekModalOpen(false);
+      if (res.weekId) {
+        setSelectedWeekId(res.weekId);
+      }
+    } catch (err: unknown) {
+      console.error("Lỗi tạo tuần:", err);
+      toast.error("Lỗi tạo tuần thi đua: " + firebaseErrorMessage(err));
+    } finally {
+      setIsSubmittingCreateWeek(false);
     }
   }
 
@@ -1120,16 +1187,25 @@ function DisciplineAssignmentsContent() {
                     Cấp quyền thành viên ban
                   </Button>
                 ) : activeTab === "signers" ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleOpenCreateWeekModal}
+                      className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Thêm tuần thi đua
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={handleSyncUpToWeek7}
                       disabled={isSyncingWeeks}
                       className="gap-2 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                      title="Khởi tạo hoặc đồng bộ lại các tuần từ Tuần 1 đến Tuần 7"
                     >
                       <RefreshCw className={cn("h-4 w-4", isSyncingWeeks && "animate-spin")} />
-                      {isSyncingWeeks ? "Đang đồng bộ..." : `Kích hoạt Tuần 7 - ${selectedSchoolLevelLabel}`}
+                      {isSyncingWeeks ? "Đang đồng bộ..." : `Đồng bộ Tuần 1–7`}
                     </Button>
                     <Button
                       variant="secondary"
@@ -2349,6 +2425,109 @@ function DisciplineAssignmentsContent() {
                 </Button>
                 <Button type="submit" disabled={isSubmittingReset}>
                   {isSubmittingReset ? "Đang đặt lại..." : "Xác nhận đổi mật khẩu"}
+                </Button>
+              </div>
+            </form>
+          </Modal>
+
+          {/* Modal Thêm tuần thi đua mới */}
+          <Modal
+            open={isCreateWeekModalOpen}
+            onOpenChange={setIsCreateWeekModalOpen}
+            title={`Thêm tuần thi đua mới - ${selectedSchoolLevelLabel}`}
+          >
+            <form onSubmit={handleCreateWeek} className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="weekNumberInput">Số tuần *</Label>
+                  <Input
+                    id="weekNumberInput"
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={createWeekNumber}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setCreateWeekNumber(val);
+                      if (!isNaN(val)) {
+                        setCreateWeekName(`Tuần ${val}`);
+                      }
+                    }}
+                    required
+                    className="mt-1 font-semibold"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="weekNameInput">Tên tuần hiển thị *</Label>
+                  <Input
+                    id="weekNameInput"
+                    type="text"
+                    value={createWeekName}
+                    onChange={(e) => setCreateWeekName(e.target.value)}
+                    required
+                    className="mt-1"
+                    placeholder="Ví dụ: Tuần 8"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="weekStartDate">Ngày bắt đầu</Label>
+                  <Input
+                    id="weekStartDate"
+                    type="date"
+                    value={createWeekStartDate}
+                    onChange={(e) => setCreateWeekStartDate(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="weekEndDate">Ngày kết thúc</Label>
+                  <Input
+                    id="weekEndDate"
+                    type="date"
+                    value={createWeekEndDate}
+                    onChange={(e) => setCreateWeekEndDate(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3 bg-muted/40 space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="setActiveCheckbox"
+                    checked={createWeekSetActive}
+                    onChange={(e) => setCreateWeekSetActive(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="setActiveCheckbox" className="font-medium cursor-pointer">
+                    Đặt làm tuần thi đua hoạt động hiện tại
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Khi kích hoạt, tuần này sẽ mở nhận ghi nhận vi phạm, chấm điểm và tổng kết. Các tuần trước đó đang hoạt động sẽ được tự động hoàn thành.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsCreateWeekModalOpen(false)}
+                  disabled={isSubmittingCreateWeek}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingCreateWeek}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                  {isSubmittingCreateWeek ? "Đang tạo..." : "Xác nhận tạo tuần"}
                 </Button>
               </div>
             </form>
