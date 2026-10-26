@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import type { Role, SchoolLevel, TeacherInput, TeachingRole } from "@school/shared";
-import { CirclePlus, Copy, ImagePlus, KeyRound, PencilLine, RotateCcw, Search, ShieldCheck, Trash2, Upload, UsersRound } from "lucide-react";
+import { CirclePlus, Copy, Download, FileSpreadsheet, ImagePlus, KeyRound, PencilLine, RotateCcw, Search, ShieldCheck, Trash2, Upload, UsersRound } from "lucide-react";
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
@@ -19,7 +19,8 @@ import { deleteTeacherAccount } from "@/lib/firebase/teacher-admin-callables";
 import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { todayDateOnly } from "@/lib/date-only";
-import { formatCurrency, initials } from "@/lib/utils";
+import { cn, formatCurrency, initials } from "@/lib/utils";
+import { exportTeachersToExcel, exportTeachersToXml, formatDob, getTeacherHomeroomClassNames, getTeacherSubjectNames } from "@/lib/exports/teacher-export";
 import { toast } from "sonner";
 
 type TeacherRow = DocumentData & { id: string };
@@ -35,6 +36,12 @@ type FormState = {
   fullName: string;
   email: string;
   phone: string;
+  address: string;
+  dob: string;
+  religion: string;
+  positionTitle: string;
+  bankAccountNumber: string;
+  bankName: string;
   departmentId: string;
   homeroomDepartmentId: string;
   subjectIds: string[];
@@ -65,6 +72,12 @@ const initialForm: FormState = {
   fullName: "",
   email: "",
   phone: "",
+  address: "",
+  dob: "",
+  religion: "",
+  positionTitle: "",
+  bankAccountNumber: "",
+  bankName: "",
   departmentId: "",
   homeroomDepartmentId: "",
   subjectIds: [],
@@ -218,6 +231,12 @@ function formFromTeacher(row: TeacherRow, subjects: CatalogRow[]): FormState {
     fullName: textValue(row.fullName),
     email: textValue(row.email),
     phone: textValue(row.phone),
+    address: textValue(row.address),
+    dob: textValue(row.dob),
+    religion: textValue(row.religion),
+    positionTitle: textValue(row.positionTitle),
+    bankAccountNumber: textValue(row.bankAccountNumber),
+    bankName: textValue(row.bankName),
     departmentId: textValue(row.departmentId),
     homeroomDepartmentId: textValue(row.homeroomDepartmentId),
     subjectIds,
@@ -283,6 +302,8 @@ export default function TeachersPage() {
   const [departments, setDepartments] = useState<CatalogRow[]>([]);
   const [subjects, setSubjects] = useState<CatalogRow[]>([]);
   const [campuses, setCampuses] = useState<CatalogRow[]>([]);
+  const [classes, setClasses] = useState<CatalogRow[]>([]);
+  const [schoolYears, setSchoolYears] = useState<CatalogRow[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [temporaryPasswords, setTemporaryPasswords] = useState<Record<string, string>>({});
   const [resettingTeacherId, setResettingTeacherId] = useState("");
@@ -311,14 +332,64 @@ export default function TeachersPage() {
       (snapshot) => setter(activeCatalogRows(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })))),
       (snapshotError) => setCatalogError(firebaseDataErrorMessage(snapshotError)),
     );
-    const unsubscribers = [watch("departments", setDepartments), watch("subjects", setSubjects), watch("campuses", setCampuses)];
+    const unsubscribers = [
+      watch("departments", setDepartments),
+      watch("subjects", setSubjects),
+      watch("campuses", setCampuses),
+      watch("classes", setClasses),
+      watch("schoolYears", setSchoolYears),
+    ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  const homeroomClassesByTeacherId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const c of classes) {
+      if (c.homeroomTeacherId) {
+        const list = map.get(c.homeroomTeacherId) || [];
+        list.push(c.name || c.code || c.id);
+        map.set(c.homeroomTeacherId, list);
+      }
+    }
+    return map;
+  }, [classes]);
+
+  const countPrimary = useMemo(
+    () => rows.filter((r) => normalizeSchoolLevels(r.schoolLevels).includes("primary")).length,
+    [rows],
+  );
+  const countSecondary = useMemo(
+    () => rows.filter((r) => normalizeSchoolLevels(r.schoolLevels).includes("secondary")).length,
+    [rows],
+  );
+
+  const activeSchoolYearName = useMemo(() => {
+    const active = schoolYears.find((y) => y.isActive) || schoolYears[0];
+    return active ? (textValue(active.name) || textValue(active.code) || "2025 - 2026") : "2025 - 2026";
+  }, [schoolYears]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase("vi");
     return rows.filter((row) => {
-      const matchesKeyword = !keyword || [row.fullName, row.teacherCode, row.email, row.phone, row.departmentId, row.specialization]
+      const homerooms = homeroomClassesByTeacherId.get(row.id)?.join(" ") || "";
+      const subjectsStr = getTeacherSubjectNames(row, subjects);
+      const matchesKeyword = !keyword || [
+        row.fullName,
+        row.teacherCode,
+        row.email,
+        row.phone,
+        row.address,
+        row.dob,
+        row.religion,
+        row.positionTitle,
+        row.degree,
+        row.bankAccountNumber,
+        row.bankName,
+        row.departmentId,
+        row.specialization,
+        homerooms,
+        subjectsStr,
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("vi").includes(keyword));
       const matchesType = typeFilter === "all" || row.teacherType === typeFilter;
@@ -326,7 +397,7 @@ export default function TeachersPage() {
       const matchesLevel = levelFilter === "all" || levels.includes(levelFilter as SchoolLevel);
       return matchesKeyword && matchesType && matchesLevel;
     });
-  }, [levelFilter, rows, search, typeFilter]);
+  }, [homeroomClassesByTeacherId, levelFilter, rows, search, subjects, typeFilter]);
 
   const availableDepartments = useMemo(
     () => departments.filter((department) => departmentMatchesSchoolLevels(department, form.schoolLevels)),
@@ -492,6 +563,12 @@ export default function TeachersPage() {
         fullName: form.fullName.trim(),
         email: form.email.trim(),
         phone: form.phone.trim(),
+        address: form.address.trim(),
+        dob: form.dob.trim(),
+        religion: form.religion.trim(),
+        positionTitle: form.positionTitle.trim(),
+        bankAccountNumber: form.bankAccountNumber.trim(),
+        bankName: form.bankName.trim(),
         departmentId: form.isTeaching ? form.departmentId : (availableDepartments[0]?.id || "dept_general"),
         homeroomDepartmentId: (form.isTeaching && form.schoolLevels.includes("secondary")) ? form.homeroomDepartmentId : "",
         subjectIds: form.isTeaching ? form.subjectIds : [],
@@ -683,20 +760,57 @@ export default function TeachersPage() {
           title="Quản lý giáo viên"
           description="Quản lý giáo viên Tiểu học và THCS trong cùng hệ thống, gồm cấp học, vai trò, môn và khối được phép giảng dạy."
           actions={
-            <Button onClick={openCreate}>
-              <CirclePlus className="h-4 w-4" />
-              Thêm giáo viên
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => exportTeachersToExcel(rows, classes, subjects, departments, activeSchoolYearName)}
+                className="gap-1.5"
+                title="Xuất danh sách giáo viên ra file Excel mẫu chuẩn Tam Hà (gồm Tiểu học, THCS và chi tiết)"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                Xuất Excel (.xlsx)
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => exportTeachersToXml(rows, classes, subjects, departments, activeSchoolYearName)}
+                className="gap-1.5"
+                title="Xuất danh sách giáo viên ra file XML chuẩn Tam Hà"
+              >
+                <Download className="h-4 w-4 text-blue-600" />
+                Xuất XML
+              </Button>
+              <Button onClick={openCreate} className="gap-1.5">
+                <CirclePlus className="h-4 w-4" />
+                Thêm giáo viên
+              </Button>
+            </div>
           }
         />
 
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
         {catalogError ? <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Không thể tải đầy đủ danh mục: {catalogError}</div> : null}
 
-        <div className="mb-5 grid gap-4 sm:grid-cols-3">
-          <Card className="p-5"><p className="text-sm text-muted-foreground">Tổng giáo viên</p><p className="mt-2 text-3xl font-extrabold">{rows.length}</p></Card>
-          <Card className="p-5"><p className="text-sm text-muted-foreground">Cơ hữu</p><p className="mt-2 text-3xl font-extrabold">{rows.filter((row) => row.teacherType === "co_huu").length}</p></Card>
-          <Card className="p-5"><p className="text-sm text-muted-foreground">Thỉnh giảng</p><p className="mt-2 text-3xl font-extrabold">{rows.filter((row) => row.teacherType === "thinh_giang").length}</p></Card>
+        <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="p-4 border bg-card">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Tổng giáo viên</p>
+            <p className="mt-1.5 text-2xl font-black text-foreground">{rows.length}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Toàn trường (Cả 2 cấp)</p>
+          </Card>
+          <Card className="p-4 border bg-sky-500/5 border-sky-500/20">
+            <p className="text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase">Cấp 1 - Tiểu học</p>
+            <p className="mt-1.5 text-2xl font-black text-sky-700 dark:text-sky-300">{countPrimary}</p>
+            <p className="text-xs text-sky-600/80 mt-0.5">Giáo viên phụ trách khối 1–5</p>
+          </Card>
+          <Card className="p-4 border bg-purple-500/5 border-purple-500/20">
+            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase">Cấp 2 - THCS</p>
+            <p className="mt-1.5 text-2xl font-black text-purple-700 dark:text-purple-300">{countSecondary}</p>
+            <p className="text-xs text-purple-600/80 mt-0.5">Giáo viên phụ trách khối 6–9</p>
+          </Card>
+          <Card className="p-4 border bg-emerald-500/5 border-emerald-500/20">
+            <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase">GV Chủ nhiệm</p>
+            <p className="mt-1.5 text-2xl font-black text-emerald-700 dark:text-emerald-300">{classes.filter((c) => Boolean(c.homeroomTeacherId)).length}</p>
+            <p className="text-xs text-emerald-600/80 mt-0.5">Lớp đã có GVCN phụ trách</p>
+          </Card>
         </div>
 
         <Card className="mb-5 p-5">
@@ -807,22 +921,80 @@ export default function TeachersPage() {
         </div>
 
         <Card className="overflow-hidden">
+          {/* TAB CHUYỂN NHANH CẤP 1 VÀ CẤP 2 */}
+          <div className="flex border-b border-border bg-muted/20 px-4 pt-2 gap-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setLevelFilter("all")}
+              className={cn(
+                "px-4 py-2.5 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
+                levelFilter === "all"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-background/80 rounded-t-lg shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span>Toàn trường (Tất cả)</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">{rows.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("primary")}
+              className={cn(
+                "px-4 py-2.5 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
+                levelFilter === "primary"
+                  ? "border-sky-600 text-sky-600 dark:text-sky-400 bg-background/80 rounded-t-lg shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span>Cấp 1 - Tiểu học</span>
+              <span className="rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 px-2 py-0.5 text-xs font-semibold">{countPrimary}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("secondary")}
+              className={cn(
+                "px-4 py-2.5 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
+                levelFilter === "secondary"
+                  ? "border-purple-600 text-purple-600 dark:text-purple-400 bg-background/80 rounded-t-lg shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span>Cấp 2 - THCS</span>
+              <span className="rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-2 py-0.5 text-xs font-semibold">{countSecondary}</span>
+            </button>
+          </div>
+
           <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo tên, email, bộ môn…" />
+              <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm theo tên, email, lớp CN, môn dạy, địa chỉ, STK..." />
             </div>
-            <div className="flex flex-wrap gap-2">
-              <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-                <option value="all">Tất cả cấp học</option>
-                <option value="primary">Tiểu học</option>
-                <option value="secondary">THCS</option>
-              </select>
+            <div className="flex flex-wrap items-center gap-2">
               <select className="h-11 rounded-xl border border-border bg-background px-3 text-sm" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
                 <option value="all">Tất cả loại giáo viên</option>
                 <option value="co_huu">Giáo viên cơ hữu</option>
                 <option value="thinh_giang">Giáo viên thỉnh giảng</option>
               </select>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => exportTeachersToExcel(filteredRows, classes, subjects, departments, activeSchoolYearName)}
+                className="h-11 gap-1.5 text-xs font-semibold"
+                title="Xuất file Excel cho danh sách đang hiển thị"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                Xuất Excel
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => exportTeachersToXml(filteredRows, classes, subjects, departments, activeSchoolYearName)}
+                className="h-11 gap-1.5 text-xs font-semibold"
+                title="Xuất file XML cho danh sách đang hiển thị"
+              >
+                <Download className="h-4 w-4 text-blue-600" />
+                Xuất XML
+              </Button>
             </div>
           </div>
 
@@ -832,13 +1004,18 @@ export default function TeachersPage() {
             <EmptyState icon={<UsersRound className="h-6 w-6" />} title="Chưa có giáo viên" description="Thêm giáo viên đầu tiên hoặc thay đổi điều kiện tìm kiếm." action={<Button onClick={openCreate}>Thêm giáo viên</Button>} />
           ) : (
             <div className="overflow-x-auto">
-              <table className="data-table min-w-[1540px]">
+              <table className="data-table min-w-[1780px]">
                 <thead>
                   <tr>
                     <th>Mã giáo viên</th>
                     <th>Giáo viên</th>
-                    <th>Bộ môn</th>
                     <th>Cấp học</th>
+                    <th>Bộ môn / Tổ</th>
+                    <th>Môn giảng dạy (GVBM)</th>
+                    <th>Lớp chủ nhiệm (GVCN)</th>
+                    <th>Địa chỉ nhà</th>
+                    <th>Số TK &amp; Ngân hàng</th>
+                    <th>Bằng cấp</th>
                     <th>Vai trò</th>
                     <th>Loại</th>
                     <th>Chuyên môn</th>
@@ -853,6 +1030,8 @@ export default function TeachersPage() {
                   {filteredRows.map((row) => {
                     const status = teacherStatus(row.status);
                     const teacherDisplayCode = row.teacherCode ? String(row.teacherCode).trim() : row.id;
+                    const homerooms = homeroomClassesByTeacherId.get(row.id) || [];
+                    const subjectNames = getTeacherSubjectNames(row, subjects);
                     return (
                       <tr key={row.id}>
                         {/* 1. Mã giáo viên */}
@@ -893,12 +1072,27 @@ export default function TeachersPage() {
                             <div>
                               <p className="font-bold text-foreground">{row.fullName || "—"}</p>
                               <p className="text-xs text-muted-foreground">{row.email || "—"}</p>
-                              {row.phone ? <p className="text-xs text-muted-foreground">{row.phone}</p> : null}
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                {row.phone ? <span className="text-xs text-muted-foreground">{row.phone}</span> : null}
+                                {row.dob ? <span className="text-[11px] text-muted-foreground bg-muted/60 px-1.5 py-0.2 rounded font-mono">NS: {formatDob(row.dob)}</span> : null}
+                                {row.religion && row.religion !== "Không" ? <span className="text-[11px] text-purple-700 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200">TG: {row.religion}</span> : null}
+                              </div>
                             </div>
                           </div>
                         </td>
 
-                        {/* 3. Bộ môn */}
+                        {/* 3. Cấp học */}
+                        <td>
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(row.schoolLevels) ? row.schoolLevels : []).map((lvl: string) => (
+                              <Badge key={lvl} tone={lvl === "primary" ? "info" : "neutral"}>
+                                {lvl === "primary" ? "Tiểu học" : "THCS"}
+                              </Badge>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* 4. Bộ môn */}
                         <td>
                           <div>
                             <p className="font-semibold">{catalogName(departments, row.departmentId) || "—"}</p>
@@ -910,41 +1104,78 @@ export default function TeachersPage() {
                           </div>
                         </td>
 
-                        {/* 4. Cấp học */}
+                        {/* 5. Môn giảng dạy (GVBM) */}
                         <td>
-                          <div className="flex flex-wrap gap-1">
-                            {(Array.isArray(row.schoolLevels) ? row.schoolLevels : []).map((lvl: string) => (
-                              <Badge key={lvl} tone={lvl === "primary" ? "info" : "neutral"}>
-                                {lvl === "primary" ? "Tiểu học" : "THCS"}
-                              </Badge>
-                            ))}
-                          </div>
+                          <p className="font-semibold text-xs text-foreground max-w-48 whitespace-normal">
+                            {subjectNames}
+                          </p>
                         </td>
 
-                        {/* 5. Vai trò */}
+                        {/* 6. Lớp chủ nhiệm (GVCN) */}
+                        <td>
+                          {homerooms.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {homerooms.map((cName) => (
+                                <Badge key={cName} tone="success" className="font-bold">
+                                  Lớp {cName}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+
+                        {/* 7. Địa chỉ nhà */}
+                        <td>
+                          <p className="text-xs max-w-44 truncate" title={row.address || "Chưa cập nhật"}>
+                            {row.address || <span className="text-muted-foreground">—</span>}
+                          </p>
+                        </td>
+
+                        {/* 8. Số TK & Ngân hàng */}
+                        <td>
+                          {row.bankAccountNumber ? (
+                            <div className="text-xs">
+                              <code className="font-mono font-bold text-foreground">{row.bankAccountNumber}</code>
+                              {row.bankName && <p className="text-[11px] text-muted-foreground truncate max-w-36">{row.bankName}</p>}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+
+                        {/* 9. Trình độ / Bằng cấp */}
+                        <td>
+                          <span className="inline-block rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                            {row.degree || "Đại học"}
+                          </span>
+                        </td>
+
+                        {/* 10. Vai trò */}
                         <td>{teachingRoleLabel(row.teachingRole)}</td>
 
-                        {/* 6. Loại giáo viên */}
+                        {/* 10. Loại giáo viên */}
                         <td>
                           <Badge tone={row.teacherType === "co_huu" ? "info" : "warning"}>
                             {row.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng"}
                           </Badge>
                         </td>
 
-                        {/* 7. Chuyên môn */}
+                        {/* 11. Chuyên môn */}
                         <td>
-                          <p className="max-w-52 truncate">{row.specialization || "—"}</p>
+                          <p className="max-w-48 truncate">{row.specialization || "—"}</p>
                           <p className="text-xs text-muted-foreground">{row.degree || ""}</p>
                         </td>
 
-                        {/* 8. Định mức / đơn giá */}
+                        {/* 12. Định mức / đơn giá */}
                         <td>
                           {row.teacherType === "co_huu"
                             ? `${row.standardPeriodsPerWeek ?? 0} tiết/tuần`
                             : `${formatCurrency(Number(row.ratePerPeriod || 0))}/tiết`}
                         </td>
 
-                        {/* 9. Mật khẩu tạm */}
+                        {/* 13. Mật khẩu tạm */}
                         <td>
                           {temporaryPasswords[row.id] ? (
                             <div className="flex items-center gap-1">
@@ -1112,6 +1343,37 @@ export default function TeachersPage() {
             <div><Label>Email</Label><Input required type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} /></div>
             <div><Label>Số điện thoại</Label><Input required value={form.phone} onChange={(e) => setField("phone", e.target.value)} /></div>
             <div><Label>Trạng thái</Label><select className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" value={form.status} onChange={(e) => setField("status", e.target.value as FormState["status"])}><option value="active">Đang hoạt động</option><option value="inactive">Ngừng hoạt động</option></select></div>
+            <div><Label>Ngày sinh</Label><Input type="date" value={form.dob} onChange={(e) => setField("dob", e.target.value)} /></div>
+            <div><Label>Tôn giáo</Label><Input value={form.religion} onChange={(e) => setField("religion", e.target.value)} placeholder="VD: Không, Công giáo, Phật giáo..." /></div>
+            <div className="sm:col-span-2"><Label>Địa chỉ nhà</Label><Input value={form.address} onChange={(e) => setField("address", e.target.value)} placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành..." /></div>
+            <div><Label>Tên ngân hàng</Label><Input value={form.bankName} onChange={(e) => setField("bankName", e.target.value)} placeholder="VD: Vietcombank, BIDV, Agribank, MB Bank..." /></div>
+            <div><Label>Số tài khoản ngân hàng (STK)</Label><Input value={form.bankAccountNumber} onChange={(e) => setField("bankAccountNumber", e.target.value)} placeholder="VD: 0123456789" /></div>
+            <div>
+              <Label>Trình độ / Bằng cấp</Label>
+              <Input
+                list="degree-datalist"
+                value={form.degree}
+                onChange={(e) => setField("degree", e.target.value)}
+                placeholder="VD: Đại học, Thạc sĩ, Cử nhân Sư phạm..."
+              />
+              <datalist id="degree-datalist">
+                <option value="Đại học" />
+                <option value="Thạc sĩ" />
+                <option value="Tiến sĩ" />
+                <option value="Cử nhân Sư phạm" />
+                <option value="Cao đẳng Sư phạm" />
+                <option value="Cao đẳng" />
+                <option value="Trung cấp" />
+              </datalist>
+            </div>
+            <div>
+              <Label>Chức vụ (Tùy chọn ghi đè)</Label>
+              <Input
+                value={form.positionTitle}
+                onChange={(e) => setField("positionTitle", e.target.value)}
+                placeholder="Để trống để tự động ghép GVCN / GVBM"
+              />
+            </div>
             <div><Label>Đường dẫn ảnh đại diện</Label><Input type="url" value={form.avatarUrl} onChange={(e) => setField("avatarUrl", e.target.value)} placeholder="https://..." /></div>
             {!editingTeacher ? <div><Label>Mật khẩu tạm ban đầu</Label><div className="flex gap-2"><Input minLength={8} type="text" value={form.password} onChange={(e) => setField("password", e.target.value)} /><Button type="button" variant="secondary" onClick={() => setField("password", generateTemporaryPassword())} aria-label="Tạo mật khẩu tạm mới"><KeyRound className="h-4 w-4" /></Button></div><p className="mt-1 text-xs text-muted-foreground">Người dùng sẽ phải đổi mật khẩu này sau khi đăng nhập lần đầu.</p></div> : null}
 
