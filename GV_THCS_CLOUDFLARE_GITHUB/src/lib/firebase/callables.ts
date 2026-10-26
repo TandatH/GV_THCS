@@ -482,3 +482,28 @@ const initializeDisciplineWeeksCallable = callable<
 export async function initializeDisciplineWeeks(input?: InitializeDisciplineWeeksInput) {
   return (await initializeDisciplineWeeksCallable(input || {})).data;
 }
+
+export type CreateDisciplineWeekInput = {
+  schoolYearId?: string;
+  schoolLevel?: "primary" | "secondary";
+  weekNumber: number;
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  setActive?: boolean;
+};
+
+const createDisciplineWeekCallable = callable<
+  CreateDisciplineWeekInput,
+  {
+    ok: boolean;
+    weekId: string;
+    weekNumber: number;
+    name: string;
+    message: string;
+  }
+>("createDisciplineWeek");
+
+export async function createDisciplineWeek(input: CreateDisciplineWeekInput) {
+  return (await createDisciplineWeekCallable(input)).data;
+}
