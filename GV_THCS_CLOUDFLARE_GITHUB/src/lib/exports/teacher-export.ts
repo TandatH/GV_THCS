@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { toast } from "sonner";
 import type { SchoolLevel } from "@school/shared";
 import type { DocumentData } from "firebase/firestore";
@@ -104,29 +104,162 @@ export function getTeacherPositionTitle(
   return "Giáo viên bộ môn";
 }
 
+// ============================================================================
+// STYLING HELPERS & CONSTANTS FOR EXCELJS
+// ============================================================================
+const FONT_NAME = "Arial";
+
+const thinBorder: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FF000000" } },
+  left: { style: "thin", color: { argb: "FF000000" } },
+  bottom: { style: "thin", color: { argb: "FF000000" } },
+  right: { style: "thin", color: { argb: "FF000000" } },
+};
+
+const doubleBottomBorder: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FF000000" } },
+  left: { style: "thin", color: { argb: "FF000000" } },
+  bottom: { style: "double", color: { argb: "FF000000" } },
+  right: { style: "thin", color: { argb: "FF000000" } },
+};
+
+function addSheetHeader(
+  ws: ExcelJS.Worksheet,
+  title: string,
+  schoolYearText: string,
+  colCount = 10,
+) {
+  const lastColLetter = String.fromCharCode(64 + colCount);
+
+  // Dòng 1: Tiêu đề lớn
+  ws.mergeCells(`A1:${lastColLetter}1`);
+  const row1 = ws.getRow(1);
+  row1.height = 36;
+  const cellTitle = ws.getCell("A1");
+  cellTitle.value = title;
+  cellTitle.font = { name: FONT_NAME, size: 16, bold: true, color: { argb: "FF0F172A" } };
+  cellTitle.alignment = { vertical: "middle", horizontal: "center" };
+
+  // Dòng 2: Năm học
+  ws.mergeCells(`A2:${lastColLetter}2`);
+  const row2 = ws.getRow(2);
+  row2.height = 24;
+  const cellYear = ws.getCell("A2");
+  cellYear.value = schoolYearText;
+  cellYear.font = { name: FONT_NAME, size: 12, bold: true, color: { argb: "FF1E3A8A" } };
+  cellYear.alignment = { vertical: "middle", horizontal: "center" };
+}
+
+function addSectionBanner(
+  ws: ExcelJS.Worksheet,
+  rowNumber: number,
+  title: string,
+) {
+  ws.mergeCells(`A${rowNumber}:B${rowNumber}`);
+  const row = ws.getRow(rowNumber);
+  row.height = 26;
+
+  const cellA = ws.getCell(`A${rowNumber}`);
+  cellA.value = title;
+
+  [`A${rowNumber}`, `B${rowNumber}`].forEach((pos) => {
+    const c = ws.getCell(pos);
+    c.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF003366" } };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE6F1" } };
+    c.border = thinBorder;
+    c.alignment = { vertical: "middle", horizontal: "center" };
+  });
+}
+
+const standardHeaders = [
+  "STT",
+  "HỌ TÊN GV",
+  "Chức vụ",
+  "Ngày sinh",
+  "Địa chỉ gia đình",
+  "SĐT",
+  "Địa chỉ Email",
+  "Bằng cấp",
+  "Tôn giáo",
+  "Số tài khoản",
+];
+
+const standardAlignments: ExcelJS.Alignment["horizontal"][] = [
+  "center", // 1. STT
+  "left",   // 2. Họ tên
+  "left",   // 3. Chức vụ
+  "center", // 4. Ngày sinh
+  "left",   // 5. Địa chỉ
+  "center", // 6. SĐT
+  "left",   // 7. Email
+  "center", // 8. Bằng cấp
+  "center", // 9. Tôn giáo
+  "left",   // 10. Số tài khoản
+];
+
+function addTableHeader(ws: ExcelJS.Worksheet, rowNumber: number) {
+  const row = ws.getRow(rowNumber);
+  row.values = standardHeaders;
+  row.height = 30;
+
+  for (let c = 1; c <= standardHeaders.length; c++) {
+    const cell = row.getCell(c);
+    cell.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE6F1" } };
+    cell.border = thinBorder;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+}
+
+function addDataRow(
+  ws: ExcelJS.Worksheet,
+  values: (string | number)[],
+  isEven: boolean,
+) {
+  const row = ws.addRow(values);
+  row.height = 25;
+  const bg = isEven ? "FFFFFFFF" : "FFF8FAFC";
+
+  standardAlignments.forEach((align, idx) => {
+    const cell = row.getCell(idx + 1);
+    const isBold = idx === 1 || idx === 7; // Họ tên (cột 2) and Bằng cấp (cột 8)
+    cell.font = {
+      name: FONT_NAME,
+      size: 10.5,
+      bold: isBold,
+      color: { argb: "FF0F172A" },
+    };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+    cell.border = thinBorder;
+    cell.alignment = {
+      vertical: "middle",
+      horizontal: align,
+      wrapText: align === "left",
+    };
+  });
+}
+
+function setStandardColWidths(ws: ExcelJS.Worksheet) {
+  const widths = [7, 28, 30, 16, 42, 16, 32, 18, 16, 32];
+  widths.forEach((w, i) => {
+    ws.getColumn(i + 1).width = w;
+  });
+}
+
 /**
- * Xuất file Excel chuẩn mẫu theo đúng biểu mẫu "THÔNG TIN GIÁO VIÊN PHỔ CẬP TAM HÀ"
- * Gồm các cột: STT | HỌ TÊN GV | Chức vụ | Ngày sinh | Địa chỉ gia đình | SĐT | Địa chỉ Email | Bằng cấp | Tôn giáo | Số tài khoản
+ * Xuất file Excel định dạng chuyên nghiệp, đẹp chuẩn, có viền, màu sắc, cỡ chữ và căn lề tự động
+ * theo đúng biểu mẫu "THÔNG TIN GIÁO VIÊN PHỔ CẬP TAM HÀ"
  */
-export function exportTeachersToExcel(
+export async function exportTeachersToExcel(
   teachersList: TeacherRow[],
   classesList: CatalogRow[],
   subjectsList: CatalogRow[],
   departmentsList: CatalogRow[],
   schoolYearName = "2025 - 2026",
 ) {
-  const standardColWidths = [
-    { wch: 6 },  // STT
-    { wch: 26 }, // HỌ TÊN GV
-    { wch: 28 }, // Chức vụ
-    { wch: 15 }, // Ngày sinh
-    { wch: 38 }, // Địa chỉ gia đình
-    { wch: 15 }, // SĐT
-    { wch: 28 }, // Địa chỉ Email
-    { wch: 20 }, // Bằng cấp
-    { wch: 14 }, // Tôn giáo
-    { wch: 30 }, // Số tài khoản
-  ];
+  const cleanYearText = schoolYearName.toUpperCase().startsWith("NĂM HỌC")
+    ? schoolYearName.toUpperCase()
+    : `NĂM HỌC ${schoolYearName}`;
 
   const primaryTeachers = teachersList.filter((t) =>
     normalizeSchoolLevels(t.schoolLevels).includes("primary"),
@@ -135,16 +268,12 @@ export function exportTeachersToExcel(
     normalizeSchoolLevels(t.schoolLevels).includes("secondary"),
   );
 
-  const cleanYearText = schoolYearName.toUpperCase().startsWith("NĂM HỌC")
-    ? schoolYearName.toUpperCase()
-    : `NĂM HỌC ${schoolYearName}`;
-
-  function buildTamHaRow(t: TeacherRow, index: number) {
+  function buildTamHaValues(t: TeacherRow, index: number) {
     const homeroomClasses = getTeacherHomeroomClassNames(t.id, classesList);
     const subjectNames = getTeacherSubjectNames(t, subjectsList);
     const pos = getTeacherPositionTitle(t, homeroomClasses, subjectNames);
     const bankInfo = t.bankAccountNumber
-      ? (t.bankName ? `'${t.bankAccountNumber} (${t.bankName})` : `'${t.bankAccountNumber}`)
+      ? (t.bankName ? `${t.bankAccountNumber} (${t.bankName})` : `${t.bankAccountNumber}`)
       : "";
 
     return [
@@ -161,150 +290,202 @@ export function exportTeachersToExcel(
     ];
   }
 
-  const wb = XLSX.utils.book_new();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Phổ Cập Tam Hà";
+  wb.created = new Date();
 
-  // ==========================================================
-  // SHEET 1: MẪU CHUẨN TAM HÀ (Gồm cả Tiểu học & THCS như trong hình)
-  // ==========================================================
-  const aoaTamHa: any[][] = [];
-  const mergesTamHa: XLSX.Range[] = [];
-
-  // Dòng 1: Tiêu đề lớn
-  aoaTamHa.push(["THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ", "", "", "", "", "", "", "", "", ""]);
-  mergesTamHa.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
-
-  // Dòng 2: Năm học
-  aoaTamHa.push([cleanYearText, "", "", "", "", "", "", "", "", ""]);
-  mergesTamHa.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } });
-
-  // Dòng 3: Khối TIỂU HỌC
-  aoaTamHa.push(["TIỂU HỌC", "", "", "", "", "", "", "", "", ""]);
-  mergesTamHa.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 1 } });
-
-  // Dòng 4: Tiêu đề bảng
-  aoaTamHa.push([
-    "STT",
-    "HỌ TÊN GV",
-    "Chức vụ",
-    "Ngày sinh",
-    "Địa chỉ gia đình",
-    "SĐT",
-    "Địa chỉ Email",
-    "Bằng cấp",
-    "Tôn giáo",
-    "Số tài khoản",
-  ]);
-
-  // Dữ liệu Tiểu học
-  primaryTeachers.forEach((t, i) => {
-    aoaTamHa.push(buildTamHaRow(t, i));
+  // ==========================================================================
+  // SHEET 1: MẪU CHUẨN TAM HÀ (Cả Tiểu học & THCS theo đúng mẫu hình)
+  // ==========================================================================
+  const wsTamHa = wb.addWorksheet("Mẫu chuẩn Tam Hà", {
+    views: [{ showGridLines: true }],
   });
+  setStandardColWidths(wsTamHa);
 
-  if (primaryTeachers.length === 0) {
-    aoaTamHa.push(["-", "Chưa có giáo viên tiểu học", "", "", "", "", "", "", "", ""]);
+  addSheetHeader(wsTamHa, "THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ", cleanYearText, 10);
+
+  // 1. Phân hệ TIỂU HỌC
+  addSectionBanner(wsTamHa, 3, "TIỂU HỌC");
+  addTableHeader(wsTamHa, 4);
+
+  if (primaryTeachers.length > 0) {
+    primaryTeachers.forEach((t, i) => {
+      addDataRow(wsTamHa, buildTamHaValues(t, i), i % 2 === 0);
+    });
+  } else {
+    const emptyRow = wsTamHa.addRow(["—", "Chưa có dữ liệu giáo viên tiểu học", "", "", "", "", "", "", "", ""]);
+    emptyRow.height = 24;
+    for (let c = 1; c <= 10; c++) {
+      const cell = emptyRow.getCell(c);
+      cell.border = thinBorder;
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    }
   }
 
-  // Phân cách dòng trống
-  aoaTamHa.push([]);
+  // Dòng trống phân cách
+  const blankRow = wsTamHa.addRow([]);
+  blankRow.height = 16;
 
-  // Khối TRUNG HỌC CƠ SỞ
-  const secondaryTitleRowIdx = aoaTamHa.length;
-  aoaTamHa.push(["TRUNG HỌC CƠ SỞ", "", "", "", "", "", "", "", "", ""]);
-  mergesTamHa.push({ s: { r: secondaryTitleRowIdx, c: 0 }, e: { r: secondaryTitleRowIdx, c: 1 } });
+  // 2. Phân hệ TRUNG HỌC CƠ SỞ
+  const secBannerRowIndex = wsTamHa.rowCount + 1;
+  addSectionBanner(wsTamHa, secBannerRowIndex, "TRUNG HỌC CƠ SỞ");
+  const secHeaderRowIndex = secBannerRowIndex + 1;
+  addTableHeader(wsTamHa, secHeaderRowIndex);
 
-  // Tiêu đề bảng THCS
-  aoaTamHa.push([
-    "STT",
-    "HỌ TÊN GV",
-    "Chức vụ",
-    "Ngày sinh",
-    "Địa chỉ gia đình",
-    "SĐT",
-    "Địa chỉ Email",
-    "Bằng cấp",
-    "Tôn giáo",
-    "Số tài khoản",
-  ]);
-
-  // Dữ liệu THCS
-  secondaryTeachers.forEach((t, i) => {
-    aoaTamHa.push(buildTamHaRow(t, i));
-  });
-
-  if (secondaryTeachers.length === 0) {
-    aoaTamHa.push(["-", "Chưa có giáo viên THCS", "", "", "", "", "", "", "", ""]);
+  if (secondaryTeachers.length > 0) {
+    secondaryTeachers.forEach((t, i) => {
+      addDataRow(wsTamHa, buildTamHaValues(t, i), i % 2 === 0);
+    });
+  } else {
+    const emptyRow = wsTamHa.addRow(["—", "Chưa có dữ liệu giáo viên THCS", "", "", "", "", "", "", "", ""]);
+    emptyRow.height = 24;
+    for (let c = 1; c <= 10; c++) {
+      const cell = emptyRow.getCell(c);
+      cell.border = thinBorder;
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    }
   }
 
-  const wsTamHa = XLSX.utils.aoa_to_sheet(aoaTamHa);
-  wsTamHa["!merges"] = mergesTamHa;
-  wsTamHa["!cols"] = standardColWidths;
-  XLSX.utils.book_append_sheet(wb, wsTamHa, "Mẫu chuẩn Tam Hà");
+  // Dòng Tổng kết
+  const summaryRow = wsTamHa.addRow([
+    "TỔNG CỘNG",
+    "",
+    "",
+    `Toàn trường: ${teachersList.length} giáo viên  |  Tiểu học: ${primaryTeachers.length} GV  |  THCS: ${secondaryTeachers.length} GV`,
+  ]);
+  const sumIdx = summaryRow.number;
+  wsTamHa.mergeCells(`A${sumIdx}:C${sumIdx}`);
+  wsTamHa.mergeCells(`D${sumIdx}:J${sumIdx}`);
+  summaryRow.height = 28;
 
-  // ==========================================================
+  for (let c = 1; c <= 10; c++) {
+    const cell = summaryRow.getCell(c);
+    cell.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+    cell.border = doubleBottomBorder;
+    cell.alignment = { vertical: "middle", horizontal: c <= 3 ? "center" : "left" };
+  }
+
+  // ==========================================================================
   // SHEET 2: CẤP 1 - TIỂU HỌC (Riêng biệt)
-  // ==========================================================
-  const aoaPrimary: any[][] = [];
-  const mergesPrimary: XLSX.Range[] = [];
-  aoaPrimary.push(["THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ - CẤP TIỂU HỌC", "", "", "", "", "", "", "", "", ""]);
-  mergesPrimary.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
-  aoaPrimary.push([cleanYearText, "", "", "", "", "", "", "", "", ""]);
-  mergesPrimary.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } });
-  aoaPrimary.push(["TIỂU HỌC", "", "", "", "", "", "", "", "", ""]);
-  mergesPrimary.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 1 } });
-  aoaPrimary.push([
-    "STT",
-    "HỌ TÊN GV",
-    "Chức vụ",
-    "Ngày sinh",
-    "Địa chỉ gia đình",
-    "SĐT",
-    "Địa chỉ Email",
-    "Bằng cấp",
-    "Tôn giáo",
-    "Số tài khoản",
-  ]);
+  // ==========================================================================
+  const wsPrimary = wb.addWorksheet("Cấp 1 - Tiểu học", {
+    views: [{ showGridLines: true }],
+  });
+  setStandardColWidths(wsPrimary);
+
+  addSheetHeader(wsPrimary, "THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ - CẤP TIỂU HỌC", cleanYearText, 10);
+  addSectionBanner(wsPrimary, 3, "TIỂU HỌC");
+  addTableHeader(wsPrimary, 4);
+
   primaryTeachers.forEach((t, i) => {
-    aoaPrimary.push(buildTamHaRow(t, i));
+    addDataRow(wsPrimary, buildTamHaValues(t, i), i % 2 === 0);
   });
-  const wsPrimary = XLSX.utils.aoa_to_sheet(aoaPrimary);
-  wsPrimary["!merges"] = mergesPrimary;
-  wsPrimary["!cols"] = standardColWidths;
-  XLSX.utils.book_append_sheet(wb, wsPrimary, "Cấp 1 - Tiểu học");
 
-  // ==========================================================
+  const sumRowPrimary = wsPrimary.addRow([
+    "TỔNG CỘNG",
+    "",
+    "",
+    `Tổng số: ${primaryTeachers.length} giáo viên Cấp 1 (Tiểu học)`,
+  ]);
+  const sumPIdx = sumRowPrimary.number;
+  wsPrimary.mergeCells(`A${sumPIdx}:C${sumPIdx}`);
+  wsPrimary.mergeCells(`D${sumPIdx}:J${sumPIdx}`);
+  sumRowPrimary.height = 28;
+  for (let c = 1; c <= 10; c++) {
+    const cell = sumRowPrimary.getCell(c);
+    cell.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+    cell.border = doubleBottomBorder;
+    cell.alignment = { vertical: "middle", horizontal: c <= 3 ? "center" : "left" };
+  }
+
+  // ==========================================================================
   // SHEET 3: CẤP 2 - THCS (Riêng biệt)
-  // ==========================================================
-  const aoaSecondary: any[][] = [];
-  const mergesSecondary: XLSX.Range[] = [];
-  aoaSecondary.push(["THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ - CẤP THCS", "", "", "", "", "", "", "", "", ""]);
-  mergesSecondary.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
-  aoaSecondary.push([cleanYearText, "", "", "", "", "", "", "", "", ""]);
-  mergesSecondary.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } });
-  aoaSecondary.push(["TRUNG HỌC CƠ SỞ", "", "", "", "", "", "", "", "", ""]);
-  mergesSecondary.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 1 } });
-  aoaSecondary.push([
+  // ==========================================================================
+  const wsSecondary = wb.addWorksheet("Cấp 2 - THCS", {
+    views: [{ showGridLines: true }],
+  });
+  setStandardColWidths(wsSecondary);
+
+  addSheetHeader(wsSecondary, "THÔNG TIN GIÁO VIÊN  PHỔ CẬP TAM HÀ - CẤP THCS", cleanYearText, 10);
+  addSectionBanner(wsSecondary, 3, "TRUNG HỌC CƠ SỞ");
+  addTableHeader(wsSecondary, 4);
+
+  secondaryTeachers.forEach((t, i) => {
+    addDataRow(wsSecondary, buildTamHaValues(t, i), i % 2 === 0);
+  });
+
+  const sumRowSecondary = wsSecondary.addRow([
+    "TỔNG CỘNG",
+    "",
+    "",
+    `Tổng số: ${secondaryTeachers.length} giáo viên Cấp 2 (THCS)`,
+  ]);
+  const sumSIdx = sumRowSecondary.number;
+  wsSecondary.mergeCells(`A${sumSIdx}:C${sumSIdx}`);
+  wsSecondary.mergeCells(`D${sumSIdx}:J${sumSIdx}`);
+  sumRowSecondary.height = 28;
+  for (let c = 1; c <= 10; c++) {
+    const cell = sumRowSecondary.getCell(c);
+    cell.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF0F172A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+    cell.border = doubleBottomBorder;
+    cell.alignment = { vertical: "middle", horizontal: c <= 3 ? "center" : "left" };
+  }
+
+  // ==========================================================================
+  // SHEET 4: TOÀN TRƯỜNG (CHI TIẾT ĐẦY ĐỦ 23 CỘT QUẢN TRỊ & TÀI CHÍNH)
+  // ==========================================================================
+  const wsDetail = wb.addWorksheet("Toàn trường (Chi tiết)", {
+    views: [{ showGridLines: true }],
+  });
+
+  const detailHeaders = [
     "STT",
-    "HỌ TÊN GV",
+    "Mã giáo viên",
+    "Họ và tên",
     "Chức vụ",
     "Ngày sinh",
     "Địa chỉ gia đình",
     "SĐT",
-    "Địa chỉ Email",
+    "Email",
     "Bằng cấp",
     "Tôn giáo",
-    "Số tài khoản",
-  ]);
-  secondaryTeachers.forEach((t, i) => {
-    aoaSecondary.push(buildTamHaRow(t, i));
-  });
-  const wsSecondary = XLSX.utils.aoa_to_sheet(aoaSecondary);
-  wsSecondary["!merges"] = mergesSecondary;
-  wsSecondary["!cols"] = standardColWidths;
-  XLSX.utils.book_append_sheet(wb, wsSecondary, "Cấp 2 - THCS");
+    "Tên ngân hàng",
+    "Số tài khoản (STK)",
+    "Cấp học",
+    "Tổ / Bộ môn",
+    "Môn giảng dạy (GVBM)",
+    "Lớp chủ nhiệm (GVCN)",
+    "Vai trò",
+    "Chuyên môn đào tạo",
+    "Loại giáo viên",
+    "Số tiết chuẩn/tuần",
+    "Đơn giá/tiết",
+    "Ngày vào làm",
+    "Trạng thái",
+  ];
 
-  // ==========================================================
-  // SHEET 4: TOÀN TRƯỜNG (CHI TIẾT ĐẦY ĐỦ THUỘC TÍNH HỒ SƠ)
-  // ==========================================================
+  const detailWidths = [7, 16, 26, 28, 15, 38, 16, 28, 16, 14, 22, 22, 16, 22, 26, 22, 20, 24, 15, 16, 15, 15, 16];
+  detailWidths.forEach((w, i) => {
+    wsDetail.getColumn(i + 1).width = w;
+  });
+
+  addSheetHeader(wsDetail, "DANH SÁCH GIÁO VIÊN TOÀN TRƯỜNG (CHI TIẾT HỒ SƠ)", cleanYearText, detailHeaders.length);
+
+  // Table header row 3
+  const dHeaderRow = wsDetail.getRow(4);
+  dHeaderRow.values = detailHeaders;
+  dHeaderRow.height = 30;
+  for (let c = 1; c <= detailHeaders.length; c++) {
+    const cell = dHeaderRow.getCell(c);
+    cell.font = { name: FONT_NAME, size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } }; // Navy blue header
+    cell.border = thinBorder;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+
   function getDepartmentName(deptId: unknown) {
     const dId = textValue(deptId);
     if (!dId) return "";
@@ -312,7 +493,7 @@ export function exportTeachersToExcel(
     return textValue(d?.name) || textValue(d?.code) || dId;
   }
 
-  const detailRows = teachersList.map((teacher, index) => {
+  teachersList.forEach((teacher, idx) => {
     const homeroomClasses = getTeacherHomeroomClassNames(teacher.id, classesList);
     const subjectNames = getTeacherSubjectNames(teacher, subjectsList);
     const departmentName = getDepartmentName(teacher.departmentId);
@@ -320,39 +501,69 @@ export function exportTeachersToExcel(
     const levelText = levels.length === 2 ? "Tiểu học + THCS" : levels[0] === "primary" ? "Tiểu học" : "THCS";
     const pos = getTeacherPositionTitle(teacher, homeroomClasses, subjectNames);
 
-    return {
-      "STT": index + 1,
-      "Mã giáo viên": teacher.teacherCode || teacher.id,
-      "Họ và tên": teacher.fullName || "",
-      "Chức vụ": pos,
-      "Ngày sinh": formatDob(teacher.dob),
-      "Địa chỉ gia đình": teacher.address || "",
-      "SĐT": teacher.phone || "",
-      "Địa chỉ Email": teacher.email || "",
-      "Bằng cấp": teacher.degree || "Đại học",
-      "Tôn giáo": teacher.religion || "Không",
-      "Tên ngân hàng": teacher.bankName || "",
-      "Số tài khoản (STK)": teacher.bankAccountNumber ? `'${teacher.bankAccountNumber}` : "",
-      "Cấp học": levelText,
-      "Tổ / Bộ môn": departmentName || "—",
-      "Môn giảng dạy (GVBM)": subjectNames,
-      "Lớp chủ nhiệm (GVCN)": homeroomClasses ? `Lớp ${homeroomClasses}` : "Không chủ nhiệm",
-      "Vai trò": teachingRoleLabel(teacher.teachingRole),
-      "Chuyên môn đào tạo": teacher.specialization || "",
-      "Loại giáo viên": teacher.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng",
-      "Số tiết chuẩn/tuần": teacher.standardPeriodsPerWeek ?? "",
-      "Đơn giá/tiết": teacher.ratePerPeriod ?? "",
-      "Ngày vào làm": teacher.startDate || "",
-      "Trạng thái": teacher.status === "inactive" ? "Ngừng hoạt động" : "Đang hoạt động",
-    };
+    const values = [
+      idx + 1,
+      teacher.teacherCode || teacher.id,
+      teacher.fullName || "",
+      pos,
+      formatDob(teacher.dob),
+      teacher.address || "",
+      teacher.phone || "",
+      teacher.email || "",
+      teacher.degree || "Đại học",
+      teacher.religion || "Không",
+      teacher.bankName || "",
+      teacher.bankAccountNumber || "",
+      levelText,
+      departmentName || "—",
+      subjectNames,
+      homeroomClasses ? `Lớp ${homeroomClasses}` : "Không chủ nhiệm",
+      teachingRoleLabel(teacher.teachingRole),
+      teacher.specialization || "",
+      teacher.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng",
+      teacher.standardPeriodsPerWeek ?? "",
+      teacher.ratePerPeriod ?? "",
+      teacher.startDate || "",
+      teacher.status === "inactive" ? "Ngừng hoạt động" : "Đang hoạt động",
+    ];
+
+    const row = wsDetail.addRow(values);
+    row.height = 24;
+    const bg = idx % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
+
+    for (let c = 1; c <= detailHeaders.length; c++) {
+      const cell = row.getCell(c);
+      cell.font = { name: FONT_NAME, size: 10, color: { argb: "FF0F172A" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      cell.border = thinBorder;
+      // Align center for dates, status, codes, degrees
+      const isCenter = [1, 2, 5, 7, 9, 10, 12, 13, 17, 19, 20, 21, 22, 23].includes(c);
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: isCenter ? "center" : "left",
+        wrapText: !isCenter,
+      };
+    }
   });
 
-  const wsAll = XLSX.utils.json_to_sheet(detailRows.length > 0 ? detailRows : [{}]);
-  XLSX.utils.book_append_sheet(wb, wsAll, "Toàn trường (Chi tiết)");
-
+  // Download buffer in browser
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
   const dateStr = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `THONG_TIN_GIAO_VIEN_TAM_HA_${dateStr}.xlsx`);
-  toast.success(`Đã xuất Excel mẫu chuẩn Tam Hà (${teachersList.length} giáo viên) thành công!`);
+  a.href = url;
+  a.download = `THONG_TIN_GIAO_VIEN_TAM_HA_${dateStr}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  toast.success(
+    `Đã xuất file Excel đẹp chuẩn (${teachersList.length} giáo viên) với định dạng ô, màu sắc và viền hoàn chỉnh!`,
+  );
 }
 
 export function exportTeachersToXml(
