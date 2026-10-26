@@ -14,9 +14,12 @@ import {
   GraduationCap,
   Layers,
   ListChecks,
+  MessageSquare,
+  MessageSquareWarning,
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -66,7 +69,10 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
-import { reviewDisciplineViolation } from "@/lib/firebase/callables";
+import {
+  reviewDisciplineViolation,
+  reviewDisciplineAppeal,
+} from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -92,6 +98,7 @@ type DisciplineRecord = DocumentData & {
   note?: string;
   attachmentUrls?: string[];
   status: DisciplineEntryStatus;
+  hasPendingAppeal?: boolean;
   reportedByUid: string;
   reportedByName: string;
   reporterRole?: string;
@@ -99,6 +106,25 @@ type DisciplineRecord = DocumentData & {
   reviewedByName?: string;
   reviewedAt?: { seconds: number; nanoseconds: number } | string | null;
   reviewNote?: string;
+  createdAt?: { seconds: number; nanoseconds: number } | string | null;
+  updatedAt?: { seconds: number; nanoseconds: number } | string | null;
+};
+
+type AppealRecord = DocumentData & {
+  id: string;
+  entryId: string;
+  weekId: string;
+  classId: string;
+  className: string;
+  teacherId: string;
+  teacherName: string;
+  reason: string;
+  evidenceUrls?: string[];
+  status: "pending" | "approved" | "rejected";
+  resolutionNote?: string;
+  resolvedByUid?: string;
+  resolvedByName?: string;
+  resolvedAt?: { seconds: number; nanoseconds: number } | string | null;
   createdAt?: { seconds: number; nanoseconds: number } | string | null;
   updatedAt?: { seconds: number; nanoseconds: number } | string | null;
 };
@@ -136,17 +162,38 @@ export default function CompetitionReviewPage() {
   const [selectedWeekId, setSelectedWeekId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [activeTabStatus, setActiveTabStatus] = useState<DisciplineEntryStatus | "all">("pending");
+  const [activeTabStatus, setActiveTabStatus] = useState<DisciplineEntryStatus | "all" | "appeals">("pending");
   const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Dữ liệu khiếu nại từ GVCN
+  const [appeals, setAppeals] = useState<AppealRecord[]>([]);
+  const [loadingAppeals, setLoadingAppeals] = useState<boolean>(true);
 
   // Modal xem chi tiết
   const [viewingRecord, setViewingRecord] = useState<DisciplineRecord | null>(null);
 
-  // Modal xử lý (Trả lại / Từ chối)
+  // Modal xử lý phiếu vi phạm (Trả lại / Từ chối)
   const [actionRecord, setActionRecord] = useState<DisciplineRecord | null>(null);
   const [actionType, setActionType] = useState<"returned" | "rejected" | null>(null);
   const [actionNote, setActionNote] = useState<string>("");
   const [isSubmittingAction, setIsSubmittingAction] = useState<boolean>(false);
+
+  // Modal xử lý khiếu nại của GVCN
+  const [actionAppeal, setActionAppeal] = useState<AppealRecord | null>(null);
+  const [appealDecision, setAppealDecision] = useState<"approved" | "rejected" | null>(null);
+  const [appealActionOnEntry, setAppealActionOnEntry] = useState<"void" | "return">("void");
+  const [appealResolutionNote, setAppealResolutionNote] = useState<string>("");
+  const [isSubmittingAppealResolution, setIsSubmittingAppealResolution] = useState<boolean>(false);
+
+  // Đọc URL param tab=appeals (nếu chuyển hướng từ BGH)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("tab") === "appeals") {
+        setActiveTabStatus("appeals");
+      }
+    }
+  }, []);
 
   // 1. KIỂM TRA PHÂN QUYỀN BAN THI ĐUA
   useEffect(() => {
@@ -292,7 +339,32 @@ export default function CompetitionReviewPage() {
     return () => unsubEntries();
   }, [selectedSchoolYearId]);
 
-  // 5. LỌC PHẠM VI (TUẦN, LỚP, NHÓM VI PHẠM) TRƯỚC KHI XÉT TAB TRẠNG THÁI VÀ TÌM KIẾM
+  // 5. LẮNG NGHE DANH SÁCH KHIẾU NẠI TỪ GVCN
+  useEffect(() => {
+    setLoadingAppeals(true);
+    const qAppeals = query(collection(firestore, "disciplineAppeals"));
+    const unsubAppeals = onSnapshot(
+      qAppeals,
+      (snapshot) => {
+        const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as AppealRecord[];
+        rows.sort((a, b) => {
+          const timeA = typeof a.createdAt === "object" && a.createdAt !== null ? (a.createdAt as any).seconds || 0 : 0;
+          const timeB = typeof b.createdAt === "object" && b.createdAt !== null ? (b.createdAt as any).seconds || 0 : 0;
+          return timeB - timeA;
+        });
+        setAppeals(rows);
+        setLoadingAppeals(false);
+      },
+      (err) => {
+        console.error("Lỗi tải danh sách khiếu nại:", err);
+        setLoadingAppeals(false);
+      },
+    );
+
+    return () => unsubAppeals();
+  }, []);
+
+  // 6. LỌC PHẠM VI (TUẦN, LỚP, NHÓM VI PHẠM) TRƯỚC KHI XÉT TAB TRẠNG THÁI VÀ TÌM KIẾM
   const scopedEntries = useMemo(() => {
     return entries.filter((r) => {
       // Lọc tuần
@@ -321,6 +393,33 @@ export default function CompetitionReviewPage() {
 
     return { total: scopedEntries.length, pending, approved, returned, rejected };
   }, [scopedEntries]);
+
+  // Lọc khiếu nại theo phạm vi bộ lọc đang chọn (Tuần, Lớp, Search)
+  const scopedAppeals = useMemo(() => {
+    return appeals.filter((a) => {
+      if (selectedWeekId !== "all" && a.weekId !== selectedWeekId) return false;
+      if (selectedClassId !== "all" && a.classId !== selectedClassId) return false;
+
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        const matchTeacher = (a.teacherName || "").toLowerCase().includes(term);
+        const matchClass = (a.className || "").toLowerCase().includes(term);
+        const matchReason = (a.reason || "").toLowerCase().includes(term);
+        const matchEntry = (a.entryId || "").toLowerCase().includes(term);
+        if (!matchTeacher && !matchClass && !matchReason && !matchEntry) return false;
+      }
+
+      return true;
+    });
+  }, [appeals, selectedWeekId, selectedClassId, searchTerm]);
+
+  const pendingAppealsCount = useMemo(() => {
+    return scopedAppeals.filter((a) => a.status === "pending").length;
+  }, [scopedAppeals]);
+
+  const yearPendingAppealsCount = useMemo(() => {
+    return appeals.filter((a) => a.status === "pending").length;
+  }, [appeals]);
 
   // Thống kê toàn năm học để cảnh báo số phiếu chờ duyệt còn lại ở các tuần khác
   const yearStats = useMemo(() => {
@@ -433,6 +532,54 @@ export default function CompetitionReviewPage() {
     }
   }
 
+  // MỞ MODAL XỬ LÝ KHIẾU NẠI CỦA GVCN (CHẤP THUẬN HOẶC TỪ CHỐI)
+  function handleOpenAppealModal(appeal: AppealRecord, decision: "approved" | "rejected") {
+    if (!canReviewEntries) {
+      toast.error("Giải quyết khiếu nại phải do Ban Thi đua hoặc Trưởng ban thực hiện.");
+      return;
+    }
+    setActionAppeal(appeal);
+    setAppealDecision(decision);
+    setAppealActionOnEntry("void");
+    setAppealResolutionNote("");
+  }
+
+  // XÁC NHẬN GIẢI QUYẾT KHIẾU NẠI
+  async function handleSubmitAppealResolution() {
+    if (!actionAppeal || !appealDecision) return;
+
+    if (appealResolutionNote.trim().length < 5) {
+      toast.error("Vui lòng nhập ý kiến giải quyết cụ thể (ít nhất 5 ký tự).");
+      return;
+    }
+
+    setIsSubmittingAppealResolution(true);
+    try {
+      const result = await reviewDisciplineAppeal({
+        appealId: actionAppeal.id,
+        decision: appealDecision,
+        actionOnEntry: appealDecision === "approved" ? appealActionOnEntry : undefined,
+        resolutionNote: appealResolutionNote.trim(),
+      });
+
+      toast.success(
+        result.message ||
+          (appealDecision === "approved"
+            ? `Đã chấp thuận khiếu nại của lớp ${actionAppeal.className}.`
+            : `Đã từ chối khiếu nại của lớp ${actionAppeal.className}.`),
+      );
+
+      setActionAppeal(null);
+      setAppealDecision(null);
+      setAppealResolutionNote("");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("Lỗi khi xử lý khiếu nại: " + msg);
+    } finally {
+      setIsSubmittingAppealResolution(false);
+    }
+  }
+
   // Helper hiển thị tone Badge
   function getStatusBadge(status: DisciplineEntryStatus) {
     switch (status) {
@@ -530,7 +677,7 @@ export default function CompetitionReviewPage() {
                 </Card>
               ) : null}
               {/* THỐNG KÊ KPI TỔNG QUAN THEO TRẠNG THÁI */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div
                   onClick={() => setActiveTabStatus("pending")}
                   className={cn(
@@ -593,6 +740,29 @@ export default function CompetitionReviewPage() {
                     Đã từ chối
                   </div>
                   <div className="text-2xl font-black text-rose-700 dark:text-rose-300 mt-1">{stats.rejected}</div>
+                </div>
+
+                <div
+                  onClick={() => setActiveTabStatus("appeals")}
+                  className={cn(
+                    "p-3.5 rounded-2xl border bg-card text-card-foreground shadow-sm cursor-pointer transition-all text-center relative col-span-2 sm:col-span-1",
+                    activeTabStatus === "appeals"
+                      ? "ring-2 ring-purple-500 border-purple-500 bg-purple-50/70 dark:bg-purple-950/30"
+                      : "hover:bg-muted/30",
+                  )}
+                >
+                  <div className="text-xs font-semibold uppercase text-purple-700 dark:text-purple-400 flex items-center justify-center gap-1.5">
+                    <MessageSquareWarning className="h-3.5 w-3.5" />
+                    Khiếu nại GVCN
+                  </div>
+                  <div className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-1">
+                    {pendingAppealsCount}
+                  </div>
+                  {pendingAppealsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-600 text-white animate-pulse shadow-sm">
+                      {pendingAppealsCount}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -710,75 +880,283 @@ export default function CompetitionReviewPage() {
                 {/* TÙY CHỌN XEM TẤT CẢ TRẠNG THÁI */}
                 <div className="flex items-center justify-between text-xs pt-1 border-t">
                   <div className="text-muted-foreground">
-                    Hiển thị <strong>{filteredEntries.length}</strong> phiếu phù hợp.
+                    {activeTabStatus === "appeals" ? (
+                      <>Hiển thị <strong>{scopedAppeals.length}</strong> khiếu nại của GVCN.</>
+                    ) : (
+                      <>Hiển thị <strong>{filteredEntries.length}</strong> phiếu phù hợp.</>
+                    )}
                   </div>
                   {activeTabStatus !== "all" && (
                     <button
                       onClick={() => setActiveTabStatus("all")}
                       className="text-primary hover:underline font-semibold"
                     >
-                      Xem tất cả trạng thái ({stats.total})
+                      Xem tất cả phiếu vi phạm ({stats.total})
                     </button>
                   )}
                 </div>
               </Card>
 
-              {/* DANH SÁCH PHIẾU CHỜ DUYỆT / ĐÃ XỬ LÝ */}
-              {loadingEntries ? (
-                <Card className="p-8 text-center space-y-3">
-                  <Skeleton className="h-6 w-48 mx-auto" />
-                  <Skeleton className="h-4 w-64 mx-auto" />
-                </Card>
-              ) : filteredEntries.length === 0 ? (
-                <Card className="p-8">
-                  <EmptyState
-                    icon={<CheckCircle2 className="h-8 w-8 text-muted-foreground" />}
-                    title={
-                      activeTabStatus === "pending"
-                        ? "Không có phiếu nào đang chờ duyệt"
-                        : "Không tìm thấy phiếu vi phạm phù hợp"
-                    }
-                    description={
-                      activeTabStatus === "pending"
-                        ? "Tuyệt vời! Tất cả các phiếu ghi nhận vi phạm đã được thẩm định xong."
-                        : "Vui lòng thay đổi bộ lọc tuần, lớp hoặc từ khóa tìm kiếm để xem các phiếu khác."
-                    }
-                  />
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {filteredEntries.map((item) => {
-                    const isSelfRecorded = user && item.reportedByUid === user.uid;
-                    const canApprove = item.status === "pending" && !isSelfRecorded && canReviewEntries;
+              {/* DANH SÁCH KHIẾU NẠI HOẶC DANH SÁCH PHIẾU VI PHẠM */}
+              {activeTabStatus === "appeals" ? (
+                loadingAppeals ? (
+                  <Card className="p-8 text-center space-y-3">
+                    <Skeleton className="h-6 w-48 mx-auto" />
+                    <Skeleton className="h-4 w-64 mx-auto" />
+                  </Card>
+                ) : scopedAppeals.length === 0 ? (
+                  <Card className="p-8">
+                    <EmptyState
+                      icon={<MessageSquare className="h-8 w-8 text-muted-foreground" />}
+                      title="Không có khiếu nại nào từ GVCN"
+                      description="Hiện tại các lớp chưa gửi phản hồi hoặc khiếu nại nào cần giải quyết trong tuần/lớp này."
+                    />
+                  </Card>
+                ) : (
+                  <div className="space-y-4">
+                    {scopedAppeals.map((appeal) => {
+                      const linkedEntry = entries.find((e) => e.id === appeal.entryId);
+                      const isPending = appeal.status === "pending";
 
-                    return (
-                      <Card
-                        key={item.id}
-                        className={cn(
-                          "p-4 transition-all hover:shadow-sm border space-y-3",
-                          item.status === "pending" && "border-amber-300 bg-amber-50/20 dark:border-amber-900/60 dark:bg-amber-950/10",
-                          item.status === "approved" && "border-emerald-200 bg-emerald-50/10 dark:border-emerald-900/40",
-                          item.status === "returned" && "border-orange-200 bg-orange-50/15 dark:border-orange-900/40",
-                          item.status === "rejected" && "border-rose-200 bg-rose-50/15 dark:border-rose-900/40",
-                        )}
-                      >
-                        {/* HÀNG HEADER PHIẾU */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-bold text-base text-foreground">
-                              Lớp {item.className}
-                            </span>
-                            <span className="text-muted-foreground text-xs">•</span>
-                            <span className="text-xs text-muted-foreground font-medium">
-                              Ngày {item.occurredDate}
-                              {item.period ? ` (Tiết ${item.period})` : ""}
-                            </span>
-                            <span className="text-muted-foreground text-xs">•</span>
-                            <Badge tone={item.category === "ky_luat" ? "danger" : item.category === "hoc_tap" ? "info" : "neutral"}>
-                              {disciplineCategoryLabels[item.category] || item.category}
-                            </Badge>
-                            {getStatusBadge(item.status)}
+                      return (
+                        <Card
+                          key={appeal.id}
+                          className={cn(
+                            "p-5 transition-all hover:shadow-sm border space-y-3",
+                            isPending
+                              ? "border-purple-300 bg-purple-50/20 dark:border-purple-900/60 dark:bg-purple-950/10"
+                              : appeal.status === "approved"
+                                ? "border-emerald-200 bg-emerald-50/10 dark:border-emerald-900/40"
+                                : "border-rose-200 bg-rose-50/15 dark:border-rose-900/40",
+                          )}
+                        >
+                          {/* Header khiếu nại */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-base text-foreground">
+                                Lớp {appeal.className}
+                              </span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              <span className="text-xs text-muted-foreground font-medium">
+                                GVCN: <strong className="text-foreground">{appeal.teacherName}</strong>
+                              </span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              <span className="text-xs text-muted-foreground font-medium">
+                                Gửi lúc: {formatTimestamp(appeal.createdAt)}
+                              </span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              {appeal.status === "pending" ? (
+                                <Badge tone="warning" className="bg-amber-100 text-amber-800 border-amber-300">
+                                  Chờ giải quyết
+                                </Badge>
+                              ) : appeal.status === "approved" ? (
+                                <Badge tone="success" className="bg-emerald-100 text-emerald-800 border-emerald-300">
+                                  Đã chấp thuận
+                                </Badge>
+                              ) : (
+                                <Badge tone="danger" className="bg-rose-100 text-rose-800 border-rose-300">
+                                  Đã từ chối
+                                </Badge>
+                              )}
+                            </div>
+
+                            {linkedEntry && (
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    "font-mono font-extrabold text-xs px-2 py-0.5 rounded",
+                                    linkedEntry.totalPoints < 0
+                                      ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+                                  )}
+                                >
+                                  {linkedEntry.totalPoints > 0 ? `+${linkedEntry.totalPoints}` : linkedEntry.totalPoints} đ
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setViewingRecord(linkedEntry)}
+                                  className="h-7 text-xs gap-1"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  Xem phiếu gốc
+                                </Button>
+                              </div>
+                            )}
                           </div>
+
+                          {/* Thông tin phiếu vi phạm bị khiếu nại */}
+                          {linkedEntry ? (
+                            <div className="p-3 rounded-xl bg-muted/30 border text-xs space-y-1.5">
+                              <div className="font-semibold text-foreground flex items-center gap-2">
+                                <Badge tone={linkedEntry.category === "ky_luat" ? "danger" : linkedEntry.category === "hoc_tap" ? "info" : "neutral"}>
+                                  {disciplineCategoryLabels[linkedEntry.category] || linkedEntry.category}
+                                </Badge>
+                                <span>[{linkedEntry.criterionCode}] {linkedEntry.criterionName}</span>
+                                <span className="text-muted-foreground font-normal">
+                                  • Ngày {linkedEntry.occurredDate}
+                                  {linkedEntry.period ? ` (Tiết ${linkedEntry.period})` : ""}
+                                </span>
+                              </div>
+                              <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                                <span>
+                                  Đối tượng: <strong className="text-foreground">{linkedEntry.scope === "student" ? linkedEntry.studentNamesText : "Tập thể lớp"}</strong>
+                                </span>
+                                <span>
+                                  Người lập: <strong className="text-foreground">{linkedEntry.reportedByName}</strong>
+                                </span>
+                                {linkedEntry.note && (
+                                  <span>Ghi chú: <em className="text-foreground">"{linkedEntry.note}"</em></span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground italic">
+                              Mã phiếu vi phạm: {appeal.entryId}
+                            </div>
+                          )}
+
+                          {/* Nội dung khiếu nại của GVCN */}
+                          <div className="p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/40 text-xs space-y-1.5">
+                            <div className="font-semibold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                              <MessageSquareWarning className="h-4 w-4 text-purple-600" />
+                              Lý do phản hồi / khiếu nại của GVCN:
+                            </div>
+                            <p className="text-foreground whitespace-pre-wrap pl-5 text-sm">
+                              {appeal.reason}
+                            </p>
+
+                            {appeal.evidenceUrls && appeal.evidenceUrls.length > 0 && (
+                              <div className="pt-2 pl-5 flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-muted-foreground">Minh chứng kèm theo:</span>
+                                {appeal.evidenceUrls.map((url, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-background border text-primary hover:underline font-medium"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                    Minh chứng {idx + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Kết quả giải quyết nếu đã xử lý */}
+                          {!isPending && appeal.resolvedByName && (
+                            <div className="p-3 rounded-xl bg-muted/40 border text-xs space-y-1">
+                              <div className="flex items-center justify-between font-semibold text-foreground">
+                                <span>
+                                  Người giải quyết: <strong>{appeal.resolvedByName}</strong>
+                                </span>
+                                <span className="text-muted-foreground font-normal">
+                                  {formatTimestamp(appeal.resolvedAt)}
+                                </span>
+                              </div>
+                              {appeal.resolutionNote && (
+                                <p className="text-muted-foreground">
+                                  <strong>Ý kiến / Căn cứ giải quyết:</strong> {appeal.resolutionNote}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Nút hành động giải quyết khiếu nại (khi pending) */}
+                          {isPending && (
+                            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canReviewEntries}
+                                onClick={() => handleOpenAppealModal(appeal, "rejected")}
+                                className="h-8 gap-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                              >
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                                Từ chối khiếu nại (Giữ nguyên lỗi)
+                              </Button>
+
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={!canReviewEntries}
+                                onClick={() => handleOpenAppealModal(appeal, "approved")}
+                                className="h-8 gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Chấp thuận khiếu nại (Hủy lỗi / Trả lại)
+                              </Button>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )
+              ) : /* DANH SÁCH PHIẾU CHỜ DUYỆT / ĐÃ XỬ LÝ */
+              loadingEntries ? (
+                  <Card className="p-8 text-center space-y-3">
+                    <Skeleton className="h-6 w-48 mx-auto" />
+                    <Skeleton className="h-4 w-64 mx-auto" />
+                  </Card>
+                ) : filteredEntries.length === 0 ? (
+                  <Card className="p-8">
+                    <EmptyState
+                      icon={<CheckCircle2 className="h-8 w-8 text-muted-foreground" />}
+                      title={
+                        activeTabStatus === "pending"
+                          ? "Không có phiếu nào đang chờ duyệt"
+                          : "Không tìm thấy phiếu vi phạm phù hợp"
+                      }
+                      description={
+                        activeTabStatus === "pending"
+                          ? "Tuyệt vời! Tất cả các phiếu ghi nhận vi phạm đã được thẩm định xong."
+                          : "Vui lòng thay đổi bộ lọc tuần, lớp hoặc từ khóa tìm kiếm để xem các phiếu khác."
+                      }
+                    />
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredEntries.map((item) => {
+                      const isSelfRecorded = user && item.reportedByUid === user.uid;
+                      const canApprove = item.status === "pending" && !isSelfRecorded && canReviewEntries;
+
+                      return (
+                        <Card
+                          key={item.id}
+                          className={cn(
+                            "p-4 transition-all hover:shadow-sm border space-y-3",
+                            item.status === "pending" && "border-amber-300 bg-amber-50/20 dark:border-amber-900/60 dark:bg-amber-950/10",
+                            item.status === "approved" && "border-emerald-200 bg-emerald-50/10 dark:border-emerald-900/40",
+                            item.status === "returned" && "border-orange-200 bg-orange-50/15 dark:border-orange-900/40",
+                            item.status === "rejected" && "border-rose-200 bg-rose-50/15 dark:border-rose-900/40",
+                          )}
+                        >
+                          {/* HÀNG HEADER PHIẾU */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-base text-foreground">
+                                Lớp {item.className}
+                              </span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              <span className="text-xs text-muted-foreground font-medium">
+                                Ngày {item.occurredDate}
+                                {item.period ? ` (Tiết ${item.period})` : ""}
+                              </span>
+                              <span className="text-muted-foreground text-xs">•</span>
+                              <Badge tone={item.category === "ky_luat" ? "danger" : item.category === "hoc_tap" ? "info" : "neutral"}>
+                                {disciplineCategoryLabels[item.category] || item.category}
+                              </Badge>
+                              {getStatusBadge(item.status)}
+                              {item.hasPendingAppeal && (
+                                <Badge tone="danger" className="animate-pulse bg-rose-100 text-rose-800 border-rose-300">
+                                  <MessageSquareWarning className="h-3 w-3 mr-1 inline" />
+                                  GVCN đang khiếu nại
+                                </Badge>
+                              )}
+                            </div>
 
                           {/* ĐIỂM SỐ */}
                           <div className="flex items-center gap-2 self-end sm:self-center">
@@ -792,6 +1170,21 @@ export default function CompetitionReviewPage() {
                             >
                               {item.totalPoints > 0 ? `+${item.totalPoints}` : item.totalPoints} đ
                             </span>
+
+                            {item.hasPendingAppeal && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setActiveTabStatus("appeals");
+                                  setSearchTerm(item.id);
+                                }}
+                                className="h-8 gap-1 text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200"
+                              >
+                                <MessageSquareWarning className="h-3.5 w-3.5" />
+                                Xem khiếu nại
+                              </Button>
+                            )}
 
                             <Button
                               variant="ghost"
@@ -1142,6 +1535,145 @@ export default function CompetitionReviewPage() {
                       ? "Đang xử lý..."
                       : actionType === "returned"
                         ? "Xác nhận trả lại"
+                        : "Xác nhận từ chối"}
+                  </Button>
+                </div>
+              </div>
+            </Modal>
+          )}
+
+          {/* MODAL GIẢI QUYẾT KHIẾU NẠI CỦA GVCN */}
+          {actionAppeal && appealDecision && (
+            <Modal
+              open={Boolean(actionAppeal && appealDecision)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setActionAppeal(null);
+                  setAppealDecision(null);
+                  setAppealResolutionNote("");
+                }
+              }}
+              title={
+                appealDecision === "approved"
+                  ? `Chấp thuận khiếu nại: Lớp ${actionAppeal.className}`
+                  : `Từ chối khiếu nại: Lớp ${actionAppeal.className}`
+              }
+            >
+              <div className="space-y-4 text-xs">
+                <div
+                  className={cn(
+                    "p-3 rounded-xl border",
+                    appealDecision === "approved"
+                      ? "bg-purple-50 dark:bg-purple-950/30 border-purple-200 text-purple-950 dark:text-purple-200"
+                      : "bg-rose-50 dark:bg-rose-950/30 border-rose-200 text-rose-950 dark:text-rose-200",
+                  )}
+                >
+                  <p className="font-semibold text-sm">
+                    {appealDecision === "approved"
+                      ? "Bạn đang chấp thuận khiếu nại của Giáo viên chủ nhiệm."
+                      : "Bạn đang từ chối khiếu nại của Giáo viên chủ nhiệm."}
+                  </p>
+                  <p className="mt-1">
+                    GVCN: <strong>{actionAppeal.teacherName}</strong> (Lớp {actionAppeal.className})
+                  </p>
+                  <p className="mt-1 italic text-muted-foreground">
+                    "Lý do của GVCN: {actionAppeal.reason}"
+                  </p>
+                </div>
+
+                {appealDecision === "approved" && (
+                  <div>
+                    <Label className="font-bold text-xs text-foreground block mb-1.5">
+                      Hình thức xử lý phiếu vi phạm gốc:
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAppealActionOnEntry("void")}
+                        className={cn(
+                          "p-2.5 rounded-xl border text-left transition-all",
+                          appealActionOnEntry === "void"
+                            ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-semibold ring-1 ring-emerald-500"
+                            : "border-border hover:bg-muted/40 text-muted-foreground",
+                        )}
+                      >
+                        <div className="font-bold text-xs flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                          Hủy phiếu vi phạm
+                        </div>
+                        <div className="text-[11px] font-normal text-muted-foreground mt-0.5">
+                          Hoàn trả điểm trừ ngay lập tức cho lớp.
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAppealActionOnEntry("return")}
+                        className={cn(
+                          "p-2.5 rounded-xl border text-left transition-all",
+                          appealActionOnEntry === "return"
+                            ? "border-orange-500 bg-orange-50 dark:bg-orange-950/40 text-orange-900 dark:text-orange-200 font-semibold ring-1 ring-orange-500"
+                            : "border-border hover:bg-muted/40 text-muted-foreground",
+                        )}
+                      >
+                        <div className="font-bold text-xs flex items-center gap-1.5 text-orange-700 dark:text-orange-300">
+                          <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                          Trả lại người ghi
+                        </div>
+                        <div className="text-[11px] font-normal text-muted-foreground mt-0.5">
+                          Chuyển về người lập phiếu để bổ sung, sửa đổi.
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <Label htmlFor="appealResolutionNote" className="font-bold text-xs text-foreground">
+                    Ý kiến / Căn cứ giải quyết của Ban Thi đua / BGH *
+                  </Label>
+                  <textarea
+                    id="appealResolutionNote"
+                    rows={3}
+                    value={appealResolutionNote}
+                    onChange={(e) => setAppealResolutionNote(e.target.value)}
+                    placeholder={
+                      appealDecision === "approved"
+                        ? "Nhập căn cứ chấp thuận (VD: Đã xác minh có minh chứng giấy phép của PHHS...)"
+                        : "Nhập lý do từ chối (VD: Đã đối chiếu sổ đầu bài và camera, vi phạm là có thật...)"
+                    }
+                    className="mt-1 block w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:border-primary focus:ring-1 focus:ring-primary"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <Button
+                    variant="secondary"
+                    disabled={isSubmittingAppealResolution}
+                    onClick={() => {
+                      setActionAppeal(null);
+                      setAppealDecision(null);
+                    }}
+                  >
+                    Hủy bỏ
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    disabled={isSubmittingAppealResolution || appealResolutionNote.trim().length < 5}
+                    onClick={handleSubmitAppealResolution}
+                    className={cn(
+                      "text-white",
+                      appealDecision === "approved"
+                        ? "bg-purple-600 hover:bg-purple-700"
+                        : "bg-rose-600 hover:bg-rose-700",
+                    )}
+                  >
+                    {isSubmittingAppealResolution
+                      ? "Đang lưu..."
+                      : appealDecision === "approved"
+                        ? "Xác nhận chấp thuận"
                         : "Xác nhận từ chối"}
                   </Button>
                 </div>
