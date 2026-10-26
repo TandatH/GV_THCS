@@ -884,11 +884,16 @@ function BghDisciplineContent() {
               <div className="text-[10px] text-emerald-700/80">Khen thưởng</div>
             </Card>
 
-            <Card className="p-3 text-center border bg-purple-500/5 border-purple-500/20">
-              <div className="text-[11px] font-bold text-purple-600 uppercase">Khiếu nại chờ</div>
-              <div className="text-2xl font-black text-purple-600 mt-1">{kpiStats.pendingAppealsCount}</div>
-              <div className="text-[10px] text-purple-600/80">Cần giải quyết</div>
-            </Card>
+            <Link href="/competition/review?tab=appeals" className="block focus:outline-none">
+              <Card className="p-3 text-center border bg-purple-500/5 border-purple-500/20 hover:bg-purple-500/10 hover:border-purple-500/40 transition-all h-full cursor-pointer">
+                <div className="text-[11px] font-bold text-purple-600 uppercase flex items-center justify-center gap-1">
+                  Khiếu nại chờ
+                  <ChevronRight className="h-3 w-3" />
+                </div>
+                <div className="text-2xl font-black text-purple-600 mt-1">{kpiStats.pendingAppealsCount}</div>
+                <div className="text-[10px] text-purple-600/80">Bấm để giải quyết →</div>
+              </Card>
+            </Link>
           </div>
 
           {/* BIỂU ĐỒ SO SÁNH ĐIỂM TRUNG BÌNH CÁC KHỐI */}
