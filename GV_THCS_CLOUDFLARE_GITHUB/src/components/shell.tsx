@@ -10,6 +10,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   CircleUserRound,
   ClipboardCheck,
@@ -58,9 +59,22 @@ import { AppLogo } from "./app-logo";
 import { Button } from "./ui";
 
 type MenuItem = { href: string; label: string; icon: LucideIcon };
+type MenuGroup = {
+  type: "group";
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  badge?: string;
+  children: MenuItem[];
+};
+type NavItem = MenuItem | MenuGroup;
 type NotificationRow = DocumentData & { id: string };
 
-const menuByRole: Record<Role, MenuItem[]> = {
+function isMenuGroup(item: NavItem): item is MenuGroup {
+  return "type" in item && item.type === "group";
+}
+
+const menuByRole: Record<Role, NavItem[]> = {
   admin: [
     { href: "/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/admin/setup", label: "Thiết lập hệ thống", icon: ListChecks },
@@ -69,18 +83,26 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/admin/departments", label: "Bộ môn", icon: School },
     { href: "/admin/subjects", label: "Môn học", icon: BookOpen },
     { href: "/admin/classes", label: "Lớp học", icon: GraduationCap },
-    { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
-    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
-    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
-    { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
-    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
-    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
-    { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
-    { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
-    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
-    { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
-    { href: "/bgh/discipline", label: "Tổng quan thi đua BGH", icon: ShieldCheck },
-    { href: "/admin/discipline/audit-logs", label: "Nhật ký thi đua", icon: History },
+    {
+      type: "group",
+      id: "discipline",
+      label: "Ban Thi Đua - Kỷ Luật",
+      icon: Trophy,
+      children: [
+        { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+        { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+        { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
+        { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
+        { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+        { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+        { href: "/bgh/discipline", label: "Tổng quan thi đua BGH", icon: ShieldCheck },
+        { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+        { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+        { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
+        { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
+        { href: "/admin/discipline/audit-logs", label: "Nhật ký thi đua", icon: History },
+      ],
+    },
     { href: "/admin/rooms", label: "Phòng học", icon: DoorOpen },
     { href: "/admin/campuses", label: "Cơ sở", icon: Building2 },
     { href: "/admin/school-years", label: "Năm học", icon: CalendarDays },
@@ -97,19 +119,27 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/bgh/schedules", label: "Thời khóa biểu", icon: CalendarDays },
     { href: "/bgh/teachers", label: "Giáo viên", icon: UsersRound },
     { href: "/bgh/classes", label: "Lớp học", icon: GraduationCap },
-    { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
-    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
-    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
-    { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
-    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
-    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
-    { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
-    { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
-    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
-    { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
-    { href: "/bgh/discipline", label: "Tổng quan thi đua BGH", icon: ShieldCheck },
-    { href: "/admin/discipline/audit-logs", label: "Nhật ký thi đua", icon: History },
     { href: "/bgh/subjects", label: "Môn học", icon: BookOpen },
+    {
+      type: "group",
+      id: "discipline",
+      label: "Ban Thi Đua - Kỷ Luật",
+      icon: Trophy,
+      children: [
+        { href: "/bgh/discipline", label: "Tổng quan thi đua BGH", icon: ShieldCheck },
+        { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
+        { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
+        { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+        { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+        { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+        { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+        { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+        { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+        { href: "/admin/discipline/assignments?tab=saodo", label: "Tài khoản Sao Đỏ", icon: Star },
+        { href: "/admin/discipline/students", label: "Học sinh", icon: UsersRound },
+        { href: "/admin/discipline/audit-logs", label: "Nhật ký thi đua", icon: History },
+      ],
+    },
     { href: "/bgh/rooms", label: "Phòng học", icon: DoorOpen },
     { href: "/bgh/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/bgh/evaluations", label: "Đánh giá chuyên môn", icon: Star },
@@ -121,14 +151,22 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/totruong/schedules", label: "Thời khóa biểu", icon: CalendarDays },
     { href: "/totruong/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/totruong/evaluations", label: "Đánh giá chuyên môn", icon: ClipboardCheck },
-    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
-    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
-    { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
-    { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
-    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
-    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
-    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
-    { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+    {
+      type: "group",
+      id: "discipline",
+      label: "Ban Thi Đua - Kỷ Luật",
+      icon: Trophy,
+      children: [
+        { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+        { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+        { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
+        { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
+        { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+        { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+        { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+        { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+      ],
+    },
     { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ],
@@ -140,14 +178,22 @@ const menuByRole: Record<Role, MenuItem[]> = {
     { href: "/teacher/evaluations", label: "Kết quả đánh giá", icon: Star },
     { href: "/teacher/attendance", label: "Chấm công", icon: ClipboardCheck },
     { href: "/teacher/payroll", label: "Bảng thù lao", icon: WalletCards },
-    { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
-    { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
-    { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
-    { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
-    { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
-    { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
-    { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
-    { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+    {
+      type: "group",
+      id: "discipline",
+      label: "Ban Thi Đua - Kỷ Luật",
+      icon: Trophy,
+      children: [
+        { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
+        { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
+        { href: "/teacher/homeroom/discipline", label: "Lớp chủ nhiệm thi đua", icon: GraduationCap },
+        { href: "/competition/review", label: "Duyệt vi phạm", icon: FileCheck },
+        { href: "/competition/weekly-finalize", label: "Tổng kết & Ký điểm", icon: FileSpreadsheet },
+        { href: "/competition/leaderboard", label: "Bảng xếp hạng thi đua", icon: Trophy },
+        { href: "/admin/discipline/criteria", label: "Tiêu chí thi đua", icon: ListChecks },
+        { href: "/admin/discipline/assignments", label: "Phân công thi đua", icon: ShieldCheck },
+      ],
+    },
     { href: "/teacher/notifications", label: "Thông báo", icon: MessageSquareText },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ],
@@ -214,6 +260,53 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
     { href: "/teacher/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
   ];
 
+  // Quản lý trạng thái đóng/mở của các nhóm menu collapsible (mặc định mở nếu có trang con đang active)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = { discipline: false };
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sidebar_open_groups");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return initial;
+  });
+
+  // Tự động mở nhóm khi truy cập vào bất kỳ trang con nào của nhóm đó
+  useEffect(() => {
+    for (const item of items) {
+      if (isMenuGroup(item)) {
+        const hasActiveChild = item.children.some(
+          (child) => pathname === child.href || (child.href !== "/dashboard" && pathname.startsWith(`${child.href}/`)),
+        );
+        if (hasActiveChild) {
+          setOpenGroups((prev) => {
+            if (prev[item.id]) return prev;
+            const next = { ...prev, [item.id]: true };
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("sidebar_open_groups", JSON.stringify(next));
+              } catch {}
+            }
+            return next;
+          });
+        }
+      }
+    }
+  }, [pathname, items]);
+
+  function toggleGroup(id: string) {
+    setOpenGroups((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("sidebar_open_groups", JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }
+
   async function logout() {
     await signOutUser();
     router.replace("/login");
@@ -245,7 +338,102 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
       </div>
 
       <nav className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {items.map(({ href, label, icon: Icon }) => {
+        {items.map((item) => {
+          if (isMenuGroup(item)) {
+            const hasActiveChild = item.children.some(
+              (child) => pathname === child.href || (child.href !== "/dashboard" && pathname.startsWith(`${child.href}/`)),
+            );
+            const isOpen = Boolean(openGroups[item.id]);
+            const GroupIcon = item.icon;
+
+            return (
+              <div key={item.id} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(item.id)}
+                  className={cn(
+                    "group flex w-full min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition select-none text-left",
+                    hasActiveChild
+                      ? "bg-slate-900/90 text-amber-300 border border-amber-500/30 shadow-sm"
+                      : "text-slate-300 hover:bg-slate-800/80 hover:text-white",
+                    collapsed && !mobile && "justify-center px-0",
+                  )}
+                  title={collapsed && !mobile ? item.label : undefined}
+                  aria-expanded={isOpen}
+                >
+                  <div
+                    className={cn(
+                      "flex items-center justify-center rounded-lg p-0.5 transition",
+                      hasActiveChild ? "text-amber-400" : "text-amber-400/90 group-hover:text-amber-300",
+                    )}
+                  >
+                    <GroupIcon className="h-5 w-5 shrink-0" />
+                  </div>
+
+                  {!collapsed || mobile ? (
+                    <>
+                      <span className="truncate flex-1 font-bold">{item.label}</span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30">
+                          {item.children.length}
+                        </span>
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 text-slate-400 transition-transform duration-200",
+                            isOpen && "rotate-180 text-amber-300",
+                          )}
+                        />
+                      </span>
+                    </>
+                  ) : null}
+                </button>
+
+                {/* DANH SÁCH MỤC CON SỔ RA */}
+                {isOpen ? (
+                  <div
+                    className={cn(
+                      "space-y-1 transition-all",
+                      !collapsed || mobile
+                        ? "ml-4 border-l border-amber-500/30 pl-2.5 my-1"
+                        : "space-y-1 my-1",
+                    )}
+                  >
+                    {item.children.map(({ href, label, icon: SubIcon }) => {
+                      const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
+                      return (
+                        <Link
+                          key={href}
+                          href={href}
+                          onClick={mobile ? onClose : undefined}
+                          className={cn(
+                            "group flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 text-xs font-medium transition",
+                            active
+                              ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-950/30"
+                              : "text-slate-400 hover:bg-slate-800/80 hover:text-white",
+                            collapsed && !mobile && "justify-center px-0 min-h-9",
+                          )}
+                          title={collapsed && !mobile ? label : undefined}
+                        >
+                          <SubIcon
+                            className={cn(
+                              "h-4 w-4 shrink-0",
+                              active ? "text-white" : "text-slate-400 group-hover:text-slate-200",
+                            )}
+                          />
+                          {!collapsed || mobile ? <span className="truncate">{label}</span> : null}
+                          {active && (!collapsed || mobile) ? (
+                            <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white shadow-sm" />
+                          ) : null}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
+
+          const { href, label, icon: Icon } = item;
           const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
           return (
             <Link
@@ -364,12 +552,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const current = useMemo(() => {
     if (!role) return null;
     const baseItems = menuByRole[role] || [];
+    const flattened: { href: string; label: string }[] = [];
+    for (const item of baseItems) {
+      if (isMenuGroup(item)) {
+        flattened.push(...item.children);
+      } else {
+        flattened.push(item);
+      }
+    }
     const teachingItems = claims?.teacherId ? [
       { href: "/teacher/schedule", label: "Lịch giảng dạy" },
       { href: "/teacher/availability", label: "Đăng ký giờ trống" },
       { href: "/teacher/leave-requests", label: "Đơn nghỉ phép" },
     ] : [];
-    return [...baseItems, ...teachingItems].find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+    return [...flattened, ...teachingItems].find(
+      (item) => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)),
+    );
   }, [pathname, role, claims?.teacherId]);
 
   useEffect(() => {
