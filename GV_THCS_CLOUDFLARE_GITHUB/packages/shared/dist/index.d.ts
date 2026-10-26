@@ -64,6 +64,12 @@ export declare const teacherSchema: z.ZodObject<{
     fullName: z.ZodString;
     email: z.ZodEmail;
     phone: z.ZodString;
+    address: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    dob: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    religion: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    positionTitle: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    bankAccountNumber: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    bankName: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     departmentId: z.ZodString;
     homeroomDepartmentId: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     subjectIds: z.ZodArray<z.ZodString>;
@@ -360,7 +366,6 @@ export declare const disciplineApprovalStatuses: readonly ["draft", "signed", "l
 export type DisciplineApprovalStatus = (typeof disciplineApprovalStatuses)[number];
 export declare const disciplineApprovalStatusLabels: Record<DisciplineApprovalStatus, string>;
 export declare const DEFAULT_WEEKLY_BASE_SCORE = 600;
-export declare const CURRENT_DISCIPLINE_WEEK = 7;
 export declare const disciplineRoleTypes: readonly ["discipline_committee", "competition_committee", "discipline_head", "competition_head", "discipline_and_competition_head"];
 export type DisciplineRoleType = (typeof disciplineRoleTypes)[number];
 export declare const disciplineRoleTypeLabels: Record<DisciplineRoleType, string>;

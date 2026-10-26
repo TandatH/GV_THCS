@@ -25,6 +25,12 @@ export const teacherSchema = z.object({
     fullName: z.string().trim().min(2, "Họ tên phải có ít nhất 2 ký tự").max(120),
     email: z.email("Email không hợp lệ"),
     phone: z.string().trim().regex(/^[0-9+ ()-]{8,20}$/, "Số điện thoại không hợp lệ"),
+    address: z.string().trim().max(300).optional().default(""),
+    dob: z.string().trim().max(30).optional().default(""),
+    religion: z.string().trim().max(50).optional().default(""),
+    positionTitle: z.string().trim().max(100).optional().default(""),
+    bankAccountNumber: z.string().trim().max(50).optional().default(""),
+    bankName: z.string().trim().max(100).optional().default(""),
     departmentId: z.string().trim().min(1, "Vui lòng chọn bộ môn"),
     homeroomDepartmentId: z.string().trim().optional().default(""),
     subjectIds: z.array(z.string()).min(1, "Chọn ít nhất một môn"),
@@ -441,7 +447,6 @@ export const disciplineApprovalStatusLabels = {
     superseded: "Đã thay thế",
 };
 export const DEFAULT_WEEKLY_BASE_SCORE = 600;
-export const CURRENT_DISCIPLINE_WEEK = 7;
 export const disciplineRoleTypes = [
     "discipline_committee",
     "competition_committee",
