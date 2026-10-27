@@ -29,9 +29,9 @@ export declare const examSessionSchema: z.ZodObject<{
         draft: "draft";
         scheduled: "scheduled";
         published: "published";
+        locked: "locked";
         in_progress: "in_progress";
         completed: "completed";
-        locked: "locked";
     }>>;
     seatingArrangementType: z.ZodDefault<z.ZodEnum<{
         by_class: "by_class";
@@ -173,10 +173,10 @@ export declare const examSupervisorAssignmentSchema: z.ZodObject<{
     date: z.ZodString;
     shiftNumber: z.ZodNumber;
     checkinStatus: z.ZodDefault<z.ZodEnum<{
+        absent: "absent";
         not_started: "not_started";
         present: "present";
         late: "late";
-        absent: "absent";
     }>>;
     payrollRecorded: z.ZodDefault<z.ZodBoolean>;
     createdAt: z.ZodOptional<z.ZodUnknown>;
@@ -200,10 +200,10 @@ export declare const examSwapRequestSchema: z.ZodObject<{
     targetAssignmentId: z.ZodString;
     reason: z.ZodString;
     status: z.ZodDefault<z.ZodEnum<{
+        cancelled: "cancelled";
         pending: "pending";
         approved: "approved";
         rejected: "rejected";
-        cancelled: "cancelled";
     }>>;
     reviewedBy: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     reviewedAt: z.ZodDefault<z.ZodOptional<z.ZodString>>;
