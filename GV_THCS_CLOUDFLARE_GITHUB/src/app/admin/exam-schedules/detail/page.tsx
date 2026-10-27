@@ -66,16 +66,48 @@ import {
   finalizeExamDutyToPayroll,
   recordExamDutyAttendance,
   generateExamRoomsAndSeating,
-  updateExamRoomManual,
-  assignExamSupervisorManual,
-  deleteExamSupervisorAssignment,
-  moveExamStudentAssignment,
 } from "@/lib/firebase/callables";
-import { firestore } from "@/lib/firebase/client";
+import { httpsCallable } from "firebase/functions";
+import { firebaseFunctions, firestore } from "@/lib/firebase/client";
 import {
   exportExamMasterScheduleExcel,
   exportExamRoomRosterExcel,
 } from "@/lib/exports/exam-excel";
+
+const updateExamRoomManual = async (input: { sessionId: string; examRoomId: string; physicalRoomId: string }) => {
+  const fn = httpsCallable<{ sessionId: string; examRoomId: string; physicalRoomId: string }, any>(
+    firebaseFunctions,
+    "updateExamRoomManual"
+  );
+  return (await fn(input)).data;
+};
+
+const assignExamSupervisorManual = async (input: {
+  sessionId: string;
+  examRoomId: string;
+  chiefTeacherId?: string;
+  assistantTeacherId?: string;
+  hallTeacherId?: string;
+}) => {
+  const fn = httpsCallable<any, any>(firebaseFunctions, "assignExamSupervisorManual");
+  return (await fn(input)).data;
+};
+
+const deleteExamSupervisorAssignment = async (input: { sessionId: string; assignmentId: string }) => {
+  const fn = httpsCallable<{ sessionId: string; assignmentId: string }, any>(
+    firebaseFunctions,
+    "deleteExamSupervisorAssignment"
+  );
+  return (await fn(input)).data;
+};
+
+const moveExamStudentAssignment = async (input: { sessionId: string; assignmentId: string; targetExamRoomId: string }) => {
+  const fn = httpsCallable<{ sessionId: string; assignmentId: string; targetExamRoomId: string }, any>(
+    firebaseFunctions,
+    "moveExamStudentAssignment"
+  );
+  return (await fn(input)).data;
+};
 
 function ExamSessionDetailContent() {
   const searchParams = useSearchParams();
