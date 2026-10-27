@@ -1532,4 +1532,6 @@ export function disciplineSchoolLevel(data: Record<string, unknown>): "primary" 
   return Number.isFinite(grade) && grade >= 1 && grade <= 5 ? "primary" : "secondary";
 }
 
+export * from "./exam.js";
+
 

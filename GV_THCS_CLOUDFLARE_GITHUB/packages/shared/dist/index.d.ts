@@ -153,8 +153,8 @@ export declare const scheduleSchema: z.ZodObject<{
     endPeriod: z.ZodNumber;
     status: z.ZodDefault<z.ZodEnum<{
         scheduled: "scheduled";
-        needs_attention: "needs_attention";
         cancelled: "cancelled";
+        needs_attention: "needs_attention";
     }>>;
     confirmationDeadline: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     cancellationReason: z.ZodDefault<z.ZodOptional<z.ZodString>>;
@@ -246,8 +246,8 @@ export declare const evaluationSchema: z.ZodObject<{
 export declare const attendanceSchema: z.ZodObject<{
     scheduleId: z.ZodString;
     status: z.ZodEnum<{
-        confirmed: "confirmed";
         absent: "absent";
+        confirmed: "confirmed";
         adjusted: "adjusted";
     }>;
     actualTeacherId: z.ZodOptional<z.ZodString>;
@@ -567,8 +567,8 @@ export declare const disciplineEntrySchema: z.ZodObject<{
     status: z.ZodDefault<z.ZodEnum<{
         pending: "pending";
         approved: "approved";
-        returned: "returned";
         rejected: "rejected";
+        returned: "returned";
         voided: "voided";
     }>>;
     reportedByUid: z.ZodString;
@@ -596,8 +596,8 @@ export declare const reviewDisciplineEntrySchema: z.ZodObject<{
     entryId: z.ZodString;
     decision: z.ZodEnum<{
         approved: "approved";
-        returned: "returned";
         rejected: "rejected";
+        returned: "returned";
     }>;
     reviewerUid: z.ZodString;
     reviewerName: z.ZodString;
@@ -696,8 +696,8 @@ export declare const disciplineWeeklyApprovalSchema: z.ZodObject<{
     version: z.ZodDefault<z.ZodNumber>;
     status: z.ZodDefault<z.ZodEnum<{
         draft: "draft";
-        signed: "signed";
         locked: "locked";
+        signed: "signed";
         superseded: "superseded";
     }>>;
     snapshot: z.ZodObject<{
@@ -827,3 +827,4 @@ export declare function verifySnapshotHash(snapshot: DisciplineWeeklySnapshot, e
  * Phân định cấp học (primary / secondary) của lớp học hoặc dữ liệu liên quan
  */
 export declare function disciplineSchoolLevel(data: Record<string, unknown>): "primary" | "secondary";
+export * from "./exam.js";

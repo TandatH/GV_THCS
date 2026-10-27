@@ -19,6 +19,11 @@
       "types": "./dist/payroll.d.ts",
       "import": "./dist/payroll.js",
       "default": "./dist/payroll.js"
+    },
+    "./exam": {
+      "types": "./dist/exam.d.ts",
+      "import": "./dist/exam.js",
+      "default": "./dist/exam.js"
     }
   },
   "type": "module",
