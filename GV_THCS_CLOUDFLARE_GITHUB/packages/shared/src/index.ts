@@ -1583,7 +1583,7 @@ export const examStudentAttendanceStatuses = [
 export type ExamStudentAttendanceStatus = (typeof examStudentAttendanceStatuses)[number];
 
 export const examSessionSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   code: z.string().trim().min(2, "Mã đợt thi tối thiểu 2 ký tự").max(30),
   name: z.string().trim().min(3, "Tên đợt kiểm tra tối thiểu 3 ký tự").max(150),
   schoolYearId: z.string().trim().min(1, "Vui lòng chọn năm học"),
@@ -1597,7 +1597,7 @@ export const examSessionSchema = z.object({
   maxStudentsPerRoom: z.number().int().min(10).max(60).default(24),
   mergeRemainderStudents: z.boolean().default(false),
   supervisorsPerRoom: z.number().int().min(1).max(3).default(2),
-  description: z.string().trim().max(500).optional().default(""),
+  description: z.preprocess((val) => (val === null ? "" : val), z.string().trim().max(500).optional().default("")),
   createdAt: z.unknown().optional(),
   createdBy: z.string().optional().default(""),
   updatedAt: z.unknown().optional(),
@@ -1613,7 +1613,7 @@ export interface ExamSession extends z.infer<typeof examSessionSchema>, AuditFie
 }
 
 export const examSlotSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   name: z.string().trim().min(1).max(100),
   date: z.string().date(),
@@ -1638,7 +1638,7 @@ export interface ExamSlot extends z.infer<typeof examSlotSchema>, AuditFields {
 }
 
 export const examSubjectSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   subjectId: z.string().trim().min(1),
   subjectName: z.string().trim().min(1),
@@ -1661,7 +1661,7 @@ export interface ExamSubject extends z.infer<typeof examSubjectSchema>, AuditFie
 }
 
 export const examRoomSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   slotId: z.string().trim().min(1),
   examSubjectId: z.string().trim().min(1),
@@ -1686,7 +1686,7 @@ export interface ExamRoom extends z.infer<typeof examRoomSchema>, AuditFields {
 }
 
 export const examStudentAssignmentSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   examRoomId: z.string().trim().min(1),
   slotId: z.string().trim().min(1),
@@ -1714,7 +1714,7 @@ export interface ExamStudentAssignment extends z.infer<typeof examStudentAssignm
 }
 
 export const examSupervisorAssignmentSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   slotId: z.string().trim().min(1),
   examRoomId: z.string().trim().min(1),
@@ -1738,7 +1738,7 @@ export interface ExamSupervisorAssignment extends z.infer<typeof examSupervisorA
 }
 
 export const examSwapRequestSchema = z.object({
-  id: z.string().optional(),
+  id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
   sessionId: z.string().trim().min(1),
   requesterTeacherId: z.string().trim().min(1),
   requesterTeacherName: z.string().trim().min(1),
