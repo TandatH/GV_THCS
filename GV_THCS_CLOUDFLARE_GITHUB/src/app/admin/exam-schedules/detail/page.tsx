@@ -22,10 +22,14 @@ import {
   GraduationCap,
   Layers,
   LayoutGrid,
+  MoveRight,
+  Pencil,
   Plus,
   RefreshCw,
+  Search,
   Sparkles,
   Trash2,
+  UserCheck,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -62,6 +66,10 @@ import {
   finalizeExamDutyToPayroll,
   recordExamDutyAttendance,
   generateExamRoomsAndSeating,
+  updateExamRoomManual,
+  assignExamSupervisorManual,
+  deleteExamSupervisorAssignment,
+  moveExamStudentAssignment,
 } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import {
@@ -79,6 +87,8 @@ function ExamSessionDetailContent() {
   const [rooms, setRooms] = useState<ExamRoom[]>([]);
   const [supervisors, setSupervisors] = useState<ExamSupervisorAssignment[]>([]);
   const [catalogSubjects, setCatalogSubjects] = useState<DocumentData[]>([]);
+  const [physicalRooms, setPhysicalRooms] = useState<DocumentData[]>([]);
+  const [teachers, setTeachers] = useState<DocumentData[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"slots" | "rooms" | "supervisors">("slots");
@@ -114,6 +124,29 @@ function ExamSessionDetailContent() {
   const [selectedRoom, setSelectedRoom] = useState<ExamRoom | null>(null);
   const [roomStudents, setRoomStudents] = useState<ExamStudentAssignment[]>([]);
   const [loadingRoomStudents, setLoadingRoomStudents] = useState(false);
+
+  // Modal: Edit Physical Room
+  const [editPhysicalModalOpen, setEditPhysicalModalOpen] = useState(false);
+  const [roomToEditPhysical, setRoomToEditPhysical] = useState<ExamRoom | null>(null);
+  const [selectedPhysicalRoomId, setSelectedPhysicalRoomId] = useState("");
+  const [savingPhysicalRoom, setSavingPhysicalRoom] = useState(false);
+
+  // Modal: Manual Supervisor Assignment for a room
+  const [assignSupModalOpen, setAssignSupModalOpen] = useState(false);
+  const [roomToAssignSup, setRoomToAssignSup] = useState<ExamRoom | null>(null);
+  const [chiefTeacherId, setChiefTeacherId] = useState("");
+  const [assistantTeacherId, setAssistantTeacherId] = useState("");
+  const [hallTeacherId, setHallTeacherId] = useState("");
+  const [savingSupModal, setSavingSupModal] = useState(false);
+
+  // Modal: Move Student to another room
+  const [moveStudentModalOpen, setMoveStudentModalOpen] = useState(false);
+  const [studentToMove, setStudentToMove] = useState<ExamStudentAssignment | null>(null);
+  const [targetExamRoomId, setTargetExamRoomId] = useState("");
+  const [savingMoveStudent, setSavingMoveStudent] = useState(false);
+
+  // Filter & Search
+  const [roomSearchQuery, setRoomSearchQuery] = useState("");
 
   // 1. Listen to Session Doc
   useEffect(() => {
@@ -161,12 +194,30 @@ function ExamSessionDetailContent() {
       setCatalogSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
+    const unsubRoomsCatalog = onSnapshot(collection(firestore, "rooms"), (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((r: any) => r.isActive !== false)
+        .sort((a: any, b: any) => String(a.name || a.code || a.id).localeCompare(String(b.name || b.code || b.id), "vi", { numeric: true }));
+      setPhysicalRooms(list);
+    });
+
+    const unsubTeachers = onSnapshot(collection(firestore, "teachers"), (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((t: any) => t.isActive !== false && t.status !== "inactive" && t.status !== "archived")
+        .sort((a: any, b: any) => String(a.fullName || "").localeCompare(String(b.fullName || ""), "vi"));
+      setTeachers(list);
+    });
+
     return () => {
       unsubSlots();
       unsubSubs();
       unsubRooms();
       unsubSups();
       unsubCatalogSubs();
+      unsubRoomsCatalog();
+      unsubTeachers();
     };
   }, [sessionId]);
 
@@ -377,6 +428,123 @@ function ExamSessionDetailContent() {
     }
   };
 
+  // Mở modal Đổi phòng học vật lý
+  const handleOpenEditPhysicalRoom = (room: ExamRoom) => {
+    setRoomToEditPhysical(room);
+    setSelectedPhysicalRoomId(room.physicalRoomId || physicalRooms[0]?.id || "");
+    setEditPhysicalModalOpen(true);
+  };
+
+  const handleSavePhysicalRoom = async () => {
+    if (!roomToEditPhysical || !selectedPhysicalRoomId) {
+      toast.error("Vui lòng chọn phòng học.");
+      return;
+    }
+    setSavingPhysicalRoom(true);
+    try {
+      await updateExamRoomManual({
+        sessionId,
+        examRoomId: roomToEditPhysical.id,
+        physicalRoomId: selectedPhysicalRoomId,
+      });
+      toast.success("Đã đổi phòng học thành công!");
+      setEditPhysicalModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể đổi phòng học.");
+    } finally {
+      setSavingPhysicalRoom(false);
+    }
+  };
+
+  // Mở modal Phân công giám thị thủ công
+  const handleOpenAssignSup = (room: ExamRoom) => {
+    setRoomToAssignSup(room);
+    const chief = supervisors.find((s) => s.examRoomId === room.id && s.role === "chief");
+    const assistant = supervisors.find((s) => s.examRoomId === room.id && s.role === "assistant");
+    const hall = supervisors.find((s) => s.examRoomId === room.id && s.role === "hall");
+    setChiefTeacherId(chief?.teacherId || "");
+    setAssistantTeacherId(assistant?.teacherId || "");
+    setHallTeacherId(hall?.teacherId || room.hallSupervisorId || "");
+    setAssignSupModalOpen(true);
+  };
+
+  const handleSaveSupervisorAssignment = async () => {
+    if (!roomToAssignSup) return;
+    setSavingSupModal(true);
+    try {
+      await assignExamSupervisorManual({
+        sessionId,
+        examRoomId: roomToAssignSup.id,
+        chiefTeacherId: chiefTeacherId || undefined,
+        assistantTeacherId: assistantTeacherId || undefined,
+        hallTeacherId: hallTeacherId || undefined,
+      });
+      toast.success("Cập nhật giám thị thành công!");
+      setAssignSupModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể phân công giám thị.");
+    } finally {
+      setSavingSupModal(false);
+    }
+  };
+
+  const handleDeleteSupervisorDuty = async (assignmentId: string) => {
+    if (!confirm("Bạn có chắc muốn xóa lượt phân công giám thị này?")) return;
+    try {
+      await deleteExamSupervisorAssignment({ sessionId, assignmentId });
+      toast.success("Đã xóa lượt phân công giám thị.");
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể xóa phân công giám thị.");
+    }
+  };
+
+  // Chuyển thí sinh sang phòng thi khác
+  const handleOpenMoveStudent = (student: ExamStudentAssignment) => {
+    setStudentToMove(student);
+    const candidateRooms = rooms.filter(
+      (r) => r.id !== student.examRoomId && r.slotId === student.slotId && Number(r.gradeLevel) === Number(student.gradeLevel)
+    );
+    setTargetExamRoomId(candidateRooms[0]?.id || "");
+    setMoveStudentModalOpen(true);
+  };
+
+  const handleSaveMoveStudent = async () => {
+    if (!studentToMove || !targetExamRoomId) {
+      toast.error("Vui lòng chọn phòng thi đích.");
+      return;
+    }
+    setSavingMoveStudent(true);
+    try {
+      await moveExamStudentAssignment({
+        sessionId,
+        assignmentId: studentToMove.id,
+        targetExamRoomId,
+      });
+      toast.success("Đã chuyển phòng thi cho thí sinh!");
+      setMoveStudentModalOpen(false);
+      if (selectedRoom) {
+        handleViewRoomStudents(selectedRoom);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Không thể chuyển phòng thi.");
+    } finally {
+      setSavingMoveStudent(false);
+    }
+  };
+
+  const filteredRooms = useMemo(() => {
+    const q = roomSearchQuery.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter((r) => {
+      const sub = examSubjects.find((s) => s.id === r.examSubjectId);
+      return (
+        r.roomCode.toLowerCase().includes(q) ||
+        r.physicalRoomName.toLowerCase().includes(q) ||
+        (sub?.subjectName || "").toLowerCase().includes(q)
+      );
+    });
+  }, [rooms, examSubjects, roomSearchQuery]);
+
   if (!sessionId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -582,7 +750,7 @@ function ExamSessionDetailContent() {
           {rooms.length === 0 ? (
             <EmptyState
               title="Chưa có phòng thi nào"
-              description="Hãy bấm 'Chia Phòng & SBD' ở góc trên để hệ thống tự động gom học sinh và tạo phòng thi."
+              description="Hãy bấm 'Chia Phòng & SBD' ở góc trên để hệ thống tự động gom học sinh và tạo phòng thi từ danh mục phòng học."
               action={
                 <Button onClick={handleAllocateSeating} loading={allocating}>
                   <Sparkles className="h-4 w-4 text-amber-500" /> Tự Động Chia Phòng & SBD
@@ -590,54 +758,130 @@ function ExamSessionDetailContent() {
               }
             />
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {rooms.map((room) => {
-                const sub = examSubjects.find((s) => s.id === room.examSubjectId);
-                const slot = slots.find((s) => s.id === room.slotId);
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-80">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Tìm mã phòng, phòng học, môn..."
+                    className="pl-9"
+                    value={roomSearchQuery}
+                    onChange={(e) => setRoomSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Hiển thị <strong>{filteredRooms.length} / {rooms.length}</strong> phòng thi
+                </div>
+              </div>
 
-                return (
-                  <Card key={room.id} className="p-5 space-y-3 transition hover:shadow-md">
-                    <div className="flex items-center justify-between">
-                      <span className="rounded-md bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
-                        {room.roomCode}
-                      </span>
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        Khối {room.gradeLevel}
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredRooms.map((room) => {
+                  const sub = examSubjects.find((s) => s.id === room.examSubjectId);
+                  const slot = slots.find((s) => s.id === room.slotId);
+                  const roomSups = supervisors.filter((s) => s.examRoomId === room.id);
 
-                    <div>
-                      <h4 className="text-base font-bold">{room.physicalRoomName}</h4>
-                      <p className="text-xs text-muted-foreground">
-                        Môn: <strong>{sub?.subjectName || "—"}</strong> | Ngày: {slot?.date} (Ca {slot?.shiftNumber})
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Sĩ số: <strong>{room.studentCount} học sinh</strong>
-                      </p>
-                    </div>
+                  return (
+                    <Card key={room.id} className="p-5 space-y-3 transition hover:shadow-md">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-md bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
+                          {room.roomCode}
+                        </span>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Khối {room.gradeLevel}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center gap-2 pt-2 border-t border-border">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleViewRoomStudents(room)}
-                      >
-                        <Users className="h-3.5 w-3.5" /> Xem Thí Sinh
-                      </Button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-base font-bold flex items-center gap-1.5 text-foreground">
+                            <DoorOpen className="h-4 w-4 text-primary" />
+                            {room.physicalRoomName}
+                          </h4>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10 border-primary/20"
+                            onClick={() => handleOpenEditPhysicalRoom(room)}
+                            title="Chọn phòng khác từ Danh mục Phòng học"
+                          >
+                            <Pencil className="h-3 w-3 mr-1" /> Đổi phòng
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Môn: <strong>{sub?.subjectName || "—"}</strong> | Ngày: {slot?.date} (Ca {slot?.shiftNumber}: {slot?.startTime}–{slot?.endTime})
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Sĩ số: <strong className="text-foreground">{room.studentCount} thí sinh</strong>
+                        </p>
+                      </div>
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleExportSingleRoom(room)}
-                        title="Xuất phiếu thu bài & danh sách thi"
-                      >
-                        <Download className="h-4 w-4 text-emerald-600" />
-                      </Button>
-                    </div>
-                  </Card>
-                );
-              })}
+                      {/* Giám thị coi thi */}
+                      <div className="rounded-xl border border-border/60 bg-muted/30 p-2.5 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-muted-foreground flex items-center gap-1">
+                            <UsersRound className="h-3.5 w-3.5 text-indigo-500" /> Giám thị:
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-xs text-indigo-600 hover:bg-indigo-50"
+                            onClick={() => handleOpenAssignSup(room)}
+                            title="Xếp giám thị thủ công cho phòng này"
+                          >
+                            <Pencil className="h-2.5 w-2.5 mr-0.5" /> Xếp giám thị
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">GT 1 (Chính):</span>
+                            <span className="font-medium text-foreground">
+                              {roomSups.find((s) => s.role === "chief")?.teacherName || (
+                                <span className="text-amber-600 font-normal italic">Chưa xếp</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">GT 2 (Phụ):</span>
+                            <span className="font-medium text-foreground">
+                              {roomSups.find((s) => s.role === "assistant")?.teacherName || (
+                                <span className="text-muted-foreground font-normal italic">—</span>
+                              )}
+                            </span>
+                          </div>
+                          {roomSups.some((s) => s.role === "hall") && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Hành lang:</span>
+                              <span className="font-medium text-foreground">
+                                {roomSups.find((s) => s.role === "hall")?.teacherName}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-border">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => handleViewRoomStudents(room)}
+                        >
+                          <Users className="h-3.5 w-3.5" /> Xem Thí Sinh
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleExportSingleRoom(room)}
+                          title="Xuất phiếu thu bài & danh sách thi"
+                        >
+                          <Download className="h-4 w-4 text-emerald-600" />
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -649,7 +893,7 @@ function ExamSessionDetailContent() {
           {supervisors.length === 0 ? (
             <EmptyState
               title="Chưa phân công giám thị"
-              description="Bấm 'Phân Giám Thị' ở góc trên để chạy thuật toán phân bổ giáo viên chống trùng môn, trùng ca."
+              description="Bấm 'Phân Giám Thị' ở góc trên để chạy thuật toán phân bổ giáo viên chống trùng môn, trùng ca; hoặc tự phân công thủ công theo phòng."
               action={
                 <Button onClick={handleAssignSupervisors} loading={assigningSup}>
                   <UsersRound className="h-4 w-4" /> Phân Giám Thị Tự Động
@@ -662,6 +906,15 @@ function ExamSessionDetailContent() {
                 <p className="text-sm font-medium text-muted-foreground">
                   Đã phân công tổng cộng <strong>{supervisors.length} lượt giám thị</strong>.
                 </p>
+                {rooms.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleOpenAssignSup(rooms[0])}
+                  >
+                    <Plus className="h-4 w-4" /> Phân Công Theo Phòng
+                  </Button>
+                )}
               </div>
 
               <Card className="overflow-x-auto">
@@ -676,6 +929,7 @@ function ExamSessionDetailContent() {
                       <th className="p-3">Nhiệm vụ</th>
                       <th className="p-3">Trạng thái</th>
                       <th className="p-3">Điểm danh</th>
+                      <th className="p-3 text-right">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -727,6 +981,27 @@ function ExamSessionDetailContent() {
                               <option value="late">Đi trễ</option>
                               <option value="absent">Vắng</option>
                             </select>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {room && (
+                                <button
+                                  onClick={() => handleOpenAssignSup(room)}
+                                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  title="Chỉnh sửa giám thị phòng này"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteSupervisorDuty(sup.id)}
+                                disabled={sup.payrollRecorded}
+                                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                                title="Xóa phân công này"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -925,6 +1200,7 @@ function ExamSessionDetailContent() {
                     <th className="p-2">Họ và tên</th>
                     <th className="p-2">Lớp</th>
                     <th className="p-2">Số bàn</th>
+                    <th className="p-2 text-right">Chuyển phòng</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -935,12 +1211,178 @@ function ExamSessionDetailContent() {
                       <td className="p-2 font-medium">{st.studentName}</td>
                       <td className="p-2">{st.className}</td>
                       <td className="p-2">{st.deskNumber}</td>
+                      <td className="p-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-xs text-primary hover:bg-primary/10"
+                          onClick={() => handleOpenMoveStudent(st)}
+                          title="Chuyển thí sinh sang phòng khác cùng ca"
+                        >
+                          <MoveRight className="h-3 w-3 mr-1" /> Chuyển
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Modal 1: Đổi Phòng Học Vật Lý */}
+      <Modal
+        open={editPhysicalModalOpen}
+        onOpenChange={setEditPhysicalModalOpen}
+        title={`Đổi Phòng Học — ${roomToEditPhysical?.roomCode}`}
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Chọn phòng học từ danh mục cơ sở vật chất của trường để gán cho phòng thi này.
+          </p>
+
+          <div>
+            <Label>Phòng học từ danh mục của trường *</Label>
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+              value={selectedPhysicalRoomId}
+              onChange={(e) => setSelectedPhysicalRoomId(e.target.value)}
+            >
+              <option value="">-- Chọn phòng học --</option>
+              {physicalRooms.map((pr) => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.name || pr.code} {pr.capacity ? `(Sức chứa: ${pr.capacity})` : ""} {pr.roomType ? `— [${pr.roomType}]` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setEditPhysicalModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleSavePhysicalRoom} loading={savingPhysicalRoom}>
+              Lưu Thay Đổi
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal 2: Phân Công Giám Thị Thủ Công */}
+      <Modal
+        open={assignSupModalOpen}
+        onOpenChange={setAssignSupModalOpen}
+        title={`Phân Công Giám Thị — ${roomToAssignSup?.roomCode} (${roomToAssignSup?.physicalRoomName})`}
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Chỉ định trực tiếp giáo viên coi thi cho phòng này. Hệ thống sẽ tự động kiểm tra trùng giờ, trùng ca thi.
+          </p>
+
+          <div>
+            <Label>Giám thị 1 (Chính) *</Label>
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+              value={chiefTeacherId}
+              onChange={(e) => setChiefTeacherId(e.target.value)}
+            >
+              <option value="">-- Chưa chỉ định GT1 --</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.fullName} {t.teacherCode ? `(${t.teacherCode})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <Label>Giám thị 2 (Phụ)</Label>
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+              value={assistantTeacherId}
+              onChange={(e) => setAssistantTeacherId(e.target.value)}
+            >
+              <option value="">-- Không có / Chưa xếp --</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.fullName} {t.teacherCode ? `(${t.teacherCode})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <Label>Giám thị hành lang (nếu có)</Label>
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+              value={hallTeacherId}
+              onChange={(e) => setHallTeacherId(e.target.value)}
+            >
+              <option value="">-- Không có / Chưa xếp --</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.fullName} {t.teacherCode ? `(${t.teacherCode})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setAssignSupModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleSaveSupervisorAssignment} loading={savingSupModal}>
+              Lưu Phân Công
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal 3: Chuyển Phòng Thi Cho Thí Sinh */}
+      <Modal
+        open={moveStudentModalOpen}
+        onOpenChange={setMoveStudentModalOpen}
+        title="Chuyển Phòng Thi Cho Thí Sinh"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl bg-muted/40 p-3 text-xs space-y-1">
+            <p>Thí sinh: <strong>{studentToMove?.studentName}</strong> (SBD: <strong>{studentToMove?.candidateNumber}</strong>)</p>
+            <p>Lớp: <strong>{studentToMove?.className}</strong></p>
+            <p>Phòng hiện tại: <strong>{rooms.find((r) => r.id === studentToMove?.examRoomId)?.roomCode} ({rooms.find((r) => r.id === studentToMove?.examRoomId)?.physicalRoomName})</strong></p>
+          </div>
+
+          <div>
+            <Label>Chọn phòng thi chuyển đến (cùng ca và khối) *</Label>
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm"
+              value={targetExamRoomId}
+              onChange={(e) => setTargetExamRoomId(e.target.value)}
+            >
+              <option value="">-- Chọn phòng thi đích --</option>
+              {rooms
+                .filter(
+                  (r) =>
+                    r.id !== studentToMove?.examRoomId &&
+                    r.slotId === studentToMove?.slotId &&
+                    Number(r.gradeLevel) === Number(studentToMove?.gradeLevel)
+                )
+                .map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.roomCode} — {r.physicalRoomName} (Hiện có: {r.studentCount} HS)
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setMoveStudentModalOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleSaveMoveStudent} loading={savingMoveStudent}>
+              Xác Nhận Chuyển Phòng
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>
