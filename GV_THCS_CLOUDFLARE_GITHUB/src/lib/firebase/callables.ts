@@ -507,3 +507,144 @@ const createDisciplineWeekCallable = callable<
 export async function createDisciplineWeek(input: CreateDisciplineWeekInput) {
   return (await createDisciplineWeekCallable(input)).data;
 }
+
+// ===============================================================
+// Module Xếp Lịch Kiểm Tra & Thi (Exam Scheduling Callables)
+// ===============================================================
+
+import type {
+  ExamSessionInput,
+  ExamSwapRequestInput,
+} from "@school/shared";
+
+export type AllocateStudentsInput = {
+  sessionId: string;
+  clearExisting?: boolean;
+};
+
+export type AssignSupervisorsInput = {
+  sessionId: string;
+  clearExisting?: boolean;
+};
+
+export type ReviewExamSwapInput = {
+  swapRequestId: string;
+  action: "approved" | "rejected";
+  reviewNote?: string;
+};
+
+const createOrUpdateExamSessionCallable = callable<
+  ExamSessionInput,
+  { success: boolean; sessionId: string; action: string }
+>("createOrUpdateExamSession");
+
+export async function createOrUpdateExamSession(input: ExamSessionInput) {
+  return (await createOrUpdateExamSessionCallable(input)).data;
+}
+
+const deleteExamSessionCallable = callable<
+  { sessionId: string },
+  { success: boolean; sessionId: string }
+>("deleteExamSession");
+
+export async function deleteExamSession(sessionId: string) {
+  return (await deleteExamSessionCallable({ sessionId })).data;
+}
+
+const generateExamRoomsAndSeatingCallable = callable<
+  AllocateStudentsInput,
+  { success: boolean; sessionId: string; totalRooms: number; totalStudentsAssigned: number }
+>("generateExamRoomsAndSeating");
+
+export async function generateExamRoomsAndSeating(input: AllocateStudentsInput) {
+  return (await generateExamRoomsAndSeatingCallable(input)).data;
+}
+
+const assignExamSupervisorsCallable = callable<
+  AssignSupervisorsInput,
+  { success: boolean; sessionId: string; totalSupervisorsAssigned: number; totalRoomsCovered: number; warnings: string[] }
+>("assignExamSupervisors");
+
+export async function assignExamSupervisors(input: AssignSupervisorsInput) {
+  return (await assignExamSupervisorsCallable(input)).data;
+}
+
+const requestExamSwapCallable = callable<
+  ExamSwapRequestInput,
+  { success: boolean; swapRequestId: string }
+>("requestExamSwap");
+
+export async function requestExamSwap(input: ExamSwapRequestInput) {
+  return (await requestExamSwapCallable(input)).data;
+}
+
+const reviewExamSwapCallable = callable<
+  ReviewExamSwapInput,
+  { success: boolean; status: string }
+>("reviewExamSwap");
+
+export async function reviewExamSwap(input: ReviewExamSwapInput) {
+  return (await reviewExamSwapCallable(input)).data;
+}
+
+import type { ExamSlotInput, ExamSubjectInput } from "@school/shared";
+
+const createOrUpdateExamSlotCallable = callable<
+  ExamSlotInput,
+  { success: boolean; slotId: string; action: string }
+>("createOrUpdateExamSlot");
+
+export async function createOrUpdateExamSlot(input: ExamSlotInput) {
+  return (await createOrUpdateExamSlotCallable(input)).data;
+}
+
+const deleteExamSlotCallable = callable<
+  { slotId: string },
+  { success: boolean; slotId: string }
+>("deleteExamSlot");
+
+export async function deleteExamSlot(slotId: string) {
+  return (await deleteExamSlotCallable({ slotId })).data;
+}
+
+const createOrUpdateExamSubjectCallable = callable<
+  ExamSubjectInput,
+  { success: boolean; examSubjectId: string; action: string }
+>("createOrUpdateExamSubject");
+
+export async function createOrUpdateExamSubject(input: ExamSubjectInput) {
+  return (await createOrUpdateExamSubjectCallable(input)).data;
+}
+
+const deleteExamSubjectCallable = callable<
+  { examSubjectId: string },
+  { success: boolean; examSubjectId: string }
+>("deleteExamSubject");
+
+export async function deleteExamSubject(examSubjectId: string) {
+  return (await deleteExamSubjectCallable({ examSubjectId })).data;
+}
+
+const finalizeExamDutyToPayrollCallable = callable<
+  { sessionId: string },
+  { success: boolean; message: string; totalDutiesRecorded: number; totalTeachers: number }
+>("finalizeExamDutyToPayroll");
+
+export async function finalizeExamDutyToPayroll(sessionId: string) {
+  return (await finalizeExamDutyToPayrollCallable({ sessionId })).data;
+}
+
+const getExamSwapCandidatesCallable = callable<{ assignmentId: string }, { assignments: Array<{ id: string; teacherId: string; teacherName: string; date: string; shiftNumber: number; role: string }> }>("getExamSwapCandidates");
+export async function getExamSwapCandidates(assignmentId: string) {
+  return (await getExamSwapCandidatesCallable({ assignmentId })).data.assignments;
+}
+
+const recordExamDutyAttendanceCallable = callable<{ assignmentId: string; checkinStatus: "not_started" | "present" | "late" | "absent" }, { success: boolean }>("recordExamDutyAttendance");
+export async function recordExamDutyAttendance(assignmentId: string, checkinStatus: "not_started" | "present" | "late" | "absent") {
+  return (await recordExamDutyAttendanceCallable({ assignmentId, checkinStatus })).data;
+}
+
+const configureExamPayrollRatesCallable = callable<{ chief: number; assistant: number; hall: number }, { success: boolean }>("configureExamPayrollRates");
+export async function configureExamPayrollRates(input: { chief: number; assistant: number; hall: number }) {
+  return (await configureExamPayrollRatesCallable(input)).data;
+}

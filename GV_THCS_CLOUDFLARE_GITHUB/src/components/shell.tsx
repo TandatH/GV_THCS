@@ -3,6 +3,7 @@
 import type { Role } from "@school/shared";
 import { collection, doc, limit, onSnapshot, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
 import {
+  ArrowLeftRight,
   Bell,
   BellRing,
   BookOpen,
@@ -109,6 +110,16 @@ const menuByRole: Record<Role, NavItem[]> = {
     { href: "/admin/semesters", label: "Học kỳ", icon: CalendarClock },
     { href: "/admin/time-slots", label: "Tiết học", icon: Clock3 },
     { href: "/admin/schedules", label: "Thời khóa biểu", icon: CalendarDays },
+    {
+      type: "group",
+      id: "exam-schedules",
+      label: "Lịch Kiểm Tra & Thi",
+      icon: CalendarClock,
+      children: [
+        { href: "/admin/exam-schedules", label: "Quản lý Đợt thi", icon: CalendarDays },
+        { href: "/admin/exam-schedules/swap-requests", label: "Duyệt đổi ca coi thi", icon: ArrowLeftRight },
+      ],
+    },
     { href: "/admin/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/admin/evaluations", label: "Đánh giá chuyên môn", icon: Star },
     { href: "/admin/payroll", label: "Chấm công & Lương", icon: WalletCards },
@@ -117,6 +128,16 @@ const menuByRole: Record<Role, NavItem[]> = {
   bgh: [
     { href: "/bgh/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/bgh/schedules", label: "Thời khóa biểu", icon: CalendarDays },
+    {
+      type: "group",
+      id: "bgh-exam-schedules",
+      label: "Lịch Kiểm Tra & Thi",
+      icon: CalendarClock,
+      children: [
+        { href: "/admin/exam-schedules", label: "Quản lý Đợt thi", icon: CalendarDays },
+        { href: "/admin/exam-schedules/swap-requests", label: "Duyệt đổi ca coi thi", icon: ArrowLeftRight },
+      ],
+    },
     { href: "/bgh/teachers", label: "Giáo viên", icon: UsersRound },
     { href: "/bgh/classes", label: "Lớp học", icon: GraduationCap },
     { href: "/bgh/subjects", label: "Môn học", icon: BookOpen },
@@ -149,6 +170,7 @@ const menuByRole: Record<Role, NavItem[]> = {
     { href: "/totruong/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/totruong/teachers", label: "Giáo viên tổ bộ môn", icon: UsersRound },
     { href: "/totruong/schedules", label: "Thời khóa biểu", icon: CalendarDays },
+    { href: "/teacher/exam-duty", label: "Lịch coi thi của tôi", icon: CalendarClock },
     { href: "/totruong/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/totruong/evaluations", label: "Đánh giá chuyên môn", icon: ClipboardCheck },
     {
@@ -173,6 +195,7 @@ const menuByRole: Record<Role, NavItem[]> = {
   giaovien: [
     { href: "/teacher/dashboard", label: "Tổng quan", icon: LayoutDashboard },
     { href: "/teacher/schedule", label: "Lịch dạy", icon: CalendarDays },
+    { href: "/teacher/exam-duty", label: "Lịch coi thi của tôi", icon: CalendarClock },
     { href: "/teacher/availability", label: "Đăng ký giờ trống", icon: BookOpenCheck },
     { href: "/teacher/leave-requests", label: "Đơn nghỉ phép", icon: CalendarClock },
     { href: "/teacher/evaluations", label: "Kết quả đánh giá", icon: Star },
