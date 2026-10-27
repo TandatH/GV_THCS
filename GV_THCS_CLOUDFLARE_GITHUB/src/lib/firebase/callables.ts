@@ -648,3 +648,56 @@ const configureExamPayrollRatesCallable = callable<{ chief: number; assistant: n
 export async function configureExamPayrollRates(input: { chief: number; assistant: number; hall: number }) {
   return (await configureExamPayrollRatesCallable(input)).data;
 }
+
+// Xếp thủ công: Đổi phòng học vật lý
+const updateExamRoomManualCallable = callable<
+  { sessionId: string; examRoomId: string; physicalRoomId: string },
+  { success: boolean; examRoomId: string; physicalRoomId: string; physicalRoomName: string }
+>("updateExamRoomManual");
+export async function updateExamRoomManual(input: { sessionId: string; examRoomId: string; physicalRoomId: string }) {
+  return (await updateExamRoomManualCallable(input)).data;
+}
+
+// Xếp thủ công: Phân công / Đổi giám thị phòng thi
+const assignExamSupervisorManualCallable = callable<
+  {
+    sessionId: string;
+    examRoomId: string;
+    chiefTeacherId?: string;
+    assistantTeacherId?: string;
+    hallTeacherId?: string;
+  },
+  { success: boolean; examRoomId: string; supervisorIds: string[]; hallSupervisorId: string }
+>("assignExamSupervisorManual");
+export async function assignExamSupervisorManual(input: {
+  sessionId: string;
+  examRoomId: string;
+  chiefTeacherId?: string;
+  assistantTeacherId?: string;
+  hallTeacherId?: string;
+}) {
+  return (await assignExamSupervisorManualCallable(input)).data;
+}
+
+// Xếp thủ công: Xóa phân công giám thị
+const deleteExamSupervisorAssignmentCallable = callable<
+  { sessionId: string; assignmentId: string },
+  { success: boolean; assignmentId: string }
+>("deleteExamSupervisorAssignment");
+export async function deleteExamSupervisorAssignment(input: { sessionId: string; assignmentId: string }) {
+  return (await deleteExamSupervisorAssignmentCallable(input)).data;
+}
+
+// Xếp thủ công: Chuyển thí sinh sang phòng khác
+const moveExamStudentAssignmentCallable = callable<
+  { sessionId: string; assignmentId: string; targetExamRoomId: string },
+  { success: boolean; assignmentId: string; targetExamRoomId: string; newDesk?: number }
+>("moveExamStudentAssignment");
+export async function moveExamStudentAssignment(input: {
+  sessionId: string;
+  assignmentId: string;
+  targetExamRoomId: string;
+}) {
+  return (await moveExamStudentAssignmentCallable(input)).data;
+}
+
