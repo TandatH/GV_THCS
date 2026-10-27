@@ -192,8 +192,7 @@ export default function ExamSchedulesPage() {
 
     setSaving(true);
     try {
-      await createOrUpdateExamSession({
-        id: editingSession?.id,
+      const payload: any = {
         code,
         name,
         schoolYearId,
@@ -207,11 +206,15 @@ export default function ExamSchedulesPage() {
         maxStudentsPerRoom: Number(maxStudents),
         mergeRemainderStudents: mergeRemainder,
         supervisorsPerRoom: Number(supervisorsPerRoom),
-        description,
+        description: description || "",
         createdBy: "",
         updatedBy: "",
         isActive: true,
-      });
+      };
+      if (editingSession?.id) {
+        payload.id = editingSession.id;
+      }
+      await createOrUpdateExamSession(payload);
 
       toast.success(editingSession ? "Cập nhật đợt thi thành công!" : "Tạo đợt kiểm tra mới thành công!");
       setModalOpen(false);
