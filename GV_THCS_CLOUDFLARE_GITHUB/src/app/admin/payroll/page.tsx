@@ -30,14 +30,14 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { finiteNumber, indexMonthlyCheckins, resolveTeachingAttendance, scheduledPeriodCount,
-  summarizePayrollRows, teacherAttendanceTotals, teacherPayrollAmounts, teacherPayrollStandards } from "@school/shared";
+  summarizePayrollRows, teacherAttendanceTotals, teacherPayrollAmounts, teacherPayrollStandards, summarizeExamPayroll } from "@school/shared";
 
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
-import { calculateMonthlyPayroll, firebaseErrorMessage } from "@/lib/firebase/callables";
+import { calculateMonthlyPayroll, configureExamPayrollRates, firebaseErrorMessage } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -94,6 +94,7 @@ function payrollSummaryPayload(row: TeacherPayrollSummaryRow) {
     differencePeriods: standardPeriods === null ? null : actualPeriods - standardPeriods,
     substituteCount: row.substituteCount, absentCount: row.absentCount, overtimePeriods: row.overtimePeriods,
     adjustmentAmount: row.adjustmentAmount, adjustmentReason: row.adjustmentReason,
+    examDutyCount: row.examDutyCount ?? 0, examSupervisionAmount: row.examSupervisionAmount ?? 0, requiresExamRateReview: row.requiresExamRateReview ?? false,
     amount: row.totalAmount, totalAmount: row.totalAmount, calculationVersion: 3,
   };
 }
@@ -134,6 +135,12 @@ export default function AdminPayrollPage() {
   const [checkins, setCheckins] = useState<Row[]>([]);
   const [payrollRows, setPayrollRows] = useState<Row[]>([]);
   const [payrollSettings, setPayrollSettings] = useState<Row | null>(null);
+  const [examRates, setExamRates] = useState({ chief: "", assistant: "", hall: "" });
+  const [savingExamRates, setSavingExamRates] = useState(false);
+  useEffect(() => {
+    const rates = payrollSettings?.examSupervisionRates ?? {};
+    setExamRates({ chief: String(rates.chief ?? ""), assistant: String(rates.assistant ?? ""), hall: String(rates.hall ?? "") });
+  }, [payrollSettings]);
   const [auditRows, setAuditRows] = useState<Row[]>([]);
 
   // Loading & State flags
@@ -449,6 +456,7 @@ export default function AdminPayrollPage() {
         // Cơ hữu/thỉnh giảng cùng công thức, không trừ định mức và không lấy amount cũ.
         const { primaryRate, secondaryRate, primaryAmount, secondaryAmount, adjustmentAmount, totalAmount } =
           teacherPayrollAmounts(teacher, totals, payrollDoc, payrollSettings ?? {});
+        const exam = summarizeExamPayroll(teacher.id, selectedMonth, checkins, payrollSettings?.examSupervisionRates);
         const adjustmentReason = String(payrollDoc?.adjustmentReason || "");
 
         const status: PayrollApprovalStatus = (payrollDoc?.status as PayrollApprovalStatus) || "pending_approval";
@@ -480,7 +488,8 @@ export default function AdminPayrollPage() {
           overtimePeriods,
           adjustmentAmount,
           adjustmentReason,
-          totalAmount,
+          ...exam,
+          totalAmount: totalAmount + exam.examSupervisionAmount,
           status,
           approvedBy: payrollDoc?.approvedBy,
           approvedAt: payrollDoc?.approvedAt,
@@ -491,6 +500,7 @@ export default function AdminPayrollPage() {
       .sort((a, b) => a.teacherName.localeCompare(b.teacherName, "vi"));
   }, [
     departmentById,
+    checkins,
     monthProcessedSchedules,
     payrollByTeacherId,
     payrollSettings,
@@ -920,6 +930,7 @@ export default function AdminPayrollPage() {
   async function handleQuickApprove(row: TeacherPayrollSummaryRow) {
     if (!user || loading || error) return;
     if (row.status === "locked" || row.status === "paid") return;
+    if (row.requiresExamRateReview) { toast.error("Cần cấu hình đủ đơn giá coi thi trước khi phê duyệt."); return; }
     setActionLoading(true);
     try {
       const nextStatus: PayrollApprovalStatus = row.status === "approved" ? "pending_approval" : "approved";
@@ -952,6 +963,7 @@ export default function AdminPayrollPage() {
   // Principal Batch Approve All
   async function handleApproveAllPending() {
     if (!user || loading || error) return;
+    if (filteredSummaryRows.some((r) => r.requiresExamRateReview)) { toast.error("Cần cấu hình đủ đơn giá coi thi trước khi duyệt thù lao."); return; }
     const pendingRows = filteredSummaryRows.filter(
       (r) => r.status === "pending_approval" || r.status === "draft" || r.status === "review_required"
     );
@@ -1035,12 +1047,13 @@ export default function AdminPayrollPage() {
     if (!user || !principalEditRow || loading || error) return;
     const currentRow = allTeacherPayrollRows.find((row) => row.payrollDocId === principalEditRow.payrollDocId);
     if (!currentRow || currentRow.status === "locked" || currentRow.status === "paid") return;
+    if (data.status === "approved" && currentRow.requiresExamRateReview) { toast.error("Cần cấu hình đơn giá coi thi trước khi phê duyệt."); return; }
     setActionLoading(true);
     try {
       const ref = doc(firestore, "payroll", principalEditRow.payrollDocId);
       // Có tiết có tiền cho cả cơ hữu và thỉnh giảng; không trả phần vượt định mức.
       const newAmount = currentRow.primaryActual * data.primaryRate
-        + currentRow.secondaryActual * data.secondaryRate + data.adjustmentAmount;
+        + currentRow.secondaryActual * data.secondaryRate + data.adjustmentAmount + (currentRow.examSupervisionAmount ?? 0);
 
       await setDoc(
         ref,
@@ -1629,6 +1642,22 @@ export default function AdminPayrollPage() {
             </div>
           }
         >
+          <div className="mb-5 space-y-3 rounded-xl border border-border p-4">
+            <p className="font-semibold">Đơn giá coi thi / ca (VND)</p>
+            <div className="grid grid-cols-3 gap-3">
+              {(["chief", "assistant", "hall"] as const).map((role) => <div key={role}>
+                <Label>{role === "chief" ? "Giám thị 1" : role === "assistant" ? "Giám thị 2" : "Hành lang"}</Label>
+                <Input type="number" min={0} value={examRates[role]} onChange={(event) => setExamRates((previous) => ({ ...previous, [role]: event.target.value }))} />
+              </div>)}
+            </div>
+            <Button loading={savingExamRates} onClick={async () => {
+              if (Object.values(examRates).some((value) => !value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0)) { toast.error("Vui lòng nhập đủ ba đơn giá không âm."); return; }
+              setSavingExamRates(true);
+              try { await configureExamPayrollRates({ chief: Number(examRates.chief), assistant: Number(examRates.assistant), hall: Number(examRates.hall) }); toast.success("Đã lưu đơn giá coi thi."); }
+              catch (error) { toast.error(firebaseDataErrorMessage(error)); }
+              finally { setSavingExamRates(false); }
+            }}>Lưu đơn giá coi thi</Button>
+          </div>
           <div className="grid gap-5 lg:grid-cols-[.9fr_1.1fr]">
             <div className="space-y-4">
               <div>

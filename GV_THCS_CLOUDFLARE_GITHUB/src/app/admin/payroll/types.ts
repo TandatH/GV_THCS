@@ -69,6 +69,9 @@ export interface TeacherPayrollSummaryRow {
   overtimePeriods: number;
   adjustmentAmount: number;
   adjustmentReason: string;
+  examDutyCount?: number;
+  examSupervisionAmount?: number;
+  requiresExamRateReview?: boolean;
   totalAmount: number;
   status: PayrollApprovalStatus;
   approvedBy?: string;

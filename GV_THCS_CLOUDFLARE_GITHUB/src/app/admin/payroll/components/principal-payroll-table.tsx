@@ -91,6 +91,8 @@ export function PrincipalPayrollTable({ rows, onOpenEdit, onQuickApprove, onOpen
                   <td className="px-2 py-2 text-right align-top">
                     <p className="whitespace-nowrap text-sm font-bold text-primary" title={`${row.primaryActual} × ${formatCurrency(row.primaryRate)} + ${row.secondaryActual} × ${formatCurrency(row.secondaryRate)} + ${formatCurrency(row.adjustmentAmount)}`}>{formatCurrency(row.totalAmount)}</p>
                     {row.adjustmentAmount !== 0 ? <p className={cn("mt-1 whitespace-nowrap text-[10px]", row.adjustmentAmount > 0 ? "text-emerald-700" : "text-rose-700")} title={row.adjustmentReason}>Điều chỉnh: {row.adjustmentAmount > 0 ? "+" : ""}{formatCurrency(row.adjustmentAmount)}</p> : null}
+                    {row.examDutyCount ? <p className="mt-1 text-[10px]">Coi thi: {row.examDutyCount} ca · {formatCurrency(row.examSupervisionAmount ?? 0)}</p> : null}
+                    {row.requiresExamRateReview ? <p className="mt-1 text-[10px] text-amber-700">Cần cấu hình đơn giá coi thi</p> : null}
                   </td>
                   <td className="px-2 py-2 text-center align-top"><Badge tone={payrollStatusBadgeTone(row.status)}>{payrollStatusLabelVi(row.status)}</Badge></td>
                   <td className="sticky right-0 z-10 bg-card px-2 py-2 align-top shadow-[-4px_0_8px_rgba(0,0,0,0.05)] group-hover:bg-muted">

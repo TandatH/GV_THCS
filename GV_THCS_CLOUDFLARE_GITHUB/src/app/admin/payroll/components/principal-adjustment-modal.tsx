@@ -59,10 +59,11 @@ export function PrincipalAdjustmentModal({
 
   // Real-time calculation of new estimated amount
   // Cơ hữu và thỉnh giảng cùng nhận tiền theo tiết thực dạy đã xác nhận.
-  const { primaryAmount: newPrimaryAmount, secondaryAmount: newSecondaryAmount, totalAmount: newTotalAmount } =
+  const { primaryAmount: newPrimaryAmount, secondaryAmount: newSecondaryAmount, totalAmount: teachingTotalAmount } =
     teacherPayrollAmounts({}, { primaryActual, secondaryActual, actualPeriods: primaryActual + secondaryActual,
       substituteCount: row.substituteCount, absentCount: row.absentCount },
     { overridePrimaryRate: primaryRate, overrideSecondaryRate: secondaryRate, adjustmentAmount });
+  const newTotalAmount = teachingTotalAmount + (row.examSupervisionAmount ?? 0);
 
   const handleSubmit = async () => {
     if (adjustmentAmount !== 0 && !adjustmentReason.trim()) {
