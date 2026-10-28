@@ -1594,7 +1594,7 @@ export const examSessionSchema = z.object({
   endDate: z.string().date(),
   status: z.enum(examSessionStatuses).default("draft"),
   seatingArrangementType: z.enum(seatingArrangementTypes).default("mixed_grade_abc"),
-  maxStudentsPerRoom: z.preprocess((val) => (val === null || val === "" || val === undefined ? 24 : Number(val)), z.number().int().min(10, "Sĩ số tối thiểu là 10").max(60, "Sĩ số tối đa là 60").default(24)),
+  maxStudentsPerRoom: z.preprocess((val) => (val === null || val === "" || val === undefined ? 24 : Number(val)), z.number().int().min(10, "Sĩ số tối thiểu là 10").max(500, "Sĩ số tối đa là 500").default(24)),
   mergeRemainderStudents: z.preprocess((val) => Boolean(val), z.boolean().default(false)),
   supervisorsPerRoom: z.preprocess((val) => (val === null || val === "" || val === undefined ? 2 : Number(val)), z.number().int().min(1, "Số giám thị mỗi phòng tối thiểu là 1").max(3, "Số giám thị mỗi phòng tối đa là 3").default(2)),
   description: z.preprocess((val) => (val === null ? "" : val), z.string().trim().max(500).optional().default("")),
