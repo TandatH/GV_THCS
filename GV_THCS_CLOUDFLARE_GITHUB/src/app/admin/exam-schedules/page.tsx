@@ -620,7 +620,10 @@ export default function ExamSchedulesPage() {
                     min={1}
                     max={3}
                     value={supervisorsPerRoom}
-                    onChange={(e) => setSupervisorsPerRoom(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setSupervisorsPerRoom(isNaN(val) ? 2 : Math.max(1, Math.min(3, val)));
+                    }}
                   />
                 </div>
               </div>

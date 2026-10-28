@@ -28,6 +28,7 @@ import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
+import { cn } from "@/lib/utils";
 
 type Row = DocumentData & { id: string };
 
@@ -53,8 +54,9 @@ function rowSchoolLevel(row: Row) {
 }
 
 export default function BghDashboardPage() {
-  const { claims, loading: authLoading } = useAuth();
-  const bghPosition = claims?.bghPosition === "hieutruong" ? "Hiệu trưởng" : "Phó Hiệu trưởng";
+  const { claims, role, loading: authLoading } = useAuth();
+  const isPrincipal = (role === "bgh" && claims?.bghPosition === "hieutruong") || role === "admin";
+  const bghPosition = isPrincipal ? "Hiệu trưởng" : "Phó Hiệu trưởng";
   const schoolLevel = (typeof claims?.schoolLevel === "string" ? claims.schoolLevel : "secondary") as "primary" | "secondary" | "all";
 
   const levelLabel = schoolLevel === "primary"
@@ -148,7 +150,7 @@ export default function BghDashboardPage() {
               <Button variant="secondary" asChild>
                 <Link href="/bgh/teachers">
                   <UsersRound className="h-4 w-4 text-emerald-600" />
-                  Giáo viên
+                  {isPrincipal ? "Hồ sơ Giáo viên" : "Phân công Chuyên môn"}
                 </Link>
               </Button>
               <Button asChild>
@@ -168,22 +170,38 @@ export default function BghDashboardPage() {
         ) : null}
 
         {/* Scope and Role Notice */}
-        <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/90 to-indigo-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className={cn(
+            "mb-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between",
+            isPrincipal
+              ? "border-blue-200/80 bg-gradient-to-r from-blue-50/90 to-indigo-50/70"
+              : "border-amber-200/80 bg-gradient-to-r from-amber-50/90 to-orange-50/70",
+          )}
+        >
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-500/30">
+            <div
+              className={cn(
+                "grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white shadow-sm",
+                isPrincipal ? "bg-blue-600 shadow-blue-500/30" : "bg-amber-600 shadow-amber-500/30",
+              )}
+            >
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-bold text-blue-950">
+              <p className={cn("text-sm font-bold", isPrincipal ? "text-blue-950" : "text-amber-950")}>
                 Vai trò: {bghPosition} · Phạm vi phụ trách: {levelLabel}
               </p>
-              <p className="text-xs text-blue-800/80">
-                Chế độ theo dõi chuyên môn · Số liệu được tổng hợp tự động theo cấp học phụ trách.
+              <p className={cn("text-xs", isPrincipal ? "text-blue-800/80" : "text-amber-800/80")}>
+                {isPrincipal
+                  ? "Chế độ Toàn quyền BGH · Tra cứu đầy đủ hồ sơ nhân sự, phân công giảng dạy và duyệt bảng lương."
+                  : "Chế độ Quản lý Chuyên môn · Theo dõi hoạt động giảng dạy, môn dạy và thời khóa biểu (thông tin cá nhân bảo mật)."}
               </p>
             </div>
           </div>
           <div>
-            <Badge tone="info">Ban Giám hiệu</Badge>
+            <Badge tone={isPrincipal ? "info" : "warning"}>
+              {isPrincipal ? "Toàn quyền BGH" : "Chuyên môn BGH"}
+            </Badge>
           </div>
         </div>
 
@@ -296,8 +314,14 @@ export default function BghDashboardPage() {
                 <UsersRound className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold group-hover:text-emerald-600 transition">Hồ sơ Giáo viên</h3>
-                <p className="text-xs text-muted-foreground">Danh bạ, chuyên môn, phân công môn/khối và định mức tiết.</p>
+                <h3 className="font-bold group-hover:text-emerald-600 transition">
+                  {isPrincipal ? "Hồ sơ Giáo viên" : "Phân công Chuyên môn"}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {isPrincipal
+                    ? "Danh bạ, lý lịch, tài khoản, chuyên môn, phân công môn/khối và định mức tiết."
+                    : "Danh sách giáo viên, tổ bộ môn, môn giảng dạy và lớp chủ nhiệm."}
+                </p>
               </div>
             </div>
           </Link>

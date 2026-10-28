@@ -502,14 +502,31 @@ function ExamSessionDetailContent() {
 
   const handleSaveSupervisorAssignment = async () => {
     if (!roomToAssignSup) return;
+    const chief = chiefTeacherId.trim();
+    const assistant = assistantTeacherId.trim();
+    const hall = hallTeacherId.trim();
+
+    if (chief && assistant && chief === assistant) {
+      toast.error("Giám thị 1 và Giám thị 2 không được là cùng một giáo viên.");
+      return;
+    }
+    if (chief && hall && chief === hall) {
+      toast.error("Giám thị 1 và Giám thị hành lang không được là cùng một giáo viên.");
+      return;
+    }
+    if (assistant && hall && assistant === hall) {
+      toast.error("Giám thị 2 và Giám thị hành lang không được là cùng một giáo viên.");
+      return;
+    }
+
     setSavingSupModal(true);
     try {
       await assignExamSupervisorManual({
         sessionId,
         examRoomId: roomToAssignSup.id,
-        chiefTeacherId: chiefTeacherId || undefined,
-        assistantTeacherId: assistantTeacherId || undefined,
-        hallTeacherId: hallTeacherId || undefined,
+        chiefTeacherId: chief || undefined,
+        assistantTeacherId: assistant || undefined,
+        hallTeacherId: hall || undefined,
       });
       toast.success("Cập nhật giám thị thành công!");
       setAssignSupModalOpen(false);

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   AlertTriangle,
   Calculator,
@@ -10,6 +12,7 @@ import {
   FileCheck,
   RotateCcw,
   Search,
+  ShieldAlert,
   Sparkles,
   Users,
   XCircle,
@@ -100,10 +103,11 @@ function payrollSummaryPayload(row: TeacherPayrollSummaryRow) {
 }
 
 export default function AdminPayrollPage() {
-  const { user, role } = useAuth();
+  const { user, role, claims } = useAuth();
 
   // Role flags (RBAC)
-  const isPrincipal = role === "bgh";
+  const isPrincipal = (role === "bgh" && claims?.bghPosition === "hieutruong") || role === "admin";
+  const isBghNonPrincipal = role === "bgh" && claims?.bghPosition !== "hieutruong";
   const isAdmin = role === "admin";
   const canEditPayroll = isPrincipal || isAdmin;
   const showAuditLog = !isPrincipal; // ẨN HOÀN TOÀN AUDIT LOG đối với Hiệu trưởng
@@ -1169,6 +1173,40 @@ export default function AdminPayrollPage() {
 
   function setYearPart(year: string) {
     setSelectedMonth(`${year}-${selectedMonthNumber}`);
+  }
+
+  if (isBghNonPrincipal) {
+    return (
+      <RoleGuard allowedRoles={["admin", "bgh"]}>
+        <Shell>
+          <PageHeader
+            eyebrow="Ban Giám Hiệu · Quản lý Chuyên môn"
+            title="Chấm công & Bảng lương"
+            description="Chức năng quản lý tài chính và phê duyệt bảng lương."
+          />
+          <Card className="mx-auto mt-8 max-w-lg p-8 text-center border-amber-200 bg-amber-50/40">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 shadow-sm">
+              <ShieldAlert className="h-7 w-7" />
+            </div>
+            <h2 className="mt-4 text-lg font-bold text-foreground">Giới hạn quyền truy cập</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Tài khoản <span className="font-semibold text-foreground">Phó Hiệu trưởng</span> chỉ phụ trách theo dõi chuyên môn, tổ bộ môn và môn giảng dạy của giáo viên.
+            </p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Chức năng Chấm công &amp; Bảng lương chỉ dành riêng cho <span className="font-semibold text-foreground">Hiệu trưởng</span> và <span className="font-semibold text-foreground">Quản trị viên</span>.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button asChild variant="secondary">
+                <Link href="/bgh/dashboard">Về bảng điều khiển</Link>
+              </Button>
+              <Button asChild>
+                <Link href="/bgh/teachers">Xem phân công chuyên môn</Link>
+              </Button>
+            </div>
+          </Card>
+        </Shell>
+      </RoleGuard>
+    );
   }
 
   return (
