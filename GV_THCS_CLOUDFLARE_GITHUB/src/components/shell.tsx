@@ -265,6 +265,32 @@ function formatRoleLabel(role: Role | null, claims: Record<string, unknown> | nu
   return `${roleLabel[role]}${teachingSuffix}`;
 }
 
+function getNavItemsForRole(role: Role | null, claims: Record<string, unknown> | null): NavItem[] {
+  if (!role) return [];
+  const base = menuByRole[role] || [];
+  if (role === "bgh") {
+    const isPrincipal = claims?.bghPosition === "hieutruong";
+    return base
+      .filter((item) => {
+        // Phó Hiệu trưởng chỉ quản lý chuyên môn, không xem chấm công & lương
+        if (!isPrincipal && "href" in item && item.href === "/bgh/payroll") {
+          return false;
+        }
+        return true;
+      })
+      .map((item) => {
+        if ("href" in item && item.href === "/bgh/teachers") {
+          return {
+            ...item,
+            label: isPrincipal ? "Hồ sơ giáo viên" : "Phân công chuyên môn",
+          };
+        }
+        return item;
+      });
+  }
+  return base;
+}
+
 function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -275,7 +301,10 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
     { href: "/discipline/my-records", label: "Lịch sử ghi nhận", icon: History },
     { href: "/teacher/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ];
-  const items = isSaoDo ? saoDoItems : (role ? menuByRole[role] : []);
+  const items = useMemo(() => {
+    if (isSaoDo) return saoDoItems;
+    return getNavItemsForRole(role, claims);
+  }, [claims, isSaoDo, role, saoDoItems]);
   const hasTeachingProfile = !isSaoDo && Boolean(claims?.teacherId) && role !== "giaovien";
   const teachingItems = [
     { href: "/teacher/schedule", label: "Lịch giảng dạy", icon: CalendarDays },
@@ -574,7 +603,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const current = useMemo(() => {
     if (!role) return null;
-    const baseItems = menuByRole[role] || [];
+    const baseItems = getNavItemsForRole(role, claims);
     const flattened: { href: string; label: string }[] = [];
     for (const item of baseItems) {
       if (isMenuGroup(item)) {
@@ -591,7 +620,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return [...flattened, ...teachingItems].find(
       (item) => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)),
     );
-  }, [pathname, role, claims?.teacherId]);
+  }, [pathname, role, claims]);
 
   useEffect(() => {
     if (!user) {

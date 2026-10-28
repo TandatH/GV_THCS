@@ -71,6 +71,56 @@ export function getTeacherSubjectNames(teacher: TeacherRow, subjectsList: Catalo
   return names.length > 0 ? names.join(", ") : "—";
 }
 
+export type TeacherDetailedSubject = {
+  subjectName: string;
+  gradeLevels: number[];
+};
+
+export function getTeacherDetailedAssignments(
+  teacher: TeacherRow,
+  subjectsList: CatalogRow[],
+): TeacherDetailedSubject[] {
+  const map = new Map<string, number[]>();
+  const assignments = Array.isArray(teacher.teachingAssignments) ? teacher.teachingAssignments : [];
+
+  for (const item of assignments) {
+    if (item && item.subjectId) {
+      const subjectId = String(item.subjectId).trim();
+      const rawGrades = Array.isArray(item.gradeLevels) ? item.gradeLevels : [];
+      const gradeSet = new Set<number>();
+      for (const g of rawGrades) {
+        const num = Number(g);
+        if (Number.isInteger(num) && num >= 1 && num <= 12) {
+          gradeSet.add(num);
+        }
+      }
+      const grades: number[] = Array.from(gradeSet).sort((a, b) => a - b);
+      map.set(subjectId, grades);
+    }
+  }
+
+  const rawSubjectIds: string[] = Array.isArray(teacher.subjectIds)
+    ? teacher.subjectIds.map(String)
+    : typeof teacher.subjectIds === "string"
+      ? teacher.subjectIds.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+
+  for (const id of rawSubjectIds) {
+    if (!map.has(id)) {
+      map.set(id, []);
+    }
+  }
+
+  const results: TeacherDetailedSubject[] = [];
+  for (const [subId, grades] of map.entries()) {
+    const s = subjectsList.find((item) => item.id === subId);
+    const subjectName = textValue(s?.name) || textValue(s?.code) || subId;
+    results.push({ subjectName, gradeLevels: grades });
+  }
+
+  return results;
+}
+
 export function getTeacherHomeroomClassNames(teacherId: string, classesList: CatalogRow[]): string {
   const homerooms = classesList
     .filter((c) => c.homeroomTeacherId === teacherId)
@@ -651,4 +701,125 @@ ${secondaryTeachers.map((t, idx) => teacherToXml(t, idx)).join("\n")}
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   toast.success(`Đã xuất file XML thông tin giáo viên Tam Hà (${teachersList.length} giáo viên) thành công!`);
+}
+
+/**
+ * Xuất danh sách chuyên môn giáo viên (Dành cho Phó Hiệu Trưởng Quản lý Chuyên môn)
+ * Chỉ xuất thông tin chuyên môn, môn giảng dạy, khối lớp, lớp CN.
+ * Tuyệt đối KHÔNG xuất: SĐT, Email cá nhân, Ngày sinh, Tôn giáo, Địa chỉ, Số TK, Ngân hàng, Tiết chuẩn, Đơn giá lương.
+ */
+export async function exportTeachersChuyenMonToExcel(
+  teachersList: TeacherRow[],
+  classesList: CatalogRow[],
+  subjectsList: CatalogRow[],
+  departmentsList: CatalogRow[],
+  schoolYearName = "2025 - 2026",
+) {
+  const cleanYearText = schoolYearName.toUpperCase().startsWith("NĂM HỌC")
+    ? schoolYearName.toUpperCase()
+    : `NĂM HỌC ${schoolYearName}`;
+
+  function getDepartmentName(dId: unknown): string {
+    const d = departmentsList.find((item) => item.id === dId);
+    return textValue(d?.name) || textValue(d?.code) || (typeof dId === "string" ? dId : "—");
+  }
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Phổ Cập Tam Hà - Quản lý Chuyên môn";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet("Phân công Chuyên môn", {
+    views: [{ showGridLines: true }],
+  });
+
+  const headers = [
+    "STT",
+    "Mã GV",
+    "Họ và tên giáo viên",
+    "Cấp học",
+    "Tổ bộ môn",
+    "Môn giảng dạy (GVBM)",
+    "Khối lớp phân công",
+    "Lớp chủ nhiệm (GVCN)",
+    "Chuyên môn đào tạo",
+    "Hình thức",
+    "Trạng thái công tác",
+  ];
+
+  const colWidths = [7, 14, 28, 16, 24, 30, 22, 22, 26, 16, 18];
+  colWidths.forEach((w, i) => {
+    ws.getColumn(i + 1).width = w;
+  });
+
+  addSheetHeader(ws, "DANH SÁCH GIÁO VIÊN & PHÂN CÔNG CHUYÊN MÔN GIẢNG DẠY", cleanYearText, headers.length);
+
+  const headerRow = ws.getRow(4);
+  headerRow.values = headers;
+  headerRow.height = 30;
+  for (let c = 1; c <= headers.length; c++) {
+    const cell = headerRow.getCell(c);
+    cell.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+    cell.border = thinBorder;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+
+  teachersList.forEach((teacher, idx) => {
+    const homeroomClasses = getTeacherHomeroomClassNames(teacher.id, classesList);
+    const detailed = getTeacherDetailedAssignments(teacher, subjectsList);
+    const subjectNamesStr = detailed.map((d) => d.subjectName).join(", ") || "—";
+    const gradeScopesStr = detailed
+      .filter((d) => d.gradeLevels.length > 0)
+      .map((d) => `${d.subjectName}: K${d.gradeLevels.join(", ")}`)
+      .join("; ") || "Toàn khối";
+    const levels = normalizeSchoolLevels(teacher.schoolLevels);
+    const levelText = levels.length === 2 ? "Tiểu học + THCS" : levels[0] === "primary" ? "Tiểu học" : "THCS";
+    const departmentName = getDepartmentName(teacher.departmentId);
+
+    const values = [
+      idx + 1,
+      teacher.teacherCode || teacher.id,
+      teacher.fullName || "",
+      levelText,
+      departmentName,
+      subjectNamesStr,
+      gradeScopesStr,
+      homeroomClasses ? `Lớp ${homeroomClasses}` : "—",
+      teacher.specialization || "—",
+      teacher.teacherType === "co_huu" ? "Cơ hữu" : "Thỉnh giảng",
+      teacher.status === "inactive" ? "Ngừng hoạt động" : "Đang công tác",
+    ];
+
+    const row = ws.addRow(values);
+    row.height = 24;
+    const bg = idx % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
+
+    for (let c = 1; c <= headers.length; c++) {
+      const cell = row.getCell(c);
+      cell.font = { name: FONT_NAME, size: 10, color: { argb: "FF0F172A" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      cell.border = thinBorder;
+      const isCenter = [1, 2, 4, 10, 11].includes(c);
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: isCenter ? "center" : "left",
+        wrapText: !isCenter,
+      };
+    }
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `DANH_SACH_CHUYEN_MON_GIAO_VIEN_${dateStr}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast.success(`Đã xuất danh sách chuyên môn (${teachersList.length} giáo viên) thành công!`);
 }
