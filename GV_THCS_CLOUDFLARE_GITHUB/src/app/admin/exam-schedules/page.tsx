@@ -608,7 +608,7 @@ export default function ExamSchedulesPage() {
                   <Input
                     type="number"
                     min={10}
-                    max={50}
+                    max={500}
                     value={maxStudents}
                     onChange={(e) => setMaxStudents(Number(e.target.value))}
                   />
