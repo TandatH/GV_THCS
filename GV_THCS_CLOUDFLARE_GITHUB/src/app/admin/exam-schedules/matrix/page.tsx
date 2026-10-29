@@ -115,16 +115,20 @@ function ExamMatrixContent() {
     return examSubjects.find((s) => s.slotId === slotId && s.gradeLevel === grade);
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!session) return;
-    exportExamMasterScheduleExcel({
-      session,
-      slots,
-      subjects: examSubjects,
-      rooms,
-      supervisors,
-    });
-    toast.success("Đã xuất file Excel tổng hợp lịch thi!");
+    try {
+      await exportExamMasterScheduleExcel({
+        session,
+        slots,
+        subjects: examSubjects,
+        rooms,
+        supervisors,
+      });
+      toast.success("Đã xuất file Excel tổng hợp lịch thi!");
+    } catch (err: any) {
+      toast.error("Không thể xuất file Excel tổng hợp.");
+    }
   };
 
   if (!sessionId) {

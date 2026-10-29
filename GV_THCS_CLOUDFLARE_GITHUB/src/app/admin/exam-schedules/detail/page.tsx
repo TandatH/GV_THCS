@@ -19,12 +19,14 @@ import {
   Clock,
   DoorOpen,
   Download,
+  FileSpreadsheet,
   GraduationCap,
   Layers,
   LayoutGrid,
   MoveRight,
   Pencil,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   Sparkles,
@@ -72,6 +74,7 @@ import { firebaseFunctions, firestore } from "@/lib/firebase/client";
 import {
   exportExamMasterScheduleExcel,
   exportExamRoomRosterExcel,
+  exportAllExamRoomsExcel,
 } from "@/lib/exports/exam-excel";
 
 const updateExamRoomManual = async (input: { sessionId: string; examRoomId: string; physicalRoomId: string }) => {
@@ -176,6 +179,10 @@ function ExamSessionDetailContent() {
   const [studentToMove, setStudentToMove] = useState<ExamStudentAssignment | null>(null);
   const [targetExamRoomId, setTargetExamRoomId] = useState("");
   const [savingMoveStudent, setSavingMoveStudent] = useState(false);
+
+  // Exporting states
+  const [exportingMaster, setExportingMaster] = useState(false);
+  const [exportingAllRooms, setExportingAllRooms] = useState(false);
 
   // Filter & Search
   const [roomSearchQuery, setRoomSearchQuery] = useState("");
@@ -411,16 +418,56 @@ function ExamSessionDetailContent() {
     }
   };
 
-  const handleExportMasterExcel = () => {
+  const handleExportMasterExcel = async () => {
     if (!session) return;
-    exportExamMasterScheduleExcel({
-      session,
-      slots,
-      subjects: examSubjects,
-      rooms,
-      supervisors,
-    });
-    toast.success("Đã xuất file Excel tổng hợp lịch thi!");
+    setExportingMaster(true);
+    try {
+      await exportExamMasterScheduleExcel({
+        session,
+        slots,
+        subjects: examSubjects,
+        rooms,
+        supervisors,
+      });
+      toast.success("Đã xuất file Excel tổng hợp lịch thi!");
+    } catch (err: any) {
+      toast.error("Không thể xuất file Excel tổng hợp.");
+    } finally {
+      setExportingMaster(false);
+    }
+  };
+
+  const handleExportAllRooms = async () => {
+    if (!session || rooms.length === 0) {
+      toast.error("Chưa có phòng thi nào để xuất.");
+      return;
+    }
+    setExportingAllRooms(true);
+    try {
+      const q = query(
+        collection(firestore, "examStudentAssignments"),
+        where("sessionId", "==", sessionId)
+      );
+      const snap = await getDocs(q);
+      const allStudents: ExamStudentAssignment[] = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      await exportAllExamRoomsExcel({
+        session,
+        rooms,
+        subjects: examSubjects,
+        slots,
+        supervisors,
+        allStudents,
+      });
+      toast.success(`Đã xuất toàn bộ ${rooms.length} phòng thi ra file Excel (mỗi phòng 1 Sheet chuẩn in A4)!`);
+    } catch (err: any) {
+      toast.error("Không thể xuất file Excel toàn bộ phòng thi.");
+    } finally {
+      setExportingAllRooms(false);
+    }
   };
 
   const handleExportSingleRoom = async (room: ExamRoom) => {
@@ -438,7 +485,7 @@ function ExamSessionDetailContent() {
         .map((sup) => `${sup.teacherName} (${sup.role === "chief" ? "Giám thị 1" : "Giám thị 2"})`)
         .join(", ");
 
-      exportExamRoomRosterExcel({
+      await exportExamRoomRosterExcel({
         session,
         room,
         subjectName: sub?.subjectName || "Môn thi",
@@ -454,7 +501,7 @@ function ExamSessionDetailContent() {
         supervisorsText: roomSupervisors,
       });
 
-      toast.success(`Đã xuất danh sách phòng thi ${room.roomCode}!`);
+      toast.success(`Đã xuất danh sách phòng thi ${room.roomCode} (chuẩn in A4)!`);
     } catch (err: any) {
       toast.error("Không thể xuất file Excel phòng thi.");
     }
@@ -647,9 +694,25 @@ function ExamSessionDetailContent() {
               Phân Giám Thị
             </Button>
 
-            <Button variant="secondary" size="sm" onClick={handleExportMasterExcel}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportMasterExcel}
+              loading={exportingMaster}
+            >
               <Download className="h-4 w-4 text-emerald-600" />
               Xuất Excel Tổng Hợp
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportAllRooms}
+              loading={exportingAllRooms}
+              disabled={rooms.length === 0}
+            >
+              <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+              Xuất Tất Cả Phòng Thi
             </Button>
 
             <Button
