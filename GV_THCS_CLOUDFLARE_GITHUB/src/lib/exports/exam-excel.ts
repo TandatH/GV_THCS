@@ -9,6 +9,7 @@ import type {
 } from "@school/shared";
 
 const FONT_NAME = "Times New Roman";
+const SCHOOL_NAME = "TRƯỜNG PHỔ CẬP TAM HÀ";
 
 const thinBorder: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: "FF333333" } },
@@ -88,7 +89,7 @@ export function buildRoomRosterWorksheet(
 
   // Dòng 1: Tiêu đề cơ quan & Quốc hiệu
   const r1 = ws.addRow([
-    "TRƯỜNG TRUNG HỌC CƠ SỞ",
+    SCHOOL_NAME,
     "",
     "",
     "",
@@ -456,7 +457,7 @@ export async function exportExamMasterScheduleExcel(params: {
   ];
 
   // Header cơ quan
-  const sR1 = wsSchedule.addRow(["TRƯỜNG TRUNG HỌC CƠ SỞ", "", "", "", "", "", "", "", ""]);
+  const sR1 = wsSchedule.addRow([SCHOOL_NAME, "", "", "", "", "", "", "", ""]);
   sR1.height = 20;
   wsSchedule.mergeCells("A1:D1");
   const sCA1 = wsSchedule.getCell("A1");
@@ -857,7 +858,7 @@ export async function exportTeacherDutyScheduleExcel(params: {
   ];
 
   // Tiêu đề cơ quan
-  const r1 = ws.addRow(["TRƯỜNG TRUNG HỌC CƠ SỞ", "", "", "", "", "", "", "", ""]);
+  const r1 = ws.addRow([SCHOOL_NAME, "", "", "", "", "", "", "", ""]);
   r1.height = 20;
   ws.mergeCells("A1:D1");
   const cA1 = ws.getCell("A1");
