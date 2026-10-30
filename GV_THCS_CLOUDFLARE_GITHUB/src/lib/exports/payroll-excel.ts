@@ -177,16 +177,36 @@ function applyPageSetup(ws: ExcelJS.Worksheet, orientation: "portrait" | "landsc
 }
 
 // ============================================================================
-// SHEET 1: BẢNG TỔNG HỢP THEO GIÁO VIÊN & CẤP HỌC (TONG_HOP_GIAO_VIEN)
+// PHÂN TÍCH TIẾT DẠY THEO CẤP HỌC (TÁCH BIỆT CẤP 1 VÀ CẤP 2)
 // ============================================================================
-interface TeacherAttendanceBreakdown {
+export interface TeacherAttendanceBreakdown {
   distinctDates: string[];
-  homeroomPeriods: number;
-  academicPeriods: number;
+  primaryDates: string[];
+  secondaryDates: string[];
+
+  // Cấp 1 (Tiểu học)
+  primaryAcademicPeriods: number;
+  primaryHomeroomPeriods: number;
+  primarySubstitutePeriods: number;
+  primaryTotalPeriods: number;
+
+  // Cấp 2 (THCS)
+  secondaryAcademicPeriods: number;
+  secondaryHomeroomPeriods: number;
+  secondarySubstitutePeriods: number;
+  secondaryTotalPeriods: number;
+
+  // Tổng cả 2 cấp
+  totalAcademicPeriods: number;
+  totalHomeroomPeriods: number;
+  totalPeriods: number;
+
+  // Chi tiết ngày dạy & dạy thay phân theo cấp
+  teachingDatesText: string;
   substituteDetails: string;
 }
 
-function calculateTeacherAttendanceBreakdown(
+export function calculateTeacherAttendanceBreakdown(
   teacherId: string,
   schedules: ScheduleWithMeta[]
 ): TeacherAttendanceBreakdown {
@@ -196,56 +216,130 @@ function calculateTeacherAttendanceBreakdown(
       s.effectiveStatus !== "absent"
   );
 
-  const datesSet = new Set<string>();
-  let homeroomPeriods = 0;
-  let academicPeriods = 0;
+  const primaryDatesSet = new Set<string>();
+  const secondaryDatesSet = new Set<string>();
+  const allDatesSet = new Set<string>();
+
+  let primaryAcademicPeriods = 0;
+  let primaryHomeroomPeriods = 0;
+  let primarySubstitutePeriods = 0;
+
+  let secondaryAcademicPeriods = 0;
+  let secondaryHomeroomPeriods = 0;
+  let secondarySubstitutePeriods = 0;
 
   for (const s of teacherSchedules) {
     if (s.calculatedDate) {
-      datesSet.add(s.calculatedDate);
+      allDatesSet.add(s.calculatedDate);
+      if (s.schoolLevel === "PRIMARY") {
+        primaryDatesSet.add(s.calculatedDate);
+      } else {
+        secondaryDatesSet.add(s.calculatedDate);
+      }
     }
+
     const isSHL = isHomeroomSubject(s.resolvedSubjectName, s.subjectCode, s.subjectId);
     const count = s.periodCountNum || 1;
-    if (isSHL) {
-      homeroomPeriods += count;
+
+    if (s.schoolLevel === "PRIMARY") {
+      if (isSHL) {
+        primaryHomeroomPeriods += count;
+      } else {
+        primaryAcademicPeriods += count;
+      }
+      if (s.isSubstituted) {
+        primarySubstitutePeriods += count;
+      }
     } else {
-      academicPeriods += count;
+      if (isSHL) {
+        secondaryHomeroomPeriods += count;
+      } else {
+        secondaryAcademicPeriods += count;
+      }
+      if (s.isSubstituted) {
+        secondarySubstitutePeriods += count;
+      }
     }
   }
 
-  // Sắp xếp ngày dạy tăng dần
-  const distinctDates = Array.from(datesSet).sort();
+  const primaryTotalPeriods = primaryAcademicPeriods + primaryHomeroomPeriods;
+  const secondaryTotalPeriods = secondaryAcademicPeriods + secondaryHomeroomPeriods;
+  const totalAcademicPeriods = primaryAcademicPeriods + secondaryAcademicPeriods;
+  const totalHomeroomPeriods = primaryHomeroomPeriods + secondaryHomeroomPeriods;
+  const totalPeriods = primaryTotalPeriods + secondaryTotalPeriods;
 
-  // Thống kê dạy thay ai
+  const distinctDates = Array.from(allDatesSet).sort();
+  const primaryDates = Array.from(primaryDatesSet).sort();
+  const secondaryDates = Array.from(secondaryDatesSet).sort();
+
+  // Định dạng chuỗi ngày dạy tách biệt theo cấp
+  let teachingDatesText = "—";
+  if (primaryDates.length > 0 && secondaryDates.length > 0) {
+    const pStr = primaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+    const sStr = secondaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+    teachingDatesText = `C1 (${primaryDates.length} ngày): ${pStr} | C2 (${secondaryDates.length} ngày): ${sStr}`;
+  } else if (primaryDates.length > 0) {
+    const pStr = primaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+    teachingDatesText = `Cấp 1 (${primaryDates.length} ngày): ${pStr}`;
+  } else if (secondaryDates.length > 0) {
+    const sStr = secondaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+    teachingDatesText = `Cấp 2 (${secondaryDates.length} ngày): ${sStr}`;
+  }
+
+  // Thống kê dạy thay ai tách riêng theo cấp
   const subSchedules = teacherSchedules.filter((s) => s.isSubstituted);
   let substituteDetails = "—";
   if (subSchedules.length > 0) {
-    // Nhóm theo tên giáo viên được thay
-    const originalMap = new Map<string, { periods: number; dates: Set<string> }>();
+    const pMap = new Map<string, { periods: number; dates: Set<string> }>();
+    const sMap = new Map<string, { periods: number; dates: Set<string> }>();
+
     for (const sub of subSchedules) {
       const origName = sub.originalTeacherName || sub.resolvedTeacherName || "GV khác";
-      const existing = originalMap.get(origName) || { periods: 0, dates: new Set<string>() };
+      const targetMap = sub.schoolLevel === "PRIMARY" ? pMap : sMap;
+      const existing = targetMap.get(origName) || { periods: 0, dates: new Set<string>() };
       existing.periods += sub.periodCountNum || 1;
-      if (sub.formattedDate) existing.dates.add(sub.formattedDate.slice(0, 5)); // DD/MM
-      originalMap.set(origName, existing);
+      if (sub.formattedDate) existing.dates.add(sub.formattedDate.slice(0, 5));
+      targetMap.set(origName, existing);
     }
 
-    const detailParts: string[] = [];
-    for (const [name, info] of originalMap.entries()) {
-      const dateList = Array.from(info.dates).join(", ");
-      detailParts.push(`${name} (${info.periods} tiết: ${dateList})`);
+    const pParts: string[] = [];
+    for (const [name, info] of pMap.entries()) {
+      pParts.push(`${name} (${info.periods} tiết: ${Array.from(info.dates).join(", ")})`);
     }
-    substituteDetails = detailParts.join("; ");
+    const sParts: string[] = [];
+    for (const [name, info] of sMap.entries()) {
+      sParts.push(`${name} (${info.periods} tiết: ${Array.from(info.dates).join(", ")})`);
+    }
+
+    const fullParts: string[] = [];
+    if (pParts.length > 0) fullParts.push(`[Cấp 1]: ${pParts.join("; ")}`);
+    if (sParts.length > 0) fullParts.push(`[Cấp 2]: ${sParts.join("; ")}`);
+    substituteDetails = fullParts.join(" | ");
   }
 
   return {
     distinctDates,
-    homeroomPeriods,
-    academicPeriods,
+    primaryDates,
+    secondaryDates,
+    primaryAcademicPeriods,
+    primaryHomeroomPeriods,
+    primarySubstitutePeriods,
+    primaryTotalPeriods,
+    secondaryAcademicPeriods,
+    secondaryHomeroomPeriods,
+    secondarySubstitutePeriods,
+    secondaryTotalPeriods,
+    totalAcademicPeriods,
+    totalHomeroomPeriods,
+    totalPeriods,
+    teachingDatesText,
     substituteDetails,
   };
 }
 
+// ============================================================================
+// SHEET 1: BẢNG TỔNG HỢP THEO GIÁO VIÊN & TÁCH BẠCH CẤP HỌC (TONG_HOP_GIAO_VIEN)
+// ============================================================================
 export function buildTeacherSummaryWorksheet(
   ws: ExcelJS.Worksheet,
   params: {
@@ -262,20 +356,31 @@ export function buildTeacherSummaryWorksheet(
   const [yearStr, monthStr] = selectedMonth.split("-");
   const monthText = `Tháng ${monthStr || selectedMonth}/${yearStr || ""}`;
 
+  // 25 Cột thông tin chi tiết - Tách bạch rõ ràng Cấp 1, Cấp 2 và Tổng thực dạy
   const headers = [
     "STT",
     "Mã GV",
-    "Họ và Tên",
-    "Cấp học",
+    "Họ và Tên Giáo viên",
+    "Cấp dạy",
     "Tổ bộ môn",
     "Loại HĐ",
     "Số ngày dạy",
-    "Danh sách ngày dạy",
-    "Tổng tiết thực dạy",
-    "Tiết chuyên môn",
-    "Tiết Sinh hoạt lớp",
+    "Danh sách ngày dạy theo cấp",
+    // Khối Cấp 1
+    "Tiết CM Cấp 1",
+    "Tiết SHL Cấp 1",
+    "Tổng tiết C1",
+    // Khối Cấp 2
+    "Tiết CM Cấp 2",
+    "Tiết SHL Cấp 2",
+    "Tổng tiết C2",
+    // Khối Tổng hợp
+    "Tổng tiết thực dạy (C1+C2)",
+    "Tổng tiết CM",
+    "Tổng tiết SHL",
+    // Đối soát & thù lao
     "Tiết dạy thay (+)",
-    "Chi tiết dạy thay ai",
+    "Chi tiết dạy thay ai (theo cấp)",
     "Tiết báo vắng (-)",
     "Đơn giá C1 (VNĐ)",
     "Đơn giá C2 (VNĐ)",
@@ -287,7 +392,7 @@ export function buildTeacherSummaryWorksheet(
   const colCount = headers.length;
   addSheetHeader(
     ws,
-    "BẢNG TỔNG HỢP CHẤM CÔNG & LƯƠNG THEO GIÁO VIÊN & CẤP HỌC",
+    "BẢNG TỔNG HỢP CHẤM CÔNG & LƯƠNG THEO GIÁO VIÊN (TÁCH RIÊNG CẤP 1 & CẤP 2)",
     monthText,
     filterNote,
     colCount
@@ -296,28 +401,43 @@ export function buildTeacherSummaryWorksheet(
   // Dòng Header
   const headerRowIdx = 6;
   const headerRow = ws.getRow(headerRowIdx);
-  headerRow.height = 34;
+  headerRow.height = 36;
 
   headers.forEach((h, idx) => {
     const colNumber = idx + 1;
     const cell = headerRow.getCell(colNumber);
     cell.value = h;
-    cell.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
     cell.border = headerBorder;
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
 
-    // Highlight cột Tiết Sinh hoạt lớp màu vàng cam để dễ quan sát
-    if (h === "Tiết Sinh hoạt lớp") {
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFB45309" }, // Hổ phách đậm
-      };
+    // Phân màu sắc header để trực quan quan sát:
+    if (idx >= 8 && idx <= 10) {
+      // Cột Cấp 1: Màu Teal đậm
+      if (h === "Tiết SHL Cấp 1") {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB45309" } }; // Hổ phách cho SHL
+      } else {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0D9488" } }; // Teal
+      }
+    } else if (idx >= 11 && idx <= 13) {
+      // Cột Cấp 2: Màu Indigo đậm
+      if (h === "Tiết SHL Cấp 2") {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB45309" } }; // Hổ phách cho SHL
+      } else {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4338CA" } }; // Indigo
+      }
+    } else if (idx >= 14 && idx <= 16) {
+      // Cột Tổng cả 2 cấp: Màu Slate đậm
+      if (h === "Tổng tiết SHL") {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB45309" } };
+      } else {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+      }
     } else {
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF1E3A8A" }, // Navy đậm sang trọng
+        fgColor: { argb: "FF1E3A8A" }, // Navy cơ bản
       };
     }
   });
@@ -335,11 +455,11 @@ export function buildTeacherSummaryWorksheet(
 
     // Dòng Banner nhóm cấp học
     const bannerRow = ws.getRow(currentRowIdx);
-    bannerRow.height = 24;
+    bannerRow.height = 25;
     ws.mergeCells(`A${currentRowIdx}:${getColumnLetter(colCount)}${currentRowIdx}`);
     const bannerCell = bannerRow.getCell(1);
     bannerCell.value = `✦ ${groupTitle.toUpperCase()} (${groupRows.length} GIÁO VIÊN)`;
-    bannerCell.font = { name: FONT_NAME, size: 11, bold: true, color: { argb: "FF0F172A" } };
+    bannerCell.font = { name: FONT_NAME, size: 10.5, bold: true, color: { argb: "FF0F172A" } };
     bannerCell.fill = {
       type: "pattern",
       pattern: "solid",
@@ -356,11 +476,6 @@ export function buildTeacherSummaryWorksheet(
       const dataRow = ws.getRow(currentRowIdx);
       dataRow.height = 24;
 
-      const totalActual = row.primaryActual + row.secondaryActual;
-      const formattedDates = breakdown.distinctDates
-        .map((d) => d.slice(8, 10) + "/" + d.slice(5, 7))
-        .join(", ");
-
       const values = [
         sttGlobal++,
         row.teacherCode || "—",
@@ -369,10 +484,20 @@ export function buildTeacherSummaryWorksheet(
         row.departmentName || "—",
         row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu",
         breakdown.distinctDates.length,
-        formattedDates || "—",
-        totalActual,
-        breakdown.academicPeriods,
-        breakdown.homeroomPeriods,
+        breakdown.teachingDatesText || "—",
+        // Cấp 1
+        breakdown.primaryAcademicPeriods,
+        breakdown.primaryHomeroomPeriods,
+        breakdown.primaryTotalPeriods,
+        // Cấp 2
+        breakdown.secondaryAcademicPeriods,
+        breakdown.secondaryHomeroomPeriods,
+        breakdown.secondaryTotalPeriods,
+        // Tổng hợp
+        breakdown.totalPeriods,
+        breakdown.totalAcademicPeriods,
+        breakdown.totalHomeroomPeriods,
+        // Đối soát & thù lao
         row.substituteCount,
         breakdown.substituteDetails,
         row.absentCount,
@@ -386,13 +511,13 @@ export function buildTeacherSummaryWorksheet(
       values.forEach((val, idx) => {
         const cell = dataRow.getCell(idx + 1);
         cell.value = val;
-        cell.font = { name: FONT_NAME, size: 9.5 };
+        cell.font = { name: FONT_NAME, size: 9 };
         cell.border = thinBorder;
 
         // Căn lề
-        if ([0, 1, 3, 5, 6, 18].includes(idx)) {
+        if ([0, 1, 3, 5, 6, 24].includes(idx)) {
           cell.alignment = { vertical: "middle", horizontal: "center" };
-        } else if ([2, 4, 7, 12].includes(idx)) {
+        } else if ([2, 4, 7, 18].includes(idx)) {
           cell.alignment = { vertical: "middle", horizontal: "left" };
         } else {
           // Các cột số liệu
@@ -400,24 +525,33 @@ export function buildTeacherSummaryWorksheet(
         }
 
         // Định dạng số tiền
-        if ([14, 15, 16, 17].includes(idx)) {
+        if ([20, 21, 22, 23].includes(idx)) {
           cell.numFmt = "#,##0";
         }
 
-        // Tô màu nổi bật cột Tiết Sinh hoạt lớp
-        if (idx === 10) {
-          if (breakdown.homeroomPeriods > 0) {
-            cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FFB45309" } };
-            cell.fill = {
-              type: "pattern",
-              pattern: "solid",
-              fgColor: { argb: "FFFEF3C7" }, // Amber light
-            };
-          }
+        // Highlight màu nền nhẹ cho các cột Sinh hoạt lớp
+        if (idx === 9 && breakdown.primaryHomeroomPeriods > 0) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FFB45309" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+        } else if (idx === 12 && breakdown.secondaryHomeroomPeriods > 0) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FFB45309" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+        } else if (idx === 16 && breakdown.totalHomeroomPeriods > 0) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FFB45309" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
         }
 
-        // Highlight dòng xen kẽ nhẹ
-        if (currentRowIdx % 2 === 0 && idx !== 10) {
+        // Highlight nhẹ cho tổng C1 (xanh ngọc nhạt) và tổng C2 (xanh chàm nhạt)
+        if (idx === 10 && breakdown.primaryTotalPeriods > 0) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FF0F766E" } };
+        } else if (idx === 13 && breakdown.secondaryTotalPeriods > 0) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FF3730A3" } };
+        } else if (idx === 14) {
+          cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FF0F172A" } };
+        }
+
+        // Dòng xen kẽ
+        if (currentRowIdx % 2 === 0 && ![9, 12, 16].includes(idx)) {
           cell.fill = {
             type: "pattern",
             pattern: "solid",
@@ -439,7 +573,6 @@ export function buildTeacherSummaryWorksheet(
     subtotalRow.getCell(3).value = `Cộng nhóm ${groupTitle}`;
     subtotalRow.getCell(3).font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FF0F172A" } };
 
-    // Điền border & font cho toàn bộ dòng tổng nhóm
     for (let c = 1; c <= colCount; c++) {
       const cell = subtotalRow.getCell(c);
       cell.border = subtotalBorder;
@@ -448,12 +581,14 @@ export function buildTeacherSummaryWorksheet(
         pattern: "solid",
         fgColor: { argb: "FFE2E8F0" },
       };
-      if (c === 7 || (c >= 9 && c <= 12) || c === 14 || c === 17 || c === 18) {
+
+      // Các cột tính tổng: số ngày (7), các cột tiết (9..17), dạy thay (18), vắng (20), điều chỉnh (23), lương (24)
+      if (c === 7 || (c >= 9 && c <= 17) || c === 18 || c === 20 || c === 23 || c === 24) {
         const colLetter = getColumnLetter(c);
         cell.value = { formula: `SUM(${colLetter}${startDataRow}:${colLetter}${endDataRow})` };
         cell.font = { name: FONT_NAME, size: 9.5, bold: true };
         cell.alignment = { vertical: "middle", horizontal: "right" };
-        if ([17, 18].includes(c - 1)) cell.numFmt = "#,##0";
+        if ([23, 24].includes(c)) cell.numFmt = "#,##0";
       }
     }
     currentRowIdx++;
@@ -461,7 +596,7 @@ export function buildTeacherSummaryWorksheet(
 
   renderGroup("Cấp 1 (Tiểu học)", primaryRows, "FFCCFBF1"); // Teal light
   renderGroup("Cấp 2 (THCS)", secondaryRows, "FFE0E7FF"); // Indigo light
-  renderGroup("Giáo viên liên cấp (Cả 2 cấp)", bothRows, "FFEDE9FE"); // Purple light
+  renderGroup("Giáo viên liên cấp (Dạy cả Cấp 1 & Cấp 2)", bothRows, "FFEDE9FE"); // Purple light
 
   // Dòng TỔNG CỘNG TOÀN TRƯỜNG
   const grandTotalRow = ws.getRow(currentRowIdx);
@@ -482,28 +617,39 @@ export function buildTeacherSummaryWorksheet(
     cell.border = subtotalBorder;
     cell.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
 
-    // Tổng số ngày dạy, tổng tiết thực dạy, tiết chuyên môn, tiết SHL, dạy thay, vắng, tiền
-    if (c === 7 || (c >= 9 && c <= 12) || c === 14 || c === 17 || c === 18) {
+    if (c === 7 || (c >= 9 && c <= 17) || c === 18 || c === 20 || c === 23 || c === 24) {
       let sum = 0;
-      if (c === 9) sum = summaryRows.reduce((acc, r) => acc + (r.primaryActual + r.secondaryActual), 0);
-      else if (c === 10) {
-        sum = summaryRows.reduce((acc, r) => {
-          const bd = calculateTeacherAttendanceBreakdown(r.teacherId, schedules);
-          return acc + bd.academicPeriods;
-        }, 0);
+      if (c === 9) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).primaryAcademicPeriods, 0);
+      } else if (c === 10) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).primaryHomeroomPeriods, 0);
       } else if (c === 11) {
-        sum = summaryRows.reduce((acc, r) => {
-          const bd = calculateTeacherAttendanceBreakdown(r.teacherId, schedules);
-          return acc + bd.homeroomPeriods;
-        }, 0);
-      } else if (c === 12) sum = summaryRows.reduce((acc, r) => acc + (r.substituteCount || 0), 0);
-      else if (c === 14) sum = summaryRows.reduce((acc, r) => acc + (r.absentCount || 0), 0);
-      else if (c === 17) sum = summaryRows.reduce((acc, r) => acc + (r.adjustmentAmount || 0), 0);
-      else if (c === 18) sum = summaryRows.reduce((acc, r) => acc + (r.totalAmount || 0), 0);
+        sum = summaryRows.reduce((acc, r) => acc + r.primaryActual, 0);
+      } else if (c === 12) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).secondaryAcademicPeriods, 0);
+      } else if (c === 13) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).secondaryHomeroomPeriods, 0);
+      } else if (c === 14) {
+        sum = summaryRows.reduce((acc, r) => acc + r.secondaryActual, 0);
+      } else if (c === 15) {
+        sum = summaryRows.reduce((acc, r) => acc + (r.primaryActual + r.secondaryActual), 0);
+      } else if (c === 16) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).totalAcademicPeriods, 0);
+      } else if (c === 17) {
+        sum = summaryRows.reduce((acc, r) => acc + calculateTeacherAttendanceBreakdown(r.teacherId, schedules).totalHomeroomPeriods, 0);
+      } else if (c === 18) {
+        sum = summaryRows.reduce((acc, r) => acc + (r.substituteCount || 0), 0);
+      } else if (c === 20) {
+        sum = summaryRows.reduce((acc, r) => acc + (r.absentCount || 0), 0);
+      } else if (c === 23) {
+        sum = summaryRows.reduce((acc, r) => acc + (r.adjustmentAmount || 0), 0);
+      } else if (c === 24) {
+        sum = summaryRows.reduce((acc, r) => acc + (r.totalAmount || 0), 0);
+      }
 
       cell.value = sum;
       cell.alignment = { vertical: "middle", horizontal: "right" };
-      if ([17, 18].includes(c)) cell.numFmt = "#,##0";
+      if ([23, 24].includes(c)) cell.numFmt = "#,##0";
     }
   }
 
@@ -511,8 +657,8 @@ export function buildTeacherSummaryWorksheet(
   const signRowIdx = currentRowIdx + 2;
   const signDateRow = ws.getRow(signRowIdx);
   signDateRow.height = 20;
-  ws.mergeCells(`M${signRowIdx}:S${signRowIdx}`);
-  const signDateCell = signDateRow.getCell(13);
+  ws.mergeCells(`R${signRowIdx}:Y${signRowIdx}`);
+  const signDateCell = signDateRow.getCell(18);
   const today = new Date();
   signDateCell.value = `Tam Hà, ngày ${today.getDate()} tháng ${today.getMonth() + 1} năm ${today.getFullYear()}`;
   signDateCell.font = { name: FONT_NAME, size: 10, italic: true };
@@ -521,27 +667,27 @@ export function buildTeacherSummaryWorksheet(
   const signTitleRow = ws.getRow(signRowIdx + 1);
   signTitleRow.height = 22;
   // Người lập bảng
-  ws.mergeCells(`B${signRowIdx + 1}:E${signRowIdx + 1}`);
+  ws.mergeCells(`B${signRowIdx + 1}:F${signRowIdx + 1}`);
   const s1 = signTitleRow.getCell(2);
   s1.value = "NGƯỜI LẬP BẢNG";
   s1.font = { name: FONT_NAME, size: 10, bold: true };
   s1.alignment = { vertical: "middle", horizontal: "center" };
 
   // Kế toán / Chuyên môn
-  ws.mergeCells(`G${signRowIdx + 1}:K${signRowIdx + 1}`);
-  const s2 = signTitleRow.getCell(7);
+  ws.mergeCells(`I${signRowIdx + 1}:N${signRowIdx + 1}`);
+  const s2 = signTitleRow.getCell(9);
   s2.value = "BỘ PHẬN KẾ TOÁN";
   s2.font = { name: FONT_NAME, size: 10, bold: true };
   s2.alignment = { vertical: "middle", horizontal: "center" };
 
   // Hiệu trưởng
-  ws.mergeCells(`M${signRowIdx + 1}:S${signRowIdx + 1}`);
-  const s3 = signTitleRow.getCell(13);
+  ws.mergeCells(`R${signRowIdx + 1}:Y${signRowIdx + 1}`);
+  const s3 = signTitleRow.getCell(18);
   s3.value = "HIỆU TRƯỞNG PHÊ DUYỆT";
   s3.font = { name: FONT_NAME, size: 10, bold: true };
   s3.alignment = { vertical: "middle", horizontal: "center" };
 
-  // Set Column Widths
+  // Column Widths (25 cột)
   const colWidths = [
     6,  // 1. STT
     10, // 2. Mã GV
@@ -550,18 +696,299 @@ export function buildTeacherSummaryWorksheet(
     18, // 5. Tổ bộ môn
     12, // 6. Loại HĐ
     12, // 7. Số ngày dạy
-    24, // 8. Danh sách ngày dạy
-    15, // 9. Tổng tiết
-    14, // 10. Tiết chuyên môn
-    16, // 11. Tiết SHL
-    13, // 12. Tiết dạy thay
-    30, // 13. Chi tiết dạy thay ai
-    13, // 14. Tiết vắng
-    15, // 15. Đơn giá C1
-    15, // 16. Đơn giá C2
-    16, // 17. Điều chỉnh
-    22, // 18. Tổng lương
-    15, // 19. Trạng thái
+    32, // 8. Danh sách ngày dạy theo cấp
+    // Cấp 1
+    14, // 9. Tiết CM C1
+    15, // 10. Tiết SHL C1
+    14, // 11. Tổng C1
+    // Cấp 2
+    14, // 12. Tiết CM C2
+    15, // 13. Tiết SHL C2
+    14, // 14. Tổng C2
+    // Tổng hợp
+    16, // 15. Tổng thực dạy
+    14, // 16. Tổng CM
+    15, // 17. Tổng SHL
+    // Đối soát & thù lao
+    13, // 18. Dạy thay
+    32, // 19. Chi tiết dạy thay ai
+    13, // 20. Tiết vắng
+    15, // 21. Đơn giá C1
+    15, // 22. Đơn giá C2
+    16, // 23. Điều chỉnh
+    22, // 24. Tổng lương
+    15, // 25. Trạng thái
+  ];
+  colWidths.forEach((w, idx) => {
+    ws.getColumn(idx + 1).width = w;
+  });
+}
+
+// ============================================================================
+// SHEET DÀNH RIÊNG: GIÁO VIÊN GIẢNG DẠY CẢ 2 CẤP (GV_DAY_HAI_CAP)
+// ============================================================================
+export function buildDualLevelTeachersWorksheet(
+  ws: ExcelJS.Worksheet,
+  params: {
+    summaryRows: TeacherPayrollSummaryRow[];
+    schedules: ScheduleWithMeta[];
+    selectedMonth: string;
+    filterNote?: string;
+  }
+) {
+  const { summaryRows, schedules, selectedMonth, filterNote = "" } = params;
+
+  applyPageSetup(ws, "landscape");
+
+  const [yearStr, monthStr] = selectedMonth.split("-");
+  const monthText = `Tháng ${monthStr || selectedMonth}/${yearStr || ""}`;
+
+  // Lọc chỉ những giáo viên dạy cả 2 cấp
+  const dualRows = summaryRows.filter((r) => {
+    const bd = calculateTeacherAttendanceBreakdown(r.teacherId, schedules);
+    return r.teachingLevel === "BOTH" || (bd.primaryTotalPeriods > 0 && bd.secondaryTotalPeriods > 0);
+  });
+
+  const headers = [
+    "STT",
+    "Mã GV",
+    "Họ và Tên Giáo viên",
+    "Tổ bộ môn",
+    "Loại HĐ",
+    // Cấp 1
+    "Ngày dạy Cấp 1",
+    "Tiết CM C1",
+    "Tiết SHL C1",
+    "Dạy thay C1",
+    "Tổng tiết C1",
+    "Đơn giá C1 (VNĐ)",
+    "Thành tiền C1 (VNĐ)",
+    // Cấp 2
+    "Ngày dạy Cấp 2",
+    "Tiết CM C2",
+    "Tiết SHL C2",
+    "Dạy thay C2",
+    "Tổng tiết C2",
+    "Đơn giá C2 (VNĐ)",
+    "Thành tiền C2 (VNĐ)",
+    // Tổng kết
+    "Tổng số ngày dạy",
+    "Tổng thực dạy (C1+C2)",
+    "Tổng tiết CM",
+    "Tổng tiết SHL",
+    "Chi tiết dạy thay ai",
+    "Điều chỉnh (VNĐ)",
+    "Tổng thù lao / Lương (VNĐ)",
+    "Trạng thái",
+  ];
+
+  const colCount = headers.length;
+  addSheetHeader(
+    ws,
+    "BẢNG THỐNG KÊ CHI TIẾT GIÁO VIÊN GIẢNG DẠY CẢ 2 CẤP (CẤP 1 & CẤP 2)",
+    monthText,
+    filterNote || "Tách bạch chi tiết số tiết, ngày dạy, tiền thù lao Cấp 1 riêng và Cấp 2 riêng",
+    colCount
+  );
+
+  // Dòng Header
+  const headerRowIdx = 6;
+  const headerRow = ws.getRow(headerRowIdx);
+  headerRow.height = 36;
+
+  headers.forEach((h, idx) => {
+    const colNumber = idx + 1;
+    const cell = headerRow.getCell(colNumber);
+    cell.value = h;
+    cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.border = headerBorder;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+    if (idx >= 5 && idx <= 11) {
+      // Cấp 1: Teal
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: h.includes("SHL") ? "FFB45309" : "FF0D9488" },
+      };
+    } else if (idx >= 12 && idx <= 18) {
+      // Cấp 2: Indigo
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: h.includes("SHL") ? "FFB45309" : "FF4338CA" },
+      };
+    } else if (idx >= 19 && idx <= 22) {
+      // Tổng hợp: Purple
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: h.includes("SHL") ? "FFB45309" : "FF6D28D9" },
+      };
+    } else {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1E3A8A" },
+      };
+    }
+  });
+
+  let currentRowIdx = 7;
+  let stt = 1;
+
+  dualRows.forEach((row) => {
+    const bd = calculateTeacherAttendanceBreakdown(row.teacherId, schedules);
+    const dataRow = ws.getRow(currentRowIdx);
+    dataRow.height = 26;
+
+    const pDatesStr = bd.primaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+    const sDatesStr = bd.secondaryDates.map((d) => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ");
+
+    const pAmount = bd.primaryTotalPeriods * (row.primaryRate || 0);
+    const sAmount = bd.secondaryTotalPeriods * (row.secondaryRate || 0);
+
+    const values = [
+      stt++,
+      row.teacherCode || "—",
+      row.teacherName,
+      row.departmentName || "—",
+      row.teacherType === "thinh_giang" ? "Thỉnh giảng" : "Cơ hữu",
+      // Cấp 1
+      pDatesStr ? `${pDatesStr} (${bd.primaryDates.length} ngày)` : "—",
+      bd.primaryAcademicPeriods,
+      bd.primaryHomeroomPeriods,
+      bd.primarySubstitutePeriods,
+      bd.primaryTotalPeriods,
+      row.primaryRate || 0,
+      pAmount,
+      // Cấp 2
+      sDatesStr ? `${sDatesStr} (${bd.secondaryDates.length} ngày)` : "—",
+      bd.secondaryAcademicPeriods,
+      bd.secondaryHomeroomPeriods,
+      bd.secondarySubstitutePeriods,
+      bd.secondaryTotalPeriods,
+      row.secondaryRate || 0,
+      sAmount,
+      // Tổng kết
+      bd.distinctDates.length,
+      bd.totalPeriods,
+      bd.totalAcademicPeriods,
+      bd.totalHomeroomPeriods,
+      bd.substituteDetails,
+      row.adjustmentAmount || 0,
+      row.totalAmount || 0,
+      payrollStatusLabelVi(row.status),
+    ];
+
+    values.forEach((val, idx) => {
+      const cell = dataRow.getCell(idx + 1);
+      cell.value = val;
+      cell.font = { name: FONT_NAME, size: 9 };
+      cell.border = thinBorder;
+
+      if ([0, 1, 4, 19, 26].includes(idx)) {
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+      } else if ([2, 3, 5, 12, 23].includes(idx)) {
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      } else {
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+      }
+
+      // Định dạng số tiền
+      if ([10, 11, 17, 18, 24, 25].includes(idx)) {
+        cell.numFmt = "#,##0";
+      }
+
+      // Tô màu cột SHL
+      if ((idx === 7 && bd.primaryHomeroomPeriods > 0) || (idx === 14 && bd.secondaryHomeroomPeriods > 0) || (idx === 22 && bd.totalHomeroomPeriods > 0)) {
+        cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FFB45309" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+      }
+
+      // Tô màu tổng C1 và C2
+      if (idx === 9) {
+        cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FF0F766E" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCCFBF1" } };
+      } else if (idx === 16) {
+        cell.font = { name: FONT_NAME, size: 9, bold: true, color: { argb: "FF3730A3" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E7FF" } };
+      } else if (idx === 20) {
+        cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FF581C87" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDE9FE" } };
+      }
+
+      if (currentRowIdx % 2 === 0 && ![7, 9, 14, 16, 20, 22].includes(idx)) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8FAFC" },
+        };
+      }
+    });
+
+    currentRowIdx++;
+  });
+
+  // Dòng Tổng kết giáo viên 2 cấp
+  const totalRow = ws.getRow(currentRowIdx);
+  totalRow.height = 26;
+  ws.mergeCells(`A${currentRowIdx}:E${currentRowIdx}`);
+  const totalLabel = totalRow.getCell(1);
+  totalLabel.value = `TỔNG CỘNG: ${dualRows.length} GIÁO VIÊN GIẢNG DẠY CẢ 2 CẤP`;
+  totalLabel.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+  totalLabel.alignment = { vertical: "middle", horizontal: "center" };
+
+  for (let c = 1; c <= colCount; c++) {
+    const cell = totalRow.getCell(c);
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF4C1D95" }, // Purple 900
+    };
+    cell.border = subtotalBorder;
+    cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+
+    if ([7, 8, 9, 10, 12, 14, 15, 16, 17, 19, 21, 22, 23, 24, 26].includes(c)) {
+      const colLetter = getColumnLetter(c);
+      cell.value = { formula: `SUM(${colLetter}7:${colLetter}${currentRowIdx - 1})` };
+      cell.alignment = { vertical: "middle", horizontal: "right" };
+      if ([12, 19, 26].includes(c)) cell.numFmt = "#,##0";
+    }
+  }
+
+  // Column Widths (27 cột)
+  const colWidths = [
+    6,  // 1. STT
+    10, // 2. Mã GV
+    22, // 3. Họ tên
+    18, // 4. Tổ bộ môn
+    12, // 5. Loại HĐ
+    // Cấp 1
+    24, // 6. Ngày dạy C1
+    13, // 7. Tiết CM C1
+    14, // 8. Tiết SHL C1
+    13, // 9. Dạy thay C1
+    13, // 10. Tổng C1
+    14, // 11. Đơn giá C1
+    18, // 12. Thành tiền C1
+    // Cấp 2
+    24, // 13. Ngày dạy C2
+    13, // 14. Tiết CM C2
+    14, // 15. Tiết SHL C2
+    13, // 16. Dạy thay C2
+    13, // 17. Tổng C2
+    14, // 18. Đơn giá C2
+    18, // 19. Thành tiền C2
+    // Tổng kết
+    13, // 20. Tổng ngày dạy
+    15, // 21. Tổng thực dạy
+    13, // 22. Tổng CM
+    14, // 23. Tổng SHL
+    30, // 24. Chi tiết dạy thay
+    16, // 25. Điều chỉnh
+    22, // 26. Tổng lương
+    14, // 27. Trạng thái
   ];
   colWidths.forEach((w, idx) => {
     ws.getColumn(idx + 1).width = w;
@@ -600,6 +1027,7 @@ export function buildDetailByLevelWorksheet(
     "Lớp",
     "Môn học",
     "Giáo viên thực dạy",
+    "Phân loại GV",
     "Giáo viên phân công gốc",
     "Dạy thay ai?",
     "Tổng số tiết",
@@ -684,6 +1112,7 @@ export function buildDetailByLevelWorksheet(
       item.resolvedClassName,
       item.resolvedSubjectName,
       item.effectiveTeacherName,
+      item.schoolLevelLabel,
       item.originalTeacherName || item.resolvedTeacherName || "—",
       substituteForWho,
       count,
@@ -700,16 +1129,16 @@ export function buildDetailByLevelWorksheet(
       cell.border = thinBorder;
 
       // Căn lề
-      if ([0, 1, 2, 3, 4, 12].includes(idx)) {
+      if ([0, 1, 2, 3, 4, 7, 13].includes(idx)) {
         cell.alignment = { vertical: "middle", horizontal: "center" };
-      } else if ([5, 6, 7, 8, 13].includes(idx)) {
+      } else if ([5, 6, 8, 9, 14].includes(idx)) {
         cell.alignment = { vertical: "middle", horizontal: "left" };
       } else {
         cell.alignment = { vertical: "middle", horizontal: "right" };
       }
 
       // Tô màu cột Dạy thay ai
-      if (idx === 8 && item.isSubstituted) {
+      if (idx === 9 && item.isSubstituted) {
         cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FF0369A1" } };
         cell.fill = {
           type: "pattern",
@@ -719,7 +1148,7 @@ export function buildDetailByLevelWorksheet(
       }
 
       // Tô màu cột Tiết Sinh hoạt lớp
-      if (idx === 11) {
+      if (idx === 12) {
         if (homeroomPeriods > 0) {
           cell.font = { name: FONT_NAME, size: 9.5, bold: true, color: { argb: "FFB45309" } };
           cell.fill = {
@@ -731,7 +1160,7 @@ export function buildDetailByLevelWorksheet(
       }
 
       // Highlight xen kẽ nhẹ
-      if (currentRowIdx % 2 === 0 && idx !== 8 && idx !== 11) {
+      if (currentRowIdx % 2 === 0 && idx !== 9 && idx !== 12) {
         cell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -746,7 +1175,7 @@ export function buildDetailByLevelWorksheet(
   // Dòng TỔNG CỘNG TIẾT DẠY
   const totalRow = ws.getRow(currentRowIdx);
   totalRow.height = 26;
-  ws.mergeCells(`A${currentRowIdx}:I${currentRowIdx}`);
+  ws.mergeCells(`A${currentRowIdx}:J${currentRowIdx}`);
   const totalLabel = totalRow.getCell(1);
   totalLabel.value = `TỔNG CỘNG SỐ TIẾT ${levelTitle}`;
   totalLabel.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
@@ -762,13 +1191,13 @@ export function buildDetailByLevelWorksheet(
     cell.border = subtotalBorder;
     cell.font = { name: FONT_NAME, size: 10, bold: true, color: { argb: "FFFFFFFF" } };
 
-    if (c === 10) {
+    if (c === 11) {
       cell.value = totalPeriodSum;
       cell.alignment = { vertical: "middle", horizontal: "right" };
-    } else if (c === 11) {
+    } else if (c === 12) {
       cell.value = totalAcademicSum;
       cell.alignment = { vertical: "middle", horizontal: "right" };
-    } else if (c === 12) {
+    } else if (c === 13) {
       cell.value = totalHomeroomSum;
       cell.alignment = { vertical: "middle", horizontal: "right" };
     }
@@ -783,13 +1212,14 @@ export function buildDetailByLevelWorksheet(
     10, // 5. Lớp
     20, // 6. Môn học
     22, // 7. GV thực dạy
-    22, // 8. GV gốc
-    26, // 9. Dạy thay ai
-    13, // 10. Tổng tiết
-    15, // 11. Tiết chuyên môn
-    17, // 12. Tiết SHL
-    18, // 13. Trạng thái
-    26, // 14. Ghi chú
+    13, // 8. Phân loại GV
+    22, // 9. GV gốc
+    26, // 10. Dạy thay ai
+    13, // 11. Tổng tiết
+    15, // 12. Tiết chuyên môn
+    17, // 13. Tiết SHL
+    18, // 14. Trạng thái
+    26, // 15. Ghi chú
   ];
   colWidths.forEach((w, idx) => {
     ws.getColumn(idx + 1).width = w;
@@ -1275,7 +1705,7 @@ export async function exportPayrollAttendanceExcel(options: ExportPayrollExcelOp
   if (searchKeyword) filterParts.push(`Tìm: "${searchKeyword}"`);
   const filterNote = filterParts.length > 0 ? filterParts.join(" · ") : "Toàn trường (Không lọc)";
 
-  // 1. Sheet Tổng hợp Giáo viên & Cấp học
+  // 1. Sheet Tổng hợp Giáo viên (Tách bạch Cấp 1 & Cấp 2)
   const ws1 = wb.addWorksheet("TONG_HOP_GIAO_VIEN", {
     properties: { tabColor: { argb: "FF1E3A8A" } },
   });
@@ -1286,7 +1716,24 @@ export async function exportPayrollAttendanceExcel(options: ExportPayrollExcelOp
     filterNote,
   });
 
-  // 2. Sheet Chi tiết Cấp 1 (Tiểu học)
+  // 2. Sheet chuyên biệt cho Giáo viên giảng dạy cả 2 cấp
+  const hasDualLevelTeachers = summaryRows.some((r) => {
+    const bd = calculateTeacherAttendanceBreakdown(r.teacherId, schedules);
+    return r.teachingLevel === "BOTH" || (bd.primaryTotalPeriods > 0 && bd.secondaryTotalPeriods > 0);
+  });
+  if (hasDualLevelTeachers || schoolLevelFilter === "ALL" || schoolLevelFilter === "BOTH") {
+    const wsDual = wb.addWorksheet("GV_DAY_HAI_CAP", {
+      properties: { tabColor: { argb: "FF7C3AED" } },
+    });
+    buildDualLevelTeachersWorksheet(wsDual, {
+      summaryRows,
+      schedules,
+      selectedMonth,
+      filterNote,
+    });
+  }
+
+  // 3. Sheet Chi tiết Cấp 1 (Tiểu học)
   const hasPrimarySchedules = schedules.some((s) => s.schoolLevel === "PRIMARY");
   if (hasPrimarySchedules || schoolLevelFilter === "ALL" || schoolLevelFilter === "PRIMARY") {
     const ws2 = wb.addWorksheet("CHI_TIET_CAP_1", {
@@ -1300,7 +1747,7 @@ export async function exportPayrollAttendanceExcel(options: ExportPayrollExcelOp
     });
   }
 
-  // 3. Sheet Chi tiết Cấp 2 (THCS)
+  // 4. Sheet Chi tiết Cấp 2 (THCS)
   const hasSecondarySchedules = schedules.some((s) => s.schoolLevel === "SECONDARY");
   if (hasSecondarySchedules || schoolLevelFilter === "ALL" || schoolLevelFilter === "SECONDARY") {
     const ws3 = wb.addWorksheet("CHI_TIET_CAP_2", {
@@ -1314,7 +1761,7 @@ export async function exportPayrollAttendanceExcel(options: ExportPayrollExcelOp
     });
   }
 
-  // 4. Sheet Sổ theo dõi Dạy thay
+  // 5. Sheet Sổ theo dõi Dạy thay
   const hasSubstitutions = schedules.some((s) => s.isSubstituted);
   if (hasSubstitutions) {
     const ws4 = wb.addWorksheet("THEO_DOI_DAY_THAY", {
@@ -1327,7 +1774,7 @@ export async function exportPayrollAttendanceExcel(options: ExportPayrollExcelOp
     });
   }
 
-  // 5. Sheet Thống kê theo ngày
+  // 6. Sheet Thống kê theo ngày
   const ws5 = wb.addWorksheet("THONG_KE_THEO_NGAY", {
     properties: { tabColor: { argb: "FF1E293B" } },
   });
