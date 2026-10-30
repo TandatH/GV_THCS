@@ -17,7 +17,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  doc,
   getCountFromServer,
+  onSnapshot,
   query,
   where,
   type DocumentData,
@@ -36,7 +38,7 @@ import {
 
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
-import { Button, Card, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
@@ -133,6 +135,15 @@ export default function DashboardPage() {
     ];
   }, [role]);
 
+  const [scheduleLocked, setScheduleLocked] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(firestore, "publicSettings", "scheduleConfig"), (snap) => {
+      setScheduleLocked(snap.exists() && snap.data()?.isLocked === true);
+    });
+    return () => unsub();
+  }, []);
+
   useEffect(() => {
     if (authLoading || !user || !role) return;
     let active = true;
@@ -223,11 +234,15 @@ export default function DashboardPage() {
           description="Theo dõi nhanh hồ sơ, lịch dạy, đơn nghỉ phép và các nghiệp vụ cần xử lý trong phạm vi quyền hiện tại."
           actions={quickActions.map((action, index) => {
             const Icon = action.icon;
+            const isActionLocked = scheduleLocked && action.href === "/teacher/schedule" && role !== "admin" && role !== "bgh";
             return (
               <Button key={action.href} variant={index === 0 ? "primary" : "secondary"} asChild>
-                <Link href={action.href}>
+                <Link href={action.href} className="inline-flex items-center gap-1.5">
                   <Icon className="h-4 w-4" aria-hidden="true" />
                   <span>{action.label}</span>
+                  {isActionLocked ? (
+                    <Badge tone="warning" className="ml-1 text-[10px] px-1.5 py-0 font-bold">Tạm khóa</Badge>
+                  ) : null}
                 </Link>
               </Button>
             );
