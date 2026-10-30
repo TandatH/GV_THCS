@@ -7,6 +7,7 @@ import { teacherAttendanceTotals } from "@school/shared";
 import { Badge, Button } from "@/components/ui";
 import { cn, formatCurrency } from "@/lib/utils";
 import { type ScheduleWithMeta, type TeacherPayrollSummaryRow, statusBadgeTone, statusLabelVi } from "../types";
+import { isHomeroomSubject } from "@/lib/exports/payroll-excel";
 
 interface TeacherScheduleDrawerProps {
   open: boolean;
@@ -103,7 +104,14 @@ export function TeacherScheduleDrawer({ open, onClose, teacherRow, schedules }: 
                       </div>
                       <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         <div className="min-w-0">
-                          <p className="break-words text-sm font-medium">{s.resolvedClassName} · {s.resolvedSubjectName}</p>
+                          <p className="break-words text-sm font-medium">
+                            {s.resolvedClassName} · {s.resolvedSubjectName}
+                            {isHomeroomSubject(s.resolvedSubjectName, s.subjectCode, s.subjectId) ? (
+                              <span className="ml-2 inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
+                                Sinh hoạt lớp
+                              </span>
+                            ) : null}
+                          </p>
                           <p className="mt-1 break-words text-xs text-muted-foreground">{wasReplaced ? `Người dạy thay: ${s.effectiveTeacherName}`
                             : substitutes ? `Dạy thay cho: ${s.originalTeacherName || s.resolvedTeacherName}`
                               : `Người được ghi nhận: ${s.effectiveTeacherName}`}</p>
