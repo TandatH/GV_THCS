@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, CalendarDays, Filter, Layers, RotateCcw, Search, Table2, User, Users } from "lucide-react";
+import { Calendar, CalendarDays, FileSpreadsheet, Filter, Layers, RotateCcw, Search, Table2, User, Users } from "lucide-react";
 import { Badge, Button, Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Row, StatusFilter, ViewMode } from "../types";
@@ -32,6 +32,8 @@ interface AttendanceToolbarProps {
   totalFilteredCount: number;
   onResetFilters: () => void;
   hasActiveFilters: boolean;
+  onExportExcel?: () => void;
+  isExporting?: boolean;
 }
 
 export function AttendanceToolbar({
@@ -54,6 +56,8 @@ export function AttendanceToolbar({
   totalFilteredCount,
   onResetFilters,
   hasActiveFilters,
+  onExportExcel,
+  isExporting,
 }: AttendanceToolbarProps) {
   return (
     <div className="space-y-4">
@@ -160,8 +164,24 @@ export function AttendanceToolbar({
           </button>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="flex items-center self-start rounded-xl border border-border bg-card p-1 shadow-sm lg:self-auto">
+        {/* Actions: Export Excel & View Mode Toggle */}
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          {onExportExcel && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              loading={isExporting}
+              onClick={onExportExcel}
+              className="h-9 gap-1.5 border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Xuất Excel</span>
+            </Button>
+          )}
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center rounded-xl border border-border bg-card p-1 shadow-sm">
           <button
             type="button"
             onClick={() => onViewModeChange("table")}
@@ -206,6 +226,7 @@ export function AttendanceToolbar({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Second row: Search bar & Dimensional dropdown filters */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
