@@ -20,6 +20,7 @@ import {
   Info,
   Languages,
   Layers,
+  Lock,
   MapPin,
   Monitor,
   Palette,
@@ -27,18 +28,23 @@ import {
   RefreshCcw,
   Search,
   Sparkles,
+  Unlock,
   User,
   Users,
   XCircle,
 } from "lucide-react";
 import {
   collection,
+  doc,
   limit,
   onSnapshot,
   query,
+  serverTimestamp,
+  setDoc,
   where,
   type DocumentData,
 } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { formatPeriodDisplay, normalizeSchedulePeriodRange, scheduledPeriodCount } from "@school/shared";
 import { toast } from "sonner";
@@ -460,7 +466,37 @@ function timeSlotsForLevel(rows: Row[], level: string): Row[] {
 }
 
 export default function TeacherSchedulePage() {
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, user, role } = useAuth();
+  const router = useRouter();
+  const [scheduleConfig, setScheduleConfig] = useState<{
+    isLocked?: boolean;
+    lockedAt?: string | null;
+    lockedByUid?: string | null;
+    lockedByName?: string | null;
+    lockReason?: string;
+  } | null>(null);
+  const [checkingLock, setCheckingLock] = useState(true);
+
+  // Lắng nghe trạng thái khóa lịch từ Ban Giám Hiệu / Quản trị viên
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(firestore, "publicSettings", "scheduleConfig"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setScheduleConfig(snapshot.data() as any);
+        } else {
+          setScheduleConfig(null);
+        }
+        setCheckingLock(false);
+      },
+      (err) => {
+        console.warn("Lỗi tải cấu hình khóa lịch:", err);
+        setCheckingLock(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
   const [teacherId, setTeacherId] = useState("");
   const [teacherName, setTeacherName] = useState("");
   const [teacherProfile, setTeacherProfile] = useState<Row | null>(null);
@@ -1051,9 +1087,103 @@ export default function TeacherSchedulePage() {
     );
   }
 
+  // KHI KHÓA LỊCH DẠY: Giáo viên không thể vào được lịch dạy, tránh xem nhầm lịch cũ
+  if (!checkingLock && scheduleConfig?.isLocked && role !== "admin" && role !== "bgh") {
+    return (
+      <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
+        <Shell>
+          <div className="flex flex-col items-center justify-center min-h-[65vh] px-4 py-12 text-center">
+            <div className="relative mb-6">
+              <div className="w-24 h-24 rounded-3xl bg-amber-50 border-2 border-amber-300 flex items-center justify-center text-amber-600 shadow-md">
+                <Lock className="w-12 h-12 text-amber-600" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-rose-500 text-white rounded-full p-1.5 shadow-sm">
+                <Clock3 className="w-4 h-4" />
+              </div>
+            </div>
+
+            <Badge tone="warning" className="mb-3 text-xs px-3 py-1 font-bold uppercase tracking-wider">
+              Chức năng tạm thời đóng
+            </Badge>
+
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight sm:text-3xl">
+              Lịch giảng dạy đang tạm khóa
+            </h1>
+
+            <p className="mt-3 max-w-lg text-sm text-slate-600 leading-relaxed font-medium">
+              {scheduleConfig.lockReason || "Ban Giám Hiệu / Quản trị viên đang trong quá trình điều chỉnh và sắp xếp thời khóa biểu mới. Để tránh tình trạng thầy/cô xem nhầm lịch cũ, hệ thống tạm thời khóa quyền truy cập lịch dạy của giáo viên."}
+            </p>
+
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 max-w-md text-xs text-amber-900 leading-normal text-left shadow-2xs space-y-2">
+              <p className="font-bold flex items-center gap-1.5 text-amber-800 text-sm">
+                <Info className="w-4 h-4 shrink-0 text-amber-600" />
+                Thông tin dành cho Thầy / Cô:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-amber-800/90 pl-1">
+                <li>Lịch dạy sẽ được mở lại ngay sau khi nhà trường hoàn tất phân công và xếp lịch.</li>
+                <li>Các chức năng khác (Điểm danh, Kỷ luật, Coi thi, Báo cáo...) vẫn hoạt động bình thường.</li>
+              </ul>
+              {scheduleConfig.lockedAt ? (
+                <p className="text-[11px] text-amber-700/80 pt-1.5 border-t border-amber-200">
+                  Thời điểm tạm khóa: {format(parseISO(scheduleConfig.lockedAt), "dd/MM/yyyy HH:mm:ss")}
+                  {scheduleConfig.lockedByName ? ` (${scheduleConfig.lockedByName})` : ""}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Button variant="secondary" onClick={() => router.push("/dashboard")} className="gap-2 font-semibold shadow-xs">
+                <ChevronLeft className="w-4 h-4" />
+                Về Trang chủ / Bảng điều khiển
+              </Button>
+            </div>
+          </div>
+        </Shell>
+      </RoleGuard>
+    );
+  }
+
   return (
     <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}>
       <Shell>
+        {/* Banner dành riêng cho Admin/BGH khi đang khóa lịch GV */}
+        {scheduleConfig?.isLocked && (role === "admin" || role === "bgh") ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-950 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className="rounded-xl bg-rose-600 p-1.5 text-white shrink-0 shadow-xs">
+                <Lock className="h-4 w-4" />
+              </div>
+              <div>
+                <span className="font-extrabold text-rose-900 uppercase tracking-tight">
+                  Lịch dạy đang KHÓA đối với giáo viên
+                </span>
+                <span className="text-rose-800 block text-[11px] mt-0.5">
+                  Thầy/cô thường hiện không thể vào xem trang này. Bạn đang xem trước với quyền {role === "admin" ? "Quản trị viên" : "Ban Giám Hiệu"}.
+                </span>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await setDoc(doc(firestore, "publicSettings", "scheduleConfig"), {
+                    isLocked: false,
+                    updatedAt: serverTimestamp(),
+                    updatedBy: user?.uid,
+                  }, { merge: true });
+                  toast.success("Đã mở khóa lịch dạy thành công!");
+                } catch (e) {
+                  toast.error("Không thể mở khóa: " + firebaseErrorMessage(e));
+                }
+              }}
+              className="bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300 font-bold shrink-0 text-xs shadow-xs gap-1.5"
+            >
+              <Unlock className="h-3.5 w-3.5 text-emerald-600" />
+              Mở khóa ngay cho GV
+            </Button>
+          </div>
+        ) : null}
         {/* PAGE HEADER */}
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
