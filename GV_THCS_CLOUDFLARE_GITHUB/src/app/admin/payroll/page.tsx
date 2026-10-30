@@ -10,6 +10,7 @@ import {
   Download,
   Filter,
   FileCheck,
+  FileSpreadsheet,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -56,6 +57,7 @@ import { PayrollKpiCards } from "./components/payroll-kpi-cards";
 import { PrincipalPayrollTable } from "./components/principal-payroll-table";
 import { PrincipalAdjustmentModal } from "./components/principal-adjustment-modal";
 import { TeacherScheduleDrawer } from "./components/teacher-schedule-drawer";
+import { exportPayrollAttendanceExcel } from "@/lib/exports/payroll-excel";
 
 import {
   type PayrollApprovalStatus,
@@ -154,6 +156,7 @@ export default function AdminPayrollPage() {
   const [error, setError] = useState("");
   const [calculating, setCalculating] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   // Modals & Drawers
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -1118,6 +1121,38 @@ export default function AdminPayrollPage() {
     }
   }
 
+  // Comprehensive Multi-Level Excel (.xlsx) Export
+  async function handleExportExcel() {
+    if (filteredSummaryRows.length === 0 && monthProcessedSchedules.length === 0) {
+      toast.error("Không có dữ liệu chấm công nào trong tháng này để xuất.");
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const selectedDept = departmentOptions.find((d) => d.id === departmentFilter);
+      const fileName = await exportPayrollAttendanceExcel({
+        selectedMonth,
+        summaryRows: filteredSummaryRows,
+        schedules: filteredProcessedSchedules,
+        schoolLevelFilter,
+        departmentName: selectedDept?.name,
+        teacherTypeName:
+          teacherTypeFilter === "co_huu"
+            ? "Cơ hữu"
+            : teacherTypeFilter === "thinh_giang"
+              ? "Thỉnh giảng"
+              : undefined,
+        searchKeyword: search.trim() || undefined,
+      });
+      toast.success(`Đã xuất thành công file Excel: ${fileName}`);
+    } catch (err) {
+      console.error("Export payroll excel failed:", err);
+      toast.error("Xuất file Excel thất bại: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setExportingExcel(false);
+    }
+  }
+
   // Comprehensive Multi-Level CSV Export
   function exportPayrollCsv() {
     const rows = filteredSummaryRows.map((row) => [
@@ -1222,6 +1257,15 @@ export default function AdminPayrollPage() {
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={handleExportExcel}
+                loading={exportingExcel}
+                disabled={filteredSummaryRows.length === 0 && monthProcessedSchedules.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Xuất Excel Thống kê (.xlsx)
+              </Button>
               <Button
                 variant="secondary"
                 onClick={exportPayrollCsv}
@@ -1483,6 +1527,8 @@ export default function AdminPayrollPage() {
                     selectedTeacherId !== "all" ||
                     selectedClassId !== "all"
                 )}
+                onExportExcel={handleExportExcel}
+                isExporting={exportingExcel}
               />
 
               <div className="mt-5">
