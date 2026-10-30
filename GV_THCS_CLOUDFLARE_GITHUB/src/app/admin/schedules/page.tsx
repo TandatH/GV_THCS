@@ -28,6 +28,7 @@ import {
   Info,
   LayoutGrid,
   Loader2,
+  Lock,
   MapPin,
   PencilLine,
   Plus,
@@ -37,11 +38,12 @@ import {
   Sparkles,
   Table2,
   Trash2,
+  Unlock,
   User,
   XCircle,
   Zap,
 } from "lucide-react";
-import { collection, getDocs, limit, onSnapshot, query, where, type DocumentData } from "firebase/firestore";
+import { collection, doc, getDocs, limit, onSnapshot, query, serverTimestamp, setDoc, where, type DocumentData } from "firebase/firestore";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -582,7 +584,7 @@ function formatWeekRange(weekStart: string) {
 }
 
 export default function SchedulesPage() {
-  const { role, claims, loading: authLoading } = useAuth();
+  const { user, role, claims, loading: authLoading } = useAuth();
   const managerDepartmentId = typeof claims?.departmentId === "string" ? claims.departmentId : "";
   const bghSchoolLevel = typeof claims?.schoolLevel === "string" ? claims.schoolLevel : "secondary";
 
@@ -643,10 +645,27 @@ export default function SchedulesPage() {
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [applySchoolLevel, setApplySchoolLevel] = useState<string>(""); // "primary" | "secondary" | "all"
   const [applyScope, setApplyScope] = useState<"level" | "all" | "class" | "teacher">("level");
+  const [applySourceWeek, setApplySourceWeek] = useState(currentMonday());
+  const [applyTargetMode, setApplyTargetMode] = useState<"single" | "multiple">("single");
+  const [applyTargetWeek, setApplyTargetWeek] = useState(addDaysDateOnly(currentMonday(), 7));
   const [applyWeeksCount, setApplyWeeksCount] = useState<number>(1);
   const [applying, setApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState<{ current: number; total: number; message: string } | null>(null);
   const [applyError, setApplyError] = useState("");
+  const [applySourceExtraRows, setApplySourceExtraRows] = useState<ScheduleRow[]>([]);
+  const [loadingApplySource, setLoadingApplySource] = useState(false);
+
+  // Lock Teacher Schedule states
+  const [scheduleConfig, setScheduleConfig] = useState<{
+    isLocked?: boolean;
+    lockedAt?: string | null;
+    lockedByUid?: string | null;
+    lockedByName?: string | null;
+    lockReason?: string;
+  } | null>(null);
+  const [toggleLockModalOpen, setToggleLockModalOpen] = useState(false);
+  const [lockingSchedule, setLockingSchedule] = useState(false);
+  const [lockReasonInput, setLockReasonInput] = useState("");
 
   // Sync school level for bgh
   useEffect(() => {
@@ -721,6 +740,52 @@ export default function SchedulesPage() {
     fetchExportSchedules();
     return () => { active = false; };
   }, [exportOpen, exportWeekStart, managerDepartmentId, role, selectedWeek]);
+
+  // Fetch extra schedules when applying from a week other than selectedWeek
+  useEffect(() => {
+    if (!applyModalOpen) return;
+    if (applySourceWeek === selectedWeek) {
+      setApplySourceExtraRows([]);
+      return;
+    }
+    let active = true;
+    setLoadingApplySource(true);
+    const fetchApplySourceSchedules = async () => {
+      try {
+        const q = role === "totruong"
+          ? query(collection(firestore, "schedules"), where("departmentId", "==", managerDepartmentId), where("weekStart", "==", applySourceWeek))
+          : query(collection(firestore, "schedules"), where("weekStart", "==", applySourceWeek));
+        const snap = await getDocs(q);
+        if (active) {
+          setApplySourceExtraRows(snap.docs.map((doc) => normalizeSchedulePeriodRange({ ...doc.data(), id: doc.id })));
+        }
+      } catch (err) {
+        console.warn("Lỗi tải lịch tuần nguồn đồng bộ:", err);
+      } finally {
+        if (active) setLoadingApplySource(false);
+      }
+    };
+    fetchApplySourceSchedules();
+    return () => { active = false; };
+  }, [applyModalOpen, applySourceWeek, managerDepartmentId, role, selectedWeek]);
+
+  // Listen to Schedule Lock Config
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(firestore, "publicSettings", "scheduleConfig"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setScheduleConfig(snapshot.data() as any);
+        } else {
+          setScheduleConfig(null);
+        }
+      },
+      (err) => {
+        console.warn("Không thể tải cấu hình khóa lịch:", err);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   // Query catalogs
   useEffect(() => {
@@ -1337,6 +1402,10 @@ export default function SchedulesPage() {
     const targetLevel = level ?? (bghSchoolLevel !== "all" ? bghSchoolLevel : "all");
     setApplySchoolLevel(targetLevel);
     setApplyScope(targetLevel === "all" ? "all" : "level");
+    setApplySourceWeek(selectedWeek);
+    setApplyTargetMode("single");
+    setApplyTargetWeek(addDaysDateOnly(selectedWeek, 7));
+    setApplyWeeksCount(1);
     setApplyModalOpen(true);
   }
 
@@ -1463,10 +1532,30 @@ export default function SchedulesPage() {
     setApplying(true);
     setApplyError("");
     try {
-      // Filter candidate schedules to copy based on applyScope & applySchoolLevel
-      const candidateSchedules = rows.filter((row) => {
+      // Determine target weeks
+      const targetWeeks: string[] = [];
+      if (applyTargetMode === "single") {
+        if (!applyTargetWeek) throw new Error("Vui lòng chọn tuần hướng đến để đồng bộ.");
+        targetWeeks.push(applyTargetWeek);
+      } else {
+        for (let w = 1; w <= applyWeeksCount; w++) {
+          targetWeeks.push(addDaysDateOnly(applySourceWeek, w * 7));
+        }
+      }
+
+      if (targetWeeks.length === 0) {
+        throw new Error("Vui lòng chọn ít nhất một tuần đích hướng đến.");
+      }
+
+      if (targetWeeks.includes(applySourceWeek)) {
+        throw new Error(`Tuần hướng đến không được trùng với tuần nguồn sao chép (${formatWeekRange(applySourceWeek)}).`);
+      }
+
+      // Filter candidate schedules to copy from applySourceRows
+      const sourceRows = applySourceWeek === selectedWeek ? rows : applySourceExtraRows;
+      const candidateSchedules = sourceRows.filter((row) => {
         if (row.status === "cancelled") return false;
-        if (textValue(row.weekStart) !== selectedWeek) return false;
+        if (textValue(row.weekStart) !== applySourceWeek) return false;
         const cls = classes.find((c) => c.id === row.classId);
         const lvl = row.schoolLevel || catalogSchoolLevel(cls) || "secondary";
 
@@ -1480,13 +1569,7 @@ export default function SchedulesPage() {
 
       if (candidateSchedules.length === 0) {
         const levelText = applySchoolLevel === "primary" ? "Tiểu học" : applySchoolLevel === "secondary" ? "THCS" : "";
-        throw new Error(`Không có tiết học nào${levelText ? ` thuộc cấp ${levelText}` : ""} trong tuần nguồn để áp dụng.`);
-      }
-
-      // Generate target weeks
-      const targetWeeks: string[] = [];
-      for (let w = 1; w <= applyWeeksCount; w++) {
-        targetWeeks.push(addDaysDateOnly(selectedWeek, w * 7));
+        throw new Error(`Không có tiết học nào${levelText ? ` thuộc cấp ${levelText}` : ""} trong tuần nguồn (${formatWeekRange(applySourceWeek)}) để áp dụng.`);
       }
 
       let totalCopied = 0;
@@ -1570,12 +1653,12 @@ export default function SchedulesPage() {
 
       const levelLabel = applySchoolLevel === "primary" ? "Cấp 1 (Tiểu học)" : applySchoolLevel === "secondary" ? "Cấp 2 (THCS)" : "";
       toast.success(
-        `Đã đồng bộ thành công ${totalCopied} tiết học ${levelLabel} sang ${targetWeeks.length} tuần tiếp theo!${
+        `Đã đồng bộ thành công ${totalCopied} tiết học ${levelLabel} từ tuần (${formatWeekRange(applySourceWeek)}) sang ${targetWeeks.length} tuần đích!${
           totalSkipped > 0 ? ` (Bỏ qua ${totalSkipped} tiết đã có sẵn hoặc bị xung đột)` : ""
         }`
       );
       setApplyModalOpen(false);
-      // Automatically switch to the newly scheduled next week
+      // Automatically switch to the newly scheduled target week
       setSelectedWeek(targetWeeks[0]);
     } catch (err) {
       setApplyError(firebaseErrorMessage(err));
@@ -1606,10 +1689,12 @@ export default function SchedulesPage() {
     });
   }
 
+  const applySourceRows = applySourceWeek === selectedWeek ? rows : applySourceExtraRows;
+
   const applyCandidateCount = useMemo(() => {
-    return rows.filter((row) => {
+    return applySourceRows.filter((row) => {
       if (row.status === "cancelled") return false;
-      if (textValue(row.weekStart) !== selectedWeek) return false;
+      if (textValue(row.weekStart) !== applySourceWeek) return false;
       const cls = classes.find((c) => c.id === row.classId);
       const lvl = row.schoolLevel || catalogSchoolLevel(cls) || "secondary";
 
@@ -1620,7 +1705,37 @@ export default function SchedulesPage() {
       if (role === "bgh" && bghSchoolLevel && bghSchoolLevel !== "all" && lvl !== bghSchoolLevel) return false;
       return true;
     }).length;
-  }, [applySchoolLevel, applyScope, bghSchoolLevel, classes, managerDepartmentId, role, rows, selectedClassId, selectedTeacherId, selectedWeek]);
+  }, [applySchoolLevel, applyScope, applySourceRows, applySourceWeek, bghSchoolLevel, classes, managerDepartmentId, role, selectedClassId, selectedTeacherId]);
+
+  // Lock Teacher Schedule actions
+  function openToggleLockModal() {
+    setLockReasonInput(scheduleConfig?.lockReason || "Thời khóa biểu đang được xếp lại và điều chỉnh. Vui lòng quay lại sau!");
+    setToggleLockModalOpen(true);
+  }
+
+  async function handleToggleScheduleLock() {
+    if (!user) return;
+    setLockingSchedule(true);
+    try {
+      const willLock = !scheduleConfig?.isLocked;
+      await setDoc(doc(firestore, "publicSettings", "scheduleConfig"), {
+        isLocked: willLock,
+        lockedAt: willLock ? new Date().toISOString() : null,
+        lockedByUid: willLock ? user.uid : null,
+        lockedByName: willLock ? (user.displayName || user.email || "Quản trị viên") : null,
+        lockReason: willLock ? (lockReasonInput.trim() || "Thời khóa biểu đang được xếp lại và điều chỉnh. Vui lòng quay lại sau!") : "",
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      }, { merge: true });
+
+      toast.success(willLock ? "Đã khóa lịch dạy bên giáo viên thành công!" : "Đã mở khóa lịch dạy, giáo viên hiện có thể xem lịch!");
+      setToggleLockModalOpen(false);
+    } catch (err) {
+      toast.error("Không thể thay đổi trạng thái khóa lịch: " + firebaseErrorMessage(err));
+    } finally {
+      setLockingSchedule(false);
+    }
+  }
 
   return (
     <RoleGuard allowedRoles={["admin", "totruong", "bgh"]}>
@@ -1708,6 +1823,33 @@ export default function SchedulesPage() {
                 </>
               )}
 
+              {/* Nút Khóa / Mở lịch dạy Giáo viên */}
+              {(role === "admin" || role === "bgh") && (
+                <Button
+                  variant={scheduleConfig?.isLocked ? "danger" : "secondary"}
+                  onClick={openToggleLockModal}
+                  className={cn(
+                    "font-bold gap-1.5 shadow-xs transition-all",
+                    scheduleConfig?.isLocked
+                      ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700 ring-2 ring-rose-500/30 animate-pulse"
+                      : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  )}
+                  title={scheduleConfig?.isLocked ? "Lịch dạy bên giáo viên đang bị KHÓA. Bấm để mở lại." : "Bấm để KHÓA lịch dạy bên giáo viên (tránh GV xem lịch cũ khi chưa xếp xong)"}
+                >
+                  {scheduleConfig?.isLocked ? (
+                    <>
+                      <Lock className="h-4 w-4 text-white" />
+                      Đang khóa lịch GV (Bấm để Mở)
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="h-4 w-4 text-amber-700" />
+                      Khóa lịch dạy GV
+                    </>
+                  )}
+                </Button>
+              )}
+
               {/* Nút In nhanh trang hiện tại */}
               <Button
                 variant="secondary"
@@ -1729,6 +1871,43 @@ export default function SchedulesPage() {
             </div>
           )}
         />
+
+        {/* BANNER CẢNH BÁO LỊCH ĐANG BỊ KHÓA ĐỐI VỚI GIÁO VIÊN */}
+        {scheduleConfig?.isLocked && (role === "admin" || role === "bgh") ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 shadow-sm text-rose-950">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-rose-600 p-2 text-white shrink-0 mt-0.5 shadow-xs">
+                <Lock className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-sm text-rose-900">
+                    LỊCH DẠY BÊN GIÁO VIÊN ĐANG BỊ KHÓA
+                  </h4>
+                  <Badge tone="danger" className="text-[10px] px-2 py-0.5 font-bold">Giáo viên không vào được</Badge>
+                </div>
+                <p className="text-xs text-rose-800 mt-0.5 leading-relaxed">
+                  Giáo viên hiện bị chặn truy cập xem lịch để tránh xem nhầm lịch cũ trong lúc bạn đang xếp hoặc đồng bộ thời khóa biểu mới.
+                  {scheduleConfig.lockedByName ? ` (Người khóa: ${scheduleConfig.lockedByName})` : ""}
+                </p>
+                {scheduleConfig.lockReason ? (
+                  <p className="text-[11px] font-medium text-rose-700 mt-1 italic">
+                    Lời nhắn hiển thị cho GV: "{scheduleConfig.lockReason}"
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={openToggleLockModal}
+              className="bg-white hover:bg-rose-100 text-rose-800 border-rose-300 font-bold shrink-0 shadow-xs"
+            >
+              <Unlock className="h-4 w-4 text-rose-600" />
+              Mở khóa lịch dạy ngay
+            </Button>
+          </div>
+        ) : null}
 
         {/* Modern Subject Color Palette Quick Legend */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -2763,14 +2942,74 @@ export default function SchedulesPage() {
               </div>
             </div>
 
-            {/* Source Week Box */}
-            <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-              <div className="flex items-center justify-between">
+            {/* Source Week Box (Tuần nguồn sao chép) */}
+            <div className="rounded-xl border border-border bg-muted/30 p-3.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tuần nguồn sao chép</span>
-                  <p className="text-sm font-bold text-foreground mt-0.5">{formatWeekRange(selectedWeek)}</p>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Tuần nguồn để đồng bộ (lấy dữ liệu)
+                  </span>
+                  <p className="text-sm font-bold text-foreground mt-0.5">
+                    {formatWeekRange(applySourceWeek)}
+                  </p>
                 </div>
-                <Badge tone="info">{applyCandidateCount} tiết học sẵn sàng</Badge>
+                {loadingApplySource ? (
+                  <Badge tone="info" className="flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                    Đang tải lịch...
+                  </Badge>
+                ) : (
+                  <Badge tone={applyCandidateCount > 0 ? "info" : "warning"}>
+                    {applyCandidateCount} tiết học sẵn sàng
+                  </Badge>
+                )}
+              </div>
+
+              {/* Sổ lịch chọn ngày & phím điều hướng tuần nguồn */}
+              <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-border/50">
+                <div className="flex items-center rounded-lg border border-border bg-card p-0.5 shadow-2xs">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setApplySourceWeek((curr) => addDaysDateOnly(curr, -7))}
+                    title="Tuần trước"
+                    className="h-7 w-7 p-0"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setApplySourceWeek(currentMonday())}
+                    className="h-7 px-2 text-[11px] font-medium"
+                  >
+                    Tuần này
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setApplySourceWeek((curr) => addDaysDateOnly(curr, 7))}
+                    title="Tuần sau"
+                    className="h-7 w-7 p-0"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                  <Input
+                    type="date"
+                    value={applySourceWeek}
+                    onChange={(e) => setApplySourceWeek(normalizeWeekStartDateOnly(e.target.value))}
+                    className="h-8 text-xs font-semibold bg-background"
+                  />
+                  <span className="text-[11px] text-muted-foreground font-medium hidden sm:inline">
+                    (Thứ 2: {applySourceWeek})
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -2824,49 +3063,138 @@ export default function SchedulesPage() {
               </div>
             </div>
 
-            {/* Target Weeks count */}
-            <div>
-              <Label>Số tuần tiếp theo cần áp dụng</Label>
-              <div className="grid grid-cols-3 gap-2 mt-1">
-                {[
-                  { count: 1, label: "1 tuần tiếp theo", desc: "Tuần kế tiếp" },
-                  { count: 2, label: "2 tuần tiếp theo", desc: "2 tuần tới" },
-                  { count: 4, label: "4 tuần tiếp theo", desc: "1 tháng tới" },
-                ].map((item) => (
+            {/* Target Weeks Selection (Tuần hướng đến) */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="font-bold text-foreground">Tuần hướng đến (nhận dữ liệu đồng bộ)</Label>
+                <div className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
                   <button
-                    key={item.count}
                     type="button"
-                    onClick={() => setApplyWeeksCount(item.count)}
+                    onClick={() => setApplyTargetMode("single")}
                     className={cn(
-                      "flex flex-col items-center justify-center p-3 rounded-xl border text-center transition",
-                      applyWeeksCount === item.count ? "border-indigo-600 bg-indigo-50 text-indigo-900 font-bold ring-1 ring-indigo-600" : "border-border hover:bg-muted text-foreground",
+                      "px-2.5 py-1 rounded-md font-semibold transition text-xs",
+                      applyTargetMode === "single" ? "bg-card text-foreground shadow-2xs font-bold" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    <span className="text-xs font-bold">{item.label}</span>
-                    <span className="text-[10px] text-muted-foreground mt-0.5">{item.desc}</span>
+                    1 tuần đích cụ thể
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setApplyTargetMode("multiple")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md font-semibold transition text-xs",
+                      applyTargetMode === "multiple" ? "bg-card text-foreground shadow-2xs font-bold" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Nhiều tuần liên tiếp
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Target weeks preview */}
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 text-xs text-indigo-950 space-y-1.5">
-              <div className="font-bold flex items-center gap-1.5 text-indigo-900">
-                <ArrowRight className="h-4 w-4" />
-                Các tuần đích sẽ được tạo lịch:
-              </div>
-              <ul className="list-disc list-inside space-y-0.5 pl-1 text-[11px] text-indigo-800">
-                {Array.from({ length: applyWeeksCount }).map((_, idx) => {
-                  const targetMonday = addDaysDateOnly(selectedWeek, (idx + 1) * 7);
-                  return (
-                    <li key={targetMonday} className="font-medium">
-                      Tuần {idx + 1}: <strong>{formatWeekRange(targetMonday)}</strong>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="text-[10px] text-indigo-700 mt-1">
-                * Hệ thống sẽ tự động bỏ qua các tiết học đã tồn tại ở tuần đích để tránh trùng lặp.
+              {applyTargetMode === "single" ? (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3.5 space-y-2.5">
+                  <div>
+                    <span className="text-[11px] font-semibold text-indigo-900 block mb-1">
+                      Mở sổ lịch để chọn tuần hướng đến:
+                    </span>
+                    <Input
+                      type="date"
+                      value={applyTargetWeek}
+                      onChange={(e) => setApplyTargetWeek(normalizeWeekStartDateOnly(e.target.value))}
+                      className="h-9 text-xs font-bold bg-white border-indigo-200 text-indigo-950"
+                    />
+                  </div>
+
+                  {/* Phím tắt chọn nhanh tuần kế tiếp */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[11px] font-medium text-indigo-800 mr-1">Chọn nhanh:</span>
+                    {[
+                      { label: "Tuần sau (+1)", days: 7 },
+                      { label: "Sau 2 tuần (+2)", days: 14 },
+                      { label: "Sau 3 tuần (+3)", days: 21 },
+                      { label: "Sau 4 tuần (+4)", days: 28 },
+                    ].map((btn) => {
+                      const computedTarget = addDaysDateOnly(applySourceWeek, btn.days);
+                      const isSelected = applyTargetWeek === computedTarget;
+                      return (
+                        <Button
+                          key={btn.days}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setApplyTargetWeek(computedTarget)}
+                          className={cn(
+                            "h-7 text-[11px] px-2.5 py-0 border-indigo-200 transition-all",
+                            isSelected
+                              ? "bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-xs"
+                              : "bg-white text-indigo-900 hover:bg-indigo-100"
+                          )}
+                        >
+                          {btn.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-lg bg-white/90 border border-indigo-200 p-2.5 text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                    <div>
+                      <span className="text-muted-foreground text-[10px] uppercase font-bold block">Tuần đích hướng đến:</span>
+                      <span className="font-bold text-indigo-950 text-sm">{formatWeekRange(applyTargetWeek)}</span>
+                    </div>
+                    {applyTargetWeek === applySourceWeek ? (
+                      <Badge tone="danger">Trùng tuần nguồn!</Badge>
+                    ) : (
+                      <Badge tone="success">Tuần đích hợp lệ</Badge>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { count: 1, label: "1 tuần kế tiếp", desc: "1 tuần" },
+                      { count: 2, label: "2 tuần kế tiếp", desc: "2 tuần" },
+                      { count: 3, label: "3 tuần kế tiếp", desc: "3 tuần" },
+                      { count: 4, label: "4 tuần kế tiếp", desc: "1 tháng" },
+                    ].map((item) => (
+                      <button
+                        key={item.count}
+                        type="button"
+                        onClick={() => setApplyWeeksCount(item.count)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition",
+                          applyWeeksCount === item.count
+                            ? "border-indigo-600 bg-indigo-50 text-indigo-900 font-bold ring-1 ring-indigo-600"
+                            : "border-border hover:bg-muted text-foreground"
+                        )}
+                      >
+                        <span className="text-xs font-bold">{item.label}</span>
+                        <span className="text-[10px] text-muted-foreground mt-0.5">{item.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Target weeks preview */}
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-xs text-indigo-950 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5 text-indigo-900">
+                      <ArrowRight className="h-4 w-4" />
+                      Các tuần đích sẽ nhận lịch kể từ tuần nguồn ({formatWeekRange(applySourceWeek)}):
+                    </div>
+                    <ul className="list-disc list-inside space-y-0.5 pl-1 text-[11px] text-indigo-800">
+                      {Array.from({ length: applyWeeksCount }).map((_, idx) => {
+                        const targetMonday = addDaysDateOnly(applySourceWeek, (idx + 1) * 7);
+                        return (
+                          <li key={targetMonday} className="font-medium">
+                            Tuần {idx + 1}: <strong>{formatWeekRange(targetMonday)}</strong>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground italic px-1">
+                * Hệ thống sẽ tự động đối soát và bỏ qua các tiết học đã tồn tại ở tuần đích để tránh trùng lặp.
               </p>
             </div>
 
@@ -2894,6 +3222,95 @@ export default function SchedulesPage() {
                 {applyError}
               </div>
             ) : null}
+          </div>
+        </Modal>
+
+        {/* Modal: Khóa / Mở lịch dạy đối với Giáo viên */}
+        <Modal
+          open={toggleLockModalOpen}
+          onOpenChange={(next) => {
+            if (!lockingSchedule) {
+              setToggleLockModalOpen(next);
+            }
+          }}
+          title={scheduleConfig?.isLocked ? "Mở khóa lịch dạy cho Giáo viên" : "Khóa lịch dạy đối với Giáo viên"}
+          description={
+            scheduleConfig?.isLocked
+              ? "Giáo viên sẽ có thể truy cập lại trang xem lịch dạy và xem thời khóa biểu mới nhất theo thời gian thực."
+              : "Khóa quyền truy cập vào lịch dạy của giáo viên, phòng trường hợp bạn chưa xếp xong hoặc đang điều chỉnh để giáo viên không xem nhầm lịch cũ."
+          }
+          footer={(
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" disabled={lockingSchedule} onClick={() => setToggleLockModalOpen(false)}>
+                Hủy
+              </Button>
+              <Button
+                loading={lockingSchedule}
+                onClick={handleToggleScheduleLock}
+                className={scheduleConfig?.isLocked ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold" : "bg-rose-600 hover:bg-rose-700 text-white font-bold"}
+              >
+                {scheduleConfig?.isLocked ? (
+                  <>
+                    <Unlock className="h-4 w-4" />
+                    Xác nhận Mở khóa
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4" />
+                    Xác nhận Khóa lịch dạy
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        >
+          <div className="space-y-4">
+            <div className={cn(
+              "rounded-xl border p-4 text-xs space-y-2",
+              scheduleConfig?.isLocked
+                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                : "border-amber-200 bg-amber-50 text-amber-950"
+            )}>
+              <div className="font-bold flex items-center gap-1.5 text-sm">
+                {scheduleConfig?.isLocked ? (
+                  <>
+                    <Unlock className="h-4 w-4 text-emerald-600" />
+                    Hiện tại: Lịch dạy đang bị KHÓA
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4 text-amber-600" />
+                    Hiện tại: Lịch dạy đang MỞ
+                  </>
+                )}
+              </div>
+              <p className="leading-relaxed">
+                {scheduleConfig?.isLocked
+                  ? "Khi bạn bấm 'Xác nhận Mở khóa', toàn bộ giáo viên trong trường sẽ ngay lập tức vào được lịch dạy và xem thời khóa biểu phân công mới."
+                  : "Khi bạn bấm 'Xác nhận Khóa lịch dạy', toàn bộ giáo viên truy cập trang lịch dạy sẽ thấy màn hình thông báo tạm khóa và không xem được lịch cũ cho đến khi bạn mở lại."}
+              </p>
+              {scheduleConfig?.isLocked && scheduleConfig.lockedAt ? (
+                <p className="text-[11px] text-muted-foreground pt-1 border-t border-emerald-200/60">
+                  Thời điểm khóa: {format(parseISO(scheduleConfig.lockedAt), "dd/MM/yyyy HH:mm:ss")}
+                  {scheduleConfig.lockedByName ? ` bởi ${scheduleConfig.lockedByName}` : ""}
+                </p>
+              ) : null}
+            </div>
+
+            {!scheduleConfig?.isLocked && (
+              <div>
+                <Label>Lời nhắn thông báo hiển thị cho Giáo viên (Tùy chọn)</Label>
+                <Input
+                  value={lockReasonInput}
+                  onChange={(e) => setLockReasonInput(e.target.value)}
+                  placeholder="Thời khóa biểu đang được xếp lại và điều chỉnh. Vui lòng quay lại sau!"
+                  className="mt-1"
+                />
+                <span className="text-[11px] text-muted-foreground mt-1 block">
+                  Lời nhắn này sẽ hiển thị trang trọng trên màn hình của giáo viên khi họ truy cập lịch dạy.
+                </span>
+              </div>
+            )}
           </div>
         </Modal>
 
