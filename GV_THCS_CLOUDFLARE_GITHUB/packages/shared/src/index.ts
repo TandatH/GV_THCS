@@ -2022,5 +2022,89 @@ Kính mong Quý Phụ huynh cùng phối hợp với nhà trường động viê
 Trân trọng cảm ơn Quý Phụ huynh!`;
 }
 
+export function getClassGrade(classItem?: { name?: string; code?: string; grade?: unknown; gradeLevel?: unknown; [key: string]: any } | null): number {
+  if (!classItem) return 0;
+  const explicit = Number(classItem.grade ?? classItem.gradeLevel);
+  if (Number.isInteger(explicit) && explicit >= 1 && explicit <= 9) return explicit;
+  const match = String(classItem.name || classItem.code || "").match(/(?:lớp\s*|k)?([1-9])/i);
+  return match ? Number(match[1]) : 0;
+}
+
+export function isHomeroomOrNonGradedSubject(name: string, code?: string): boolean {
+  const normName = (name || "").toLowerCase().trim();
+  const normCode = (code || "").toLowerCase().trim();
+  const keywords = [
+    "sinh hoạt lớp", "sinh hoat lop", "shl", "tiết sinh hoạt", "tiet sinh hoat",
+    "chào cờ", "chao co", "cc", "hoạt động tập thể", "hoat dong tap the",
+  ];
+  return keywords.some((k) => normName.includes(k) || normCode === k);
+}
+
+export function getSubjectGrade(subject: {
+  name?: string;
+  code?: string;
+  grade?: unknown;
+  gradeLevel?: unknown;
+  applicableGrades?: number[];
+  [key: string]: any;
+}): number | number[] | null {
+  if (Array.isArray(subject.applicableGrades) && subject.applicableGrades.length > 0) {
+    return subject.applicableGrades;
+  }
+  const explicit = Number(subject.grade ?? subject.gradeLevel);
+  if (Number.isInteger(explicit) && explicit >= 1 && explicit <= 9) return explicit;
+
+  // Trích xuất số khối từ tên hoặc mã môn, ví dụ: "Toán 6" -> 6, "Tin học 6" -> 6, "Khoa Học Tự Nhiên 6" -> 6, "KHTN-HÓA 8" -> 8
+  const match = String(subject.name || subject.code || "").match(/(?:^|\s|-|_)([1-9])(?:\s|$)/);
+  if (match) return Number(match[1]);
+  return null;
+}
+
+export function isSubjectMatchingClassGrade(
+  subject: {
+    name?: string;
+    code?: string;
+    grade?: unknown;
+    gradeLevel?: unknown;
+    applicableGrades?: number[];
+    isActive?: boolean;
+    [key: string]: any;
+  },
+  targetGrade: number
+): boolean {
+  if (subject.isActive === false) return false;
+  if (isHomeroomOrNonGradedSubject(subject.name || "", subject.code)) return false;
+
+  if (targetGrade <= 0) return true;
+
+  const subjGrade = getSubjectGrade(subject);
+  if (subjGrade === null) {
+    return true; // Môn chung không gắn số khối cụ thể
+  }
+  if (Array.isArray(subjGrade)) {
+    return subjGrade.includes(targetGrade);
+  }
+  return subjGrade === targetGrade;
+}
+
+export function getSubjectPriority(name: string): number {
+  const n = (name || "").toLowerCase();
+  if (n.includes("toán") || n.includes("toan")) return 1;
+  if (n.includes("ngữ văn") || n.includes("ngu van") || n.includes("văn")) return 2;
+  if (n.includes("tiếng anh") || n.includes("tieng anh") || n.includes("ngoại ngữ")) return 3;
+  if (n.includes("khoa học tự nhiên") || n.includes("khtn")) return 4;
+  if (n.includes("vật lí") || n.includes("vật lý") || n.includes("hóa") || n.includes("sinh học")) return 4.5;
+  if (n.includes("lịch sử") || n.includes("địa lí") || n.includes("địa lý") || n.includes("lsđl")) return 5;
+  if (n.includes("giáo dục công dân") || n.includes("gdcd")) return 6;
+  if (n.includes("tin học") || n.includes("tin")) return 7;
+  if (n.includes("công nghệ")) return 8;
+  if (n.includes("thể chất") || n.includes("gdtc") || n.includes("thể dục")) return 9;
+  if (n.includes("âm nhạc") || n.includes("mỹ thuật") || n.includes("mĩ thuật") || n.includes("nghệ thuật")) return 10;
+  if (n.includes("hđtn") || n.includes("trải nghiệm") || n.includes("hướng nghiệp")) return 11;
+  if (n.includes("gdđp") || n.includes("địa phương")) return 12;
+  return 99;
+}
+
+
 
 
