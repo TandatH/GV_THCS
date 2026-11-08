@@ -41,6 +41,7 @@ import {
   generateZaloReminderMessage,
   reminderStatuses,
   type ReminderStatus,
+  getSubjectPriority,
 } from "@school/shared";
 
 type Row = { id: string; [key: string]: any };
@@ -307,7 +308,7 @@ function HomeroomGradesContent() {
     });
   }, [summaries, searchQuery]);
 
-  // Columns for matrix
+  // Columns for matrix sorted by standard priority
   const matrixSubjectColumns: SubjectColumn[] = useMemo(() => {
     // Only show subjects that have at least one score in summaries
     const subIdsInUse = new Set<string>();
@@ -323,7 +324,13 @@ function HomeroomGradesContent() {
         id: s.id,
         code: s.code || "",
         name: s.name || s.code || "",
-      }));
+      }))
+      .sort((a, b) => {
+        const pA = getSubjectPriority(a.name);
+        const pB = getSubjectPriority(b.name);
+        if (pA !== pB) return pA - pB;
+        return a.name.localeCompare(b.name, "vi");
+      });
   }, [subjects, summaries]);
 
   // Open Reminder Dialog
@@ -410,7 +417,7 @@ function HomeroomGradesContent() {
   }
 
   // Export Weak Students Excel
-  function handleExportWeakStudents() {
+  async function handleExportWeakStudents() {
     if (!activeClass || !activePeriod) return;
 
     const rows = filteredWeakStudents.map((st, idx) => {
@@ -438,16 +445,21 @@ function HomeroomGradesContent() {
       };
     });
 
-    exportHomeroomWeakStudentsExcel({
-      className: activeClass.name || "Lop",
-      periodName: activePeriod.name || "Dot_Diem",
-      rows,
-    });
-    toast.success("Đã xuất danh sách học sinh cần nhắc nhở ra file Excel!");
+    try {
+      await exportHomeroomWeakStudentsExcel({
+        className: activeClass.name || "Lop",
+        periodName: activePeriod.name || "Dot_Diem",
+        rows,
+      });
+      toast.success("Đã xuất danh sách học sinh cần nhắc nhở ra file Excel!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Không thể xuất file Excel.");
+    }
   }
 
   // Export Matrix Excel
-  function handleExportMatrix() {
+  async function handleExportMatrix() {
     if (!activeClass || !activePeriod) return;
 
     const rows = matrixStudents.map((st, idx) => {
@@ -467,13 +479,18 @@ function HomeroomGradesContent() {
       };
     });
 
-    exportClassGradeMatrixExcel({
-      className: activeClass.name || "Lop",
-      periodName: activePeriod.name || "Dot_Diem",
-      subjects: matrixSubjectColumns,
-      rows,
-    });
-    toast.success("Đã xuất sổ điểm tổng hợp cả lớp ra file Excel!");
+    try {
+      await exportClassGradeMatrixExcel({
+        className: activeClass.name || "Lop",
+        periodName: activePeriod.name || "Dot_Diem",
+        subjects: matrixSubjectColumns,
+        rows,
+      });
+      toast.success("Đã xuất sổ điểm tổng hợp cả lớp ra file Excel!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Không thể xuất file Excel sổ điểm.");
+    }
   }
 
   // Helper render status badge

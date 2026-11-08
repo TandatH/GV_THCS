@@ -42,6 +42,9 @@ import {
   isGradeWeak,
   gradePeriodTypes,
   type GradePeriodType,
+  getClassGrade,
+  isSubjectMatchingClassGrade,
+  getSubjectPriority,
 } from "@school/shared";
 
 type Row = { id: string; [key: string]: any };
@@ -183,20 +186,30 @@ export default function BghGradesPage() {
     return students.filter((s) => s.classId === selectedClassId && s.isActive !== false);
   }, [students, selectedClassId]);
 
-  // Filtered subjects for template & detection
+  // Grade level of active class (e.g. 6 for 6A1, 7 for 7A1)
+  const targetGrade = useMemo(() => {
+    return getClassGrade(activeClass);
+  }, [activeClass]);
+
+  // Filtered subjects for template & detection: strictly match class grade & exclude homeroom (SHL)
   const relevantSubjects = useMemo(() => {
     return subjects
-      .filter((s) => s.isActive !== false)
+      .filter((s) => isSubjectMatchingClassGrade(s, targetGrade))
       .map((s) => ({
         id: s.id,
         code: String(s.code || "").toUpperCase(),
         name: String(s.name || s.code || ""),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, "vi"));
-  }, [subjects]);
+      .sort((a, b) => {
+        const pA = getSubjectPriority(a.name);
+        const pB = getSubjectPriority(b.name);
+        if (pA !== pB) return pA - pB;
+        return a.name.localeCompare(b.name, "vi");
+      });
+  }, [subjects, targetGrade]);
 
   // Download template for selected class
-  function handleDownloadTemplate() {
+  async function handleDownloadTemplate() {
     if (!activeClass) {
       toast.error("Vui lòng chọn lớp học trước khi tải mẫu!");
       return;
@@ -206,13 +219,23 @@ export default function BghGradesPage() {
       fullName: s.fullName || "",
     }));
 
-    downloadClassGradeTemplate({
-      className: activeClass.name || activeClass.code || "Lop",
-      periodName: activePeriod?.name || "Dot_Diem",
-      students: studentRows,
-      subjects: relevantSubjects,
-    });
-    toast.success(`Đã tải mẫu Excel cho lớp ${activeClass.name || ""}`);
+    const currentYear = schoolYears.find((y) => y.id === activePeriod?.schoolYearId);
+
+    try {
+      await downloadClassGradeTemplate({
+        className: activeClass.name || activeClass.code || "Lop",
+        periodName: activePeriod?.name || "Dot_Diem",
+        schoolYearName: currentYear?.name || currentYear?.code || "",
+        students: studentRows,
+        subjects: relevantSubjects,
+      });
+      toast.success(
+        `Đã tải mẫu Excel cho lớp ${activeClass.name || ""} (gồm ${relevantSubjects.length} môn khối ${targetGrade || ""})`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Không thể tạo file Excel mẫu.");
+    }
   }
 
   // Handle Excel upload
@@ -239,20 +262,45 @@ export default function BghGradesPage() {
         const wb = XLSX.read(bstr, { type: "binary" });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const rawJson = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws);
 
-        if (rawJson.length === 0) {
+        // Đọc toàn bộ các hàng dưới dạng mảng 2 chiều
+        const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
+        if (!sheetRows || sheetRows.length === 0) {
           toast.error("File Excel không có dữ liệu!");
           return;
         }
 
-        // Map column headers to subjects
-        const headers = Object.keys(rawJson[0]);
-        const matchedSubjects: SubjectColumn[] = [];
+        // Tìm dòng header thông minh (chứa "Mã học sinh" / "Mã HS" hoặc "Họ và tên")
+        let headerRowIdx = -1;
+        for (let r = 0; r < Math.min(sheetRows.length, 10); r++) {
+          const row = sheetRows[r];
+          if (Array.isArray(row)) {
+            const rowStr = row.map((cell) => String(cell || "").toLowerCase().trim());
+            const hasCode = rowStr.some((c) =>
+              ["mã học sinh", "mã hs", "mahs", "code", "mã"].includes(c)
+            );
+            const hasName = rowStr.some((c) =>
+              ["họ và tên", "họ tên", "hoten", "name", "họ và tên học sinh"].includes(c)
+            );
+            if (hasCode || (hasName && rowStr.some((c) => c.includes("toán") || c.includes("văn") || c === "stt"))) {
+              headerRowIdx = r;
+              break;
+            }
+          }
+        }
 
-        headers.forEach((header) => {
+        if (headerRowIdx === -1) {
+          headerRowIdx = 0;
+        }
+
+        const rawHeaders = (sheetRows[headerRowIdx] as unknown[]).map((h) => String(h || "").trim());
+        const dataRows = sheetRows.slice(headerRowIdx + 1);
+
+        // Map column index to subjects
+        const matchedSubjectCols: { sub: SubjectColumn; colIdx: number }[] = [];
+
+        rawHeaders.forEach((header, colIdx) => {
           const cleanHeader = header.trim().toLowerCase();
-          // Skip general columns
           if (
             ["stt", "mã học sinh", "mã hs", "mahs", "code", "họ và tên", "họ tên", "hoten", "name", "lớp", "class"].includes(
               cleanHeader
@@ -260,7 +308,8 @@ export default function BghGradesPage() {
           ) {
             return;
           }
-          // Match with known subjects
+
+          // Khớp với môn học thuộc danh mục áp dụng của khối này
           const found = relevantSubjects.find(
             (sub) =>
               sub.name.toLowerCase() === cleanHeader ||
@@ -268,17 +317,26 @@ export default function BghGradesPage() {
               cleanHeader.includes(sub.name.toLowerCase()) ||
               sub.name.toLowerCase().includes(cleanHeader)
           );
-          if (found && !matchedSubjects.some((m) => m.id === found.id)) {
-            matchedSubjects.push(found);
+
+          if (found && !matchedSubjectCols.some((m) => m.sub.id === found.id)) {
+            matchedSubjectCols.push({ sub: found, colIdx });
           }
         });
 
-        if (matchedSubjects.length === 0) {
-          toast.error("Không nhận diện được cột môn học nào khớp với danh mục môn học của trường!");
+        if (matchedSubjectCols.length === 0) {
+          toast.error("Không nhận diện được cột môn học nào khớp với danh mục môn học của khối này!");
           return;
         }
 
-        setDetectedSubjects(matchedSubjects);
+        setDetectedSubjects(matchedSubjectCols.map((m) => m.sub));
+
+        // Xác định vị trí cột Mã HS và Họ Tên
+        const codeColIdx = rawHeaders.findIndex((h) =>
+          ["mã học sinh", "mã hs", "mahs", "code", "mã"].includes(h.toLowerCase().trim())
+        );
+        const nameColIdx = rawHeaders.findIndex((h) =>
+          ["họ và tên", "họ tên", "hoten", "name", "họ và tên học sinh"].includes(h.toLowerCase().trim())
+        );
 
         // Map students of this class by studentCode & fullName
         const studentCodeMap = new Map<string, Row>();
@@ -289,9 +347,23 @@ export default function BghGradesPage() {
         });
 
         // Parse each row
-        const parsed: ParsedGradeRow[] = rawJson.map((row, idx) => {
-          const rawCode = String(row["Mã học sinh"] || row["Mã HS"] || row["MaHS"] || row["Code"] || "").trim().toUpperCase();
-          const rawName = String(row["Họ và tên"] || row["Họ tên"] || row["HoTen"] || row["Name"] || "").trim();
+        const parsed: ParsedGradeRow[] = [];
+        let validIdx = 1;
+
+        for (const row of dataRows) {
+          if (!Array.isArray(row) || row.length === 0) continue;
+
+          const firstCell = String(row[0] || "").trim();
+          // Bỏ qua dòng ghi chú hoặc hướng dẫn ở chân bảng
+          if (firstCell.startsWith("*") || firstCell.toLowerCase().startsWith("hướng dẫn") || firstCell.toLowerCase().startsWith("ghi chú")) {
+            continue;
+          }
+
+          const rawCode = codeColIdx !== -1 ? String(row[codeColIdx] || "").trim().toUpperCase() : "";
+          const rawName = nameColIdx !== -1 ? String(row[nameColIdx] || "").trim() : "";
+
+          // Bỏ qua dòng trống cả mã và tên
+          if (!rawCode && !rawName) continue;
 
           const student = studentCodeMap.get(rawCode) || (rawName ? studentNameMap.get(rawName.toLowerCase()) : undefined);
 
@@ -300,13 +372,11 @@ export default function BghGradesPage() {
           let rowError = "";
 
           if (!student) {
-            rowError = `Không tìm thấy học sinh [${rawCode || rawName || "Chưa có thông tin"}] trong lớp ${activeClass?.name || ""}`;
+            rowError = `Không tìm thấy học sinh [${rawCode || rawName || "Chưa rõ"}] trong lớp ${activeClass?.name || ""}`;
           }
 
-          matchedSubjects.forEach((sub) => {
-            // Find key in row that matches subject
-            const key = headers.find((h) => h.trim().toLowerCase() === sub.name.toLowerCase() || h.trim().toLowerCase() === sub.code.toLowerCase());
-            const val = key ? row[key] : undefined;
+          matchedSubjectCols.forEach(({ sub, colIdx }) => {
+            const val = row[colIdx];
 
             if (val === undefined || val === null || String(val).trim() === "") {
               subjectScores[sub.id] = {
@@ -316,30 +386,48 @@ export default function BghGradesPage() {
                 isWeak: false,
               };
             } else {
-              const num = Number(val);
-              if (isNaN(num) || num < 0 || num > 10) {
-                rowError = `Điểm môn ${sub.name} không hợp lệ ("${val}"). Thang điểm phải từ 0 đến 10.`;
+              const strVal = String(val).trim();
+              if (strVal.toLowerCase() === "đ" || strVal.toLowerCase() === "d" || strVal.toLowerCase() === "pass") {
                 subjectScores[sub.id] = {
                   subjectId: sub.id,
                   subjectName: sub.name,
-                  score: null,
+                  score: 10,
                   isWeak: false,
                 };
-              } else {
-                const weak = isGradeWeak(num);
-                if (weak) weakCount++;
+              } else if (strVal.toLowerCase() === "cđ" || strVal.toLowerCase() === "cd" || strVal.toLowerCase() === "fail") {
+                weakCount++;
                 subjectScores[sub.id] = {
                   subjectId: sub.id,
                   subjectName: sub.name,
-                  score: Math.round(num * 10) / 10,
-                  isWeak: weak,
+                  score: 0,
+                  isWeak: true,
                 };
+              } else {
+                const num = Number(strVal.replace(",", "."));
+                if (isNaN(num) || num < 0 || num > 10) {
+                  rowError = `Điểm môn ${sub.name} không hợp lệ ("${val}"). Thang điểm phải từ 0 đến 10.`;
+                  subjectScores[sub.id] = {
+                    subjectId: sub.id,
+                    subjectName: sub.name,
+                    score: null,
+                    isWeak: false,
+                  };
+                } else {
+                  const weak = isGradeWeak(num);
+                  if (weak) weakCount++;
+                  subjectScores[sub.id] = {
+                    subjectId: sub.id,
+                    subjectName: sub.name,
+                    score: Math.round(num * 10) / 10,
+                    isWeak: weak,
+                  };
+                }
               }
             }
           });
 
-          return {
-            index: idx + 1,
+          parsed.push({
+            index: validIdx++,
             studentCode: student?.studentCode || rawCode,
             studentName: student?.fullName || rawName,
             studentId: student?.id,
@@ -349,14 +437,16 @@ export default function BghGradesPage() {
             isValid: !rowError && Boolean(student?.id),
             error: rowError,
             weakCount,
-          };
-        });
+          });
+        }
 
         setParsedRows(parsed);
         const validCount = parsed.filter((r) => r.isValid).length;
         const totalWeak = parsed.reduce((acc, r) => acc + (r.weakCount > 0 ? 1 : 0), 0);
 
-        toast.success(`Đã đọc ${parsed.length} dòng. Nhận diện ${matchedSubjects.length} môn học. Hợp lệ: ${validCount}/${parsed.length}.`);
+        toast.success(
+          `Đã đọc ${parsed.length} dòng. Nhận diện ${matchedSubjectCols.length} môn học khối ${targetGrade || ""}. Hợp lệ: ${validCount}/${parsed.length}.`
+        );
         if (totalWeak > 0) {
           toast.warning(`Phát hiện ${totalWeak} học sinh có ít nhất một môn điểm < 5.0 cần nhắc nhở.`);
         }
