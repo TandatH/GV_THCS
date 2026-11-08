@@ -1876,4 +1876,151 @@ export function validateSupervisorEligibility(params: {
   return { eligible: true };
 }
 
+// ============================================================================
+// 10. SCHEMA & TYPES: QUẢN LÝ ĐIỂM SỐ & CẢNH BÁO HỌC SINH YẾU (GRADES & WARNINGS)
+// ============================================================================
+
+export const gradePeriodTypes = ["regular", "midterm", "final", "monthly"] as const;
+export type GradePeriodType = (typeof gradePeriodTypes)[number];
+
+export const gradePeriodStatuses = ["draft", "published", "locked"] as const;
+export type GradePeriodStatus = (typeof gradePeriodStatuses)[number];
+
+export const gradePeriodSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(2, "Tên đợt điểm phải có ít nhất 2 ký tự").max(150),
+  schoolYearId: z.string().trim().min(1, "Vui lòng chọn năm học"),
+  semesterId: z.string().trim().min(1, "Vui lòng chọn học kỳ"),
+  periodType: z.enum(gradePeriodTypes).default("midterm"),
+  schoolLevel: z.enum(["primary", "secondary", "all"]).default("secondary"),
+  status: z.enum(gradePeriodStatuses).default("published"),
+  startDate: z.string().date().optional().or(z.literal("")),
+  endDate: z.string().date().optional().or(z.literal("")),
+  notes: z.string().trim().max(1000).optional().default(""),
+});
+export type GradePeriodInput = z.infer<typeof gradePeriodSchema>;
+export interface GradePeriod extends GradePeriodInput, AuditFields {
+  id: string;
+}
+
+export const evaluationTypes = ["score", "comment"] as const;
+export type EvaluationType = (typeof evaluationTypes)[number];
+
+export const commentGrades = ["pass", "fail"] as const;
+export type CommentGrade = (typeof commentGrades)[number];
+
+export const studentGradeSchema = z.object({
+  id: z.string().optional(),
+  periodId: z.string().trim().min(1, "Vui lòng chọn đợt điểm"),
+  schoolYearId: z.string().trim().min(1),
+  semesterId: z.string().trim().min(1),
+  classId: z.string().trim().min(1, "Vui lòng chọn lớp"),
+  className: z.string().trim().min(1),
+  studentId: z.string().trim().min(1, "Thiếu ID học sinh"),
+  studentCode: z.string().trim().min(1, "Thiếu mã học sinh").toUpperCase(),
+  studentName: z.string().trim().min(1, "Thiếu họ tên học sinh"),
+  subjectId: z.string().trim().min(1, "Vui lòng chọn môn học"),
+  subjectCode: z.string().trim().min(1).toUpperCase(),
+  subjectName: z.string().trim().min(1),
+  score: z.number().min(0, "Điểm không được nhỏ hơn 0").max(10, "Điểm không được lớn hơn 10").nullish(),
+  evaluationType: z.enum(evaluationTypes).default("score"),
+  commentGrade: z.enum(commentGrades).optional(),
+  isWeak: z.boolean().default(false),
+  note: z.string().trim().max(500).optional().default(""),
+});
+export type StudentGradeInput = z.infer<typeof studentGradeSchema>;
+export interface StudentGrade extends StudentGradeInput {
+  id: string;
+  updatedAt?: unknown;
+  updatedBy: string;
+}
+
+export const studentPeriodSummarySchema = z.object({
+  id: z.string().optional(),
+  periodId: z.string().trim().min(1),
+  schoolYearId: z.string().trim().min(1),
+  semesterId: z.string().trim().min(1),
+  classId: z.string().trim().min(1),
+  className: z.string().trim().min(1),
+  studentId: z.string().trim().min(1),
+  studentCode: z.string().trim().min(1).toUpperCase(),
+  studentName: z.string().trim().min(1),
+  subjectScores: z.record(
+    z.string(),
+    z.object({
+      subjectId: z.string(),
+      subjectCode: z.string(),
+      subjectName: z.string(),
+      score: z.number().nullable().optional(),
+      commentGrade: z.enum(commentGrades).optional(),
+      isWeak: z.boolean(),
+    })
+  ),
+  averageScore: z.number().min(0).max(10).nullable().optional(),
+  weakSubjectCount: z.number().int().min(0).default(0),
+  weakSubjectNames: z.array(z.string()).default([]),
+  hasWeakSubjects: z.boolean().default(false),
+});
+export type StudentPeriodSummaryInput = z.infer<typeof studentPeriodSummarySchema>;
+export interface StudentPeriodSummary extends StudentPeriodSummaryInput {
+  id: string;
+  updatedAt?: unknown;
+  updatedBy: string;
+}
+
+export const reminderStatuses = ["pending", "reminded", "parent_contacted", "resolved"] as const;
+export type ReminderStatus = (typeof reminderStatuses)[number];
+
+export const gradeReminderSchema = z.object({
+  id: z.string().optional(),
+  periodId: z.string().trim().min(1),
+  classId: z.string().trim().min(1),
+  studentId: z.string().trim().min(1),
+  studentCode: z.string().trim().min(1).toUpperCase(),
+  studentName: z.string().trim().min(1),
+  homeroomTeacherId: z.string().trim().min(1),
+  weakSubjects: z.array(
+    z.object({
+      subjectName: z.string(),
+      score: z.union([z.number(), z.string()]),
+    })
+  ).default([]),
+  reminderContent: z.string().trim().min(1, "Nội dung nhắc nhở không được để trống").max(2000),
+  status: z.enum(reminderStatuses).default("pending"),
+  parentPhone: z.string().trim().optional().default(""),
+  parentFeedback: z.string().trim().max(1000).optional().default(""),
+});
+export type GradeReminderInput = z.infer<typeof gradeReminderSchema>;
+export interface GradeReminder extends GradeReminderInput {
+  id: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export function isGradeWeak(score?: number | null, commentGrade?: CommentGrade): boolean {
+  if (commentGrade === "fail") return true;
+  if (typeof score === "number" && !isNaN(score)) {
+    return score < 5.0;
+  }
+  return false;
+}
+
+export function generateZaloReminderMessage(params: {
+  studentName: string;
+  className: string;
+  periodName: string;
+  weakSubjects: Array<{ subjectName: string; score: number | string }>;
+}): string {
+  const { studentName, className, periodName, weakSubjects } = params;
+  const list = weakSubjects.map((s) => `- ${s.subjectName}: ${s.score} điểm`).join("\n");
+  return `Kính gửi Quý Phụ huynh em ${studentName} (Lớp ${className}),
+
+Giáo viên chủ nhiệm xin thông báo kết quả học tập của em trong đợt "${periodName}". Hiện tại em đang gặp khó khăn ở một số môn học sau:
+${list}
+
+Kính mong Quý Phụ huynh cùng phối hợp với nhà trường động viên, nhắc nhở và đôn đốc em ôn tập thêm để cải thiện kết quả học tập trong thời gian tới.
+Trân trọng cảm ơn Quý Phụ huynh!`;
+}
+
+
 
