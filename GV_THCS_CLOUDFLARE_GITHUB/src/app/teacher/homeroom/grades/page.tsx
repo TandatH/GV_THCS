@@ -19,8 +19,10 @@ import {
   collection,
   onSnapshot,
   doc,
+  query,
   setDoc,
   serverTimestamp,
+  where,
   type DocumentData,
 } from "firebase/firestore";
 import { toast } from "sonner";
@@ -69,6 +71,12 @@ type StudentSummary = {
     }
   >;
 };
+
+function formatClassName(nameOrCode?: string): string {
+  if (!nameOrCode) return "—";
+  const trimmed = String(nameOrCode).trim();
+  return trimmed.toLowerCase().startsWith("lớp") ? trimmed : `Lớp ${trimmed}`;
+}
 
 function HomeroomGradesContent() {
   const { user, claims } = useAuth();
@@ -171,13 +179,23 @@ function HomeroomGradesContent() {
       setStudents([]);
       return;
     }
-    const unsubStudents = onSnapshot(collection(firestore, "students"), (snap) => {
-      const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as Row)
-        .filter((s) => s.classId === activeClassId && s.isActive !== false);
-      list.sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || ""), "vi"));
-      setStudents(list);
-    });
+    const qStudents = query(
+      collection(firestore, "students"),
+      where("classId", "==", activeClassId)
+    );
+    const unsubStudents = onSnapshot(
+      qStudents,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as Row)
+          .filter((s) => s.isActive !== false);
+        list.sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || ""), "vi"));
+        setStudents(list);
+      },
+      (error) => {
+        console.error("Error fetching students for homeroom class:", error);
+      }
+    );
     return () => unsubStudents();
   }, [activeClassId]);
 
@@ -187,13 +205,23 @@ function HomeroomGradesContent() {
       setSummaries([]);
       return;
     }
-    const unsubSummaries = onSnapshot(collection(firestore, "studentPeriodSummaries"), (snap) => {
-      const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as StudentSummary))
-        .filter((d) => d.classId === activeClassId && d.periodId === selectedPeriodId);
-      list.sort((a, b) => String(a.studentName || "").localeCompare(String(b.studentName || ""), "vi"));
-      setSummaries(list);
-    });
+    const qSummaries = query(
+      collection(firestore, "studentPeriodSummaries"),
+      where("classId", "==", activeClassId)
+    );
+    const unsubSummaries = onSnapshot(
+      qSummaries,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as StudentSummary))
+          .filter((d) => d.periodId === selectedPeriodId);
+        list.sort((a, b) => String(a.studentName || "").localeCompare(String(b.studentName || ""), "vi"));
+        setSummaries(list);
+      },
+      (error) => {
+        console.error("Error fetching summaries for homeroom class:", error);
+      }
+    );
     return () => unsubSummaries();
   }, [activeClassId, selectedPeriodId]);
 
@@ -203,16 +231,26 @@ function HomeroomGradesContent() {
       setReminders({});
       return;
     }
-    const unsubReminders = onSnapshot(collection(firestore, "gradeReminders"), (snap) => {
-      const map: Record<string, Row> = {};
-      snap.docs.forEach((d) => {
-        const data = { id: d.id, ...d.data() } as Row;
-        if (data.classId === activeClassId && data.periodId === selectedPeriodId) {
-          map[data.studentId] = data;
-        }
-      });
-      setReminders(map);
-    });
+    const qReminders = query(
+      collection(firestore, "gradeReminders"),
+      where("classId", "==", activeClassId)
+    );
+    const unsubReminders = onSnapshot(
+      qReminders,
+      (snap) => {
+        const map: Record<string, Row> = {};
+        snap.docs.forEach((d) => {
+          const data = { id: d.id, ...d.data() } as Row;
+          if (data.periodId === selectedPeriodId) {
+            map[data.studentId] = data;
+          }
+        });
+        setReminders(map);
+      },
+      (error) => {
+        console.error("Error fetching reminders for homeroom class:", error);
+      }
+    );
     return () => unsubReminders();
   }, [activeClassId, selectedPeriodId]);
 
@@ -539,7 +577,7 @@ function HomeroomGradesContent() {
                     >
                       {homeroomClasses.map((c) => (
                         <option key={c.id} value={c.id}>
-                          Lớp {c.name || c.code}
+                          {formatClassName(c.name || c.code)}
                         </option>
                       ))}
                     </select>
@@ -566,7 +604,7 @@ function HomeroomGradesContent() {
               {activeClass && (
                 <div className="flex items-center gap-2">
                   <Badge tone="info" className="text-sm px-3 py-1">
-                    Lớp {activeClass.name || activeClass.code}
+                    {formatClassName(activeClass.name || activeClass.code)}
                   </Badge>
                   <Badge tone="neutral" className="text-sm px-3 py-1">
                     Sĩ số: {stats.totalStudents} học sinh
