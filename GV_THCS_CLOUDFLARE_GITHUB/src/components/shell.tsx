@@ -38,6 +38,7 @@ import {
   UsersRound,
   WalletCards,
   X,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -46,6 +47,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/features/auth/use-auth";
+import { useFeatureLocks, type FeatureKey } from "@/lib/feature-locks";
 import { firestore } from "@/lib/firebase/client";
 import {
   getNotificationPermission,
@@ -230,6 +232,22 @@ const menuByRole: Record<Role, NavItem[]> = {
   ],
 };
 
+const hrefToFeatureKey: Record<string, FeatureKey> = {
+  "/teacher/homeroom/discipline": "homeroom_discipline",
+  "/teacher/homeroom/grades": "homeroom_grades",
+  "/competition/leaderboard": "competition_leaderboard",
+  "/discipline/record": "discipline_record",
+  "/competition/review": "competition_review",
+  "/competition/weekly-finalize": "competition_weekly_finalize",
+  "/teacher/schedule": "teacher_schedule",
+  "/teacher/availability": "teacher_availability",
+  "/teacher/leave-requests": "teacher_leave_requests",
+  "/teacher/exam-duty": "teacher_exam_duty",
+  "/teacher/attendance": "teacher_attendance",
+  "/teacher/payroll": "teacher_payroll",
+  "/teacher/evaluations": "teacher_evaluations",
+};
+
 const roleLabel: Record<Role, string> = {
   admin: "Quản trị viên",
   bgh: "Ban Giám Hiệu",
@@ -303,6 +321,8 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
   const pathname = usePathname();
   const router = useRouter();
   const { claims, role, user, signOutUser } = useAuth();
+  const { isLocked } = useFeatureLocks();
+  const isTeacherRole = role === "giaovien" || role === "totruong";
   const isSaoDo = Boolean(claims?.userType === "sao_do" || claims?.isSaoDo);
   const saoDoItems: MenuItem[] = [
     { href: "/discipline/record", label: "Ghi nhận vi phạm", icon: ShieldAlert },
@@ -460,6 +480,9 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
                   >
                     {item.children.map(({ href, label, icon: SubIcon }) => {
                       const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
+                      const featKey = hrefToFeatureKey[href];
+                      const itemLocked = Boolean(featKey && isLocked(featKey) && isTeacherRole);
+
                       return (
                         <Link
                           key={href}
@@ -472,7 +495,7 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
                               : "text-slate-400 hover:bg-slate-800/80 hover:text-white",
                             collapsed && !mobile && "justify-center px-0 min-h-9",
                           )}
-                          title={collapsed && !mobile ? label : undefined}
+                          title={itemLocked ? `${label} (Đang tạm khóa)` : (collapsed && !mobile ? label : undefined)}
                         >
                           <SubIcon
                             className={cn(
@@ -480,7 +503,12 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
                               active ? "text-white" : "text-slate-400 group-hover:text-slate-200",
                             )}
                           />
-                          {!collapsed || mobile ? <span className="truncate">{label}</span> : null}
+                          {!collapsed || mobile ? (
+                            <>
+                              <span className="truncate flex-1">{label}</span>
+                              {itemLocked ? <Lock className="h-3 w-3 text-amber-400 shrink-0 opacity-80" /> : null}
+                            </>
+                          ) : null}
                           {active && (!collapsed || mobile) ? (
                             <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white shadow-sm" />
                           ) : null}
@@ -495,6 +523,9 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
 
           const { href, label, icon: Icon } = item;
           const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
+          const featKey = hrefToFeatureKey[href];
+          const itemLocked = Boolean(featKey && isLocked(featKey) && isTeacherRole);
+
           return (
             <Link
               key={href}
@@ -507,10 +538,15 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
                   : "text-slate-300 hover:bg-slate-800/80 hover:text-white",
                 collapsed && !mobile && "justify-center px-0",
               )}
-              title={collapsed && !mobile ? label : undefined}
+              title={itemLocked ? `${label} (Đang tạm khóa)` : (collapsed && !mobile ? label : undefined)}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed || mobile ? <span className="truncate">{label}</span> : null}
+              {!collapsed || mobile ? (
+                <>
+                  <span className="truncate flex-1">{label}</span>
+                  {itemLocked ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0 opacity-80" /> : null}
+                </>
+              ) : null}
               {active && (!collapsed || mobile) ? <ChevronRight className="ml-auto h-4 w-4 opacity-70" /> : null}
             </Link>
           );
@@ -526,6 +562,9 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
             ) : null}
             {teachingItems.map(({ href, label, icon: Icon }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`);
+              const featKey = hrefToFeatureKey[href];
+              const itemLocked = Boolean(featKey && isLocked(featKey) && isTeacherRole);
+
               return (
                 <Link
                   key={href}
@@ -538,10 +577,15 @@ function Sidebar({ collapsed, mobile, onClose }: { collapsed: boolean; mobile?: 
                       : "text-slate-300 hover:bg-slate-800/80 hover:text-white",
                     collapsed && !mobile && "justify-center px-0",
                   )}
-                  title={collapsed && !mobile ? label : undefined}
+                  title={itemLocked ? `${label} (Đang tạm khóa)` : (collapsed && !mobile ? label : undefined)}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
-                  {!collapsed || mobile ? <span className="truncate">{label}</span> : null}
+                  {!collapsed || mobile ? (
+                    <>
+                      <span className="truncate flex-1">{label}</span>
+                      {itemLocked ? <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0 opacity-80" /> : null}
+                    </>
+                  ) : null}
                   {active && (!collapsed || mobile) ? <ChevronRight className="ml-auto h-4 w-4 opacity-70" /> : null}
                 </Link>
               );
