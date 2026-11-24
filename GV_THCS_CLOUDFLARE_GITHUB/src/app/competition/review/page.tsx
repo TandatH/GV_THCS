@@ -69,6 +69,7 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import {
   reviewDisciplineViolation,
   reviewDisciplineAppeal,
@@ -623,6 +624,7 @@ export default function CompetitionReviewPage() {
             description="Thẩm định, phê duyệt hoặc trả lại các phiếu vi phạm do Ban Kỷ luật ghi nhận. Tuân thủ nguyên tắc liêm chính và phân tách nhiệm vụ (No Self-Approval)."
             actions={
               <div className="flex items-center gap-2">
+                <AdminFeatureLockButton featureKey="competition_review" />
                 <Button
                   variant="secondary"
                   size="sm"
@@ -645,6 +647,7 @@ export default function CompetitionReviewPage() {
             }
           />
 
+          <FeatureLockGuard featureKey="competition_review">
           {/* KIỂM TRA PHÂN QUYỀN BAN THI ĐUA */}
           {permissionChecking ? (
             <Card className="p-8 text-center space-y-3">
@@ -1680,6 +1683,7 @@ export default function CompetitionReviewPage() {
               </div>
             </Modal>
           )}
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

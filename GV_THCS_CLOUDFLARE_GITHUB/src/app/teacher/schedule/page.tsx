@@ -54,6 +54,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { firebaseErrorMessage, respondToScheduleAssignment } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
@@ -1199,6 +1200,7 @@ export default function TeacherSchedulePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <AdminFeatureLockButton featureKey="teacher_schedule" />
             <Button variant="secondary" size="sm" onClick={() => window.print()}>
               <Printer className="h-4 w-4" />
               <span className="hidden sm:inline">In thời khóa biểu</span>
@@ -1246,6 +1248,7 @@ export default function TeacherSchedulePage() {
         ) : null}
 
         {/* CONTROLS BAR (THIẾT KẾ ĐÚNG 100% NHƯ HÌNH MẪU YÊU CẦU) */}
+        <FeatureLockGuard featureKey="teacher_schedule">
         <Card className="mb-5 p-4 shadow-sm border border-slate-200/90 print:hidden">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
             {/* 1. TUẦN SELECTOR (< 06/10/2025 - 12/10/2025 >) */}
@@ -1812,6 +1815,7 @@ export default function TeacherSchedulePage() {
             })()}
           </Modal>
         ) : null}
+        </FeatureLockGuard>
       </Shell>
     </RoleGuard>
   );

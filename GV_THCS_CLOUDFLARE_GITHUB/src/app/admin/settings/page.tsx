@@ -1,17 +1,25 @@
 "use client";
 
-import { Save, Settings2, ShieldCheck, WalletCards } from "lucide-react";
+import { Lock, Save, Settings2, ShieldCheck, Sliders, Unlock, WalletCards } from "lucide-react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
-import { Button, Card, Input, Label, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { firestore } from "@/lib/firebase/client";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
+import {
+  useFeatureLocks,
+  FEATURE_DEFINITIONS,
+  FEATURE_CATEGORIES,
+  type FeatureKey,
+  type FeatureCategory,
+} from "@/lib/feature-locks";
 
 type SettingsForm = {
   schoolName: string;
@@ -30,6 +38,179 @@ const initialForm: SettingsForm = {
   primaryDefaultRate: "120000",
   secondaryDefaultRate: "150000",
 };
+
+function FeatureLocksManager() {
+  const { isLocked, toggleLock, setBatchLocks, loading } = useFeatureLocks();
+  const [updating, setUpdating] = useState(false);
+
+  const categories: FeatureCategory[] = ["chu_nhiem", "thi_dua", "chuyen_mon"];
+  const allKeys = FEATURE_DEFINITIONS.map((f) => f.key);
+  const lockedCount = allKeys.filter((k) => isLocked(k)).length;
+
+  const handleUnlockAll = async () => {
+    if (!window.confirm("Bạn có chắc chắn muốn MỞ KHÓA TẤT CẢ các chức năng cho Giáo viên không?")) return;
+    setUpdating(true);
+    await setBatchLocks(allKeys, false);
+    setUpdating(false);
+  };
+
+  const handleLockAll = async () => {
+    if (!window.confirm("Bạn có chắc chắn muốn TẠM KHÓA TẤT CẢ các chức năng đối với Giáo viên không?")) return;
+    setUpdating(true);
+    await setBatchLocks(allKeys, true);
+    setUpdating(false);
+  };
+
+  return (
+    <Card className="p-5 mt-6 border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b">
+        <div className="flex gap-3 items-center">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-50 text-purple-700">
+            <Sliders className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-base">Quản lý Khóa / Mở từng mục cho Giáo viên</h2>
+              <Badge tone={lockedCount > 0 ? "warning" : "success"}>
+                {lockedCount > 0 ? `Đang khóa ${lockedCount}/${allKeys.length} mục` : "Tất cả đang mở"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Chủ động bật/tắt quyền truy cập từng chức năng đối với tài khoản Giáo viên. Khi nào Admin muốn mở thì mở, chưa cần thì khóa lại. Admin/BGH luôn có toàn quyền truy cập.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            disabled={updating || loading}
+            onClick={handleUnlockAll}
+          >
+            <Unlock className="h-3.5 w-3.5" />
+            Mở tất cả
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="text-xs gap-1 border-rose-300 text-rose-700 hover:bg-rose-50"
+            disabled={updating || loading}
+            onClick={handleLockAll}
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Khóa tất cả
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-6 pt-5">
+        {categories.map((catKey) => {
+          const cat = FEATURE_CATEGORIES[catKey];
+          const items = FEATURE_DEFINITIONS.filter((f) => f.category === catKey);
+
+          return (
+            <div key={catKey} className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-foreground uppercase tracking-wide">
+                    {cat.label}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">{cat.description}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setBatchLocks(items.map((i) => i.key), false)}
+                    className="text-[11px] text-emerald-600 hover:underline font-semibold"
+                  >
+                    Mở nhóm
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setBatchLocks(items.map((i) => i.key), true)}
+                    className="text-[11px] text-rose-600 hover:underline font-semibold"
+                  >
+                    Khóa nhóm
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map((item) => {
+                  const locked = isLocked(item.key);
+
+                  return (
+                    <div
+                      key={item.key}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                        locked
+                          ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-slate-300 dark:bg-slate-900"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <Link
+                            href={item.path}
+                            className="font-bold text-xs text-foreground hover:text-primary transition line-clamp-1"
+                            title={`Mở trang: ${item.path}`}
+                          >
+                            {item.label}
+                          </Link>
+                          {locked ? (
+                            <Badge tone="danger" className="text-[10px] px-2 py-0.5 gap-1 shrink-0">
+                              <Lock className="h-2.5 w-2.5" /> Đang khóa
+                            </Badge>
+                          ) : (
+                            <Badge tone="success" className="text-[10px] px-2 py-0.5 gap-1 shrink-0">
+                              <Unlock className="h-2.5 w-2.5" /> Đang mở
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed line-clamp-2">
+                          {item.description}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-slate-400 truncate font-mono">
+                          {item.path}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className={`h-7 px-2.5 text-xs font-semibold gap-1 ${
+                            locked
+                              ? "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              : "border-rose-300 text-rose-700 hover:bg-rose-50"
+                          }`}
+                          onClick={() => toggleLock(item.key)}
+                        >
+                          {locked ? (
+                            <>
+                              <Unlock className="h-3 w-3" /> Mở khóa
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="h-3 w-3" /> Khóa lại
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 export default function AdminSettingsPage() {
   const { user } = useAuth();
@@ -171,6 +352,8 @@ export default function AdminSettingsPage() {
             <div className="flex justify-end"><Button loading={submitting} type="submit"><Save className="h-4 w-4" />Lưu cấu hình</Button></div>
           </form>
         )}
+
+        <FeatureLocksManager />
       </Shell>
     </RoleGuard>
   );

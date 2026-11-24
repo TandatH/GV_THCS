@@ -32,6 +32,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { FeatureLockGuard, AdminFeatureLockButton } from "@/lib/feature-locks";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import {
@@ -544,8 +545,10 @@ function HomeroomGradesContent() {
       <PageHeader
         title="Lớp Chủ Nhiệm — Điểm Số & Cảnh Báo Học Tập"
         description="Theo dõi điểm thi, nắm bắt danh sách các em học sinh có môn học dưới trung bình (< 5.0) để nhắc nhở và phối hợp với phụ huynh."
+        actions={<AdminFeatureLockButton featureKey="homeroom_grades" />}
       />
 
+      <FeatureLockGuard featureKey="homeroom_grades">
       {/* Checking homeroom states */}
       {checkingHomeroom ? (
         <Card className="p-8 text-center space-y-3">
@@ -1026,6 +1029,7 @@ function HomeroomGradesContent() {
           )}
         </div>
       )}
+      </FeatureLockGuard>
     </Shell>
   );
 }

@@ -10,6 +10,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Card, EmptyState, Input, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
@@ -36,7 +37,8 @@ export default function TeacherPayrollPage() {
   const totalPeriods = rows.reduce((sum,row) => sum + finiteNumber(row.actualPeriods),0);
   const totalPaid = rows.filter((row) => row.status === "paid").reduce((sum,row) => sum + finiteNumber(row.amount),0);
 
-  return <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}><Shell><PageHeader eyebrow="Thù lao" title="Bảng tổng hợp thù lao" description="Thù lao được tổng hợp dựa trên số tiết dạy thực tế đã được nhà trường đối soát và xác nhận hoàn thành." />
+  return <RoleGuard allowedRoles={["giaovien", "bgh", "totruong", "admin"]}><Shell><PageHeader eyebrow="Thù lao" title="Bảng tổng hợp thù lao" description="Thù lao được tổng hợp dựa trên số tiết dạy thực tế đã được nhà trường đối soát và xác nhận hoàn thành." actions={<AdminFeatureLockButton featureKey="teacher_payroll" />} />
+  <FeatureLockGuard featureKey="teacher_payroll">
   {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>:null}
   <div className="mb-5 grid gap-4 md:grid-cols-3"><Card className="p-5"><p className="text-sm text-muted-foreground">Giáo viên</p><p className="mt-2 text-lg font-bold">{teacherName || "—"}</p></Card><Card className="p-5"><p className="text-sm text-muted-foreground">Tiết thực dạy đã xác nhận</p><p className="mt-2 text-3xl font-extrabold">{totalPeriods}</p></Card><Card className="p-5"><p className="text-sm text-muted-foreground">Đã thanh toán</p><p className="mt-2 text-2xl font-extrabold">{formatCurrency(totalPaid)}</p></Card></div>
   <Card className="mb-5 p-4"><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input className="pl-9" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Tìm tháng, năm học, trạng thái..."/></div></Card>
@@ -55,5 +57,6 @@ export default function TeacherPayrollPage() {
       </tr>)}</tbody>
     </table></div>
   )}</Card>
+  </FeatureLockGuard>
   </Shell></RoleGuard>;
 }

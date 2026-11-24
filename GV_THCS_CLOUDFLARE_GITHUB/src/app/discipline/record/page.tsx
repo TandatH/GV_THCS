@@ -63,6 +63,7 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { recordDisciplineViolation, type RecordDisciplineViolationInput } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { cn } from "@/lib/utils";
@@ -546,18 +547,22 @@ function RecordDisciplineForm() {
             title="Ghi nhận vi phạm học sinh"
             description="Giao diện ghi nhận nhanh các vi phạm nề nếp, kỷ luật và học tập dành riêng cho thành viên Ban Kỷ luật."
             actions={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => router.push("/discipline/my-records")}
-                className="gap-2"
-              >
-                <History className="h-4 w-4" />
-                Lịch sử ghi nhận
-              </Button>
+              <div className="flex items-center gap-2">
+                <AdminFeatureLockButton featureKey="discipline_record" />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => router.push("/discipline/my-records")}
+                  className="gap-2"
+                >
+                  <History className="h-4 w-4" />
+                  Lịch sử ghi nhận
+                </Button>
+              </div>
             }
           />
 
+          <FeatureLockGuard featureKey="discipline_record">
           {/* KIỂM TRA PHÂN QUYỀN BAN KỶ LUẬT */}
           {permissionChecking ? (
             <Card className="p-6 text-center space-y-3">
@@ -1206,6 +1211,7 @@ function RecordDisciplineForm() {
               </Card>
             </form>
           )}
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "@/features/auth/auth-provider";
+import { FeatureLocksProvider } from "@/lib/feature-locks";
 
 import "./globals.css";
 
@@ -29,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="vi">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <FeatureLocksProvider>{children}</FeatureLocksProvider>
+        </AuthProvider>
         <Toaster richColors position="top-right" />
       </body>
     </html>

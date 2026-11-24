@@ -70,6 +70,7 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import {
   signWeeklyDisciplineScore,
   verifyWeeklyDisciplineSignature,
@@ -508,6 +509,7 @@ function WeeklyFinalizeContent() {
             description="Tổng hợp và ký xác nhận bắt buộc cho các lớp Cấp 2. Cấp 1 hiện chưa tham gia thi đua toàn trường."
             actions={
               <div className="flex items-center gap-2">
+                <AdminFeatureLockButton featureKey="competition_weekly_finalize" />
                 <Button
                   variant="secondary"
                   size="sm"
@@ -530,6 +532,7 @@ function WeeklyFinalizeContent() {
             }
           />
 
+          <FeatureLockGuard featureKey="competition_weekly_finalize">
           {/* BỘ LỌC CHỌN TUẦN VÀ LỚP */}
           <Card className="p-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -966,6 +969,7 @@ function WeeklyFinalizeContent() {
               </div>
             </Modal>
           )}
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

@@ -47,6 +47,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { getClassGrade } from "@school/shared";
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
 import {
@@ -61,6 +62,7 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { FeatureLockGuard, AdminFeatureLockButton } from "@/lib/feature-locks";
 import {
   lockWeeklyDiscipline,
   reopenWeeklyDiscipline,
@@ -139,7 +141,7 @@ export default function CompetitionLeaderboardPage() {
         const [sySnap, clsSnap, tchSnap] = await Promise.all([
           getDocs(query(collection(firestore, "schoolYears"), where("isActive", "==", true))),
           getDocs(query(collection(firestore, "classes"), where("isActive", "==", true))),
-          getDocs(collection(firestore, "teachers")),
+          getDocs(collection(firestore, "teachers")).catch(() => null),
         ]);
 
         const syRows = sySnap.docs.map((d) => ({ id: d.id, ...d.data() })) as OptionRow[];
@@ -153,8 +155,10 @@ export default function CompetitionLeaderboardPage() {
         clsRows.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setClasses(clsRows);
 
-        const tchRows = tchSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as TeacherRow[];
-        setTeachers(tchRows);
+        if (tchSnap) {
+          const tchRows = tchSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as TeacherRow[];
+          setTeachers(tchRows);
+        }
       } catch (err) {
         console.error("Lỗi tải metadata:", err);
       }
@@ -254,7 +258,7 @@ export default function CompetitionLeaderboardPage() {
   const mergedClassRankings = useMemo(() => {
     const list = classes.map((c) => {
       const score = classScores.find((s) => s.classId === c.id);
-      const grade = String(c.grade || (c.name ? c.name.charAt(0) : ""));
+      const grade = String(getClassGrade(c) || c.grade || "");
       const homeroomTeacherId = c.homeroomTeacherId;
       const teacherName = homeroomTeacherId ? teacherMap.get(homeroomTeacherId) || "—" : "—";
 
@@ -417,6 +421,7 @@ export default function CompetitionLeaderboardPage() {
             description="Xếp hạng thứ tự thi đua của các lớp theo tuần và khối. Phân biệt rõ bảng điểm tạm tính với kết quả chính thức đã khóa sổ."
             actions={
               <div className="flex items-center gap-2">
+                <AdminFeatureLockButton featureKey="competition_leaderboard" />
                 <Button
                   variant="secondary"
                   size="sm"
@@ -439,6 +444,7 @@ export default function CompetitionLeaderboardPage() {
             }
           />
 
+          <FeatureLockGuard featureKey="competition_leaderboard">
           {/* THANH TRẠNG THÁI TUẦN THI ĐUA */}
           <Card
             className={cn(
@@ -802,6 +808,7 @@ export default function CompetitionLeaderboardPage() {
               </div>
             </Modal>
           )}
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

@@ -69,6 +69,7 @@ import {
   DEFAULT_DISCIPLINE_CRITERIA,
   disciplineCategories,
   disciplineCategoryLabels,
+  getClassGrade,
   type DisciplineCategory,
 } from "@school/shared";
 
@@ -87,10 +88,17 @@ import {
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
 import { exportHomeroomDisciplineExcel } from "@/lib/exports/discipline-excel";
+import { FeatureLockGuard, AdminFeatureLockButton } from "@/lib/feature-locks";
 import { submitDisciplineAppeal } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { cn, formatDate } from "@/lib/utils";
+
+function formatClassName(nameOrCode?: string): string {
+  if (!nameOrCode) return "—";
+  const trimmed = String(nameOrCode).trim();
+  return trimmed.toLowerCase().startsWith("lớp") ? trimmed : `Lớp ${trimmed}`;
+}
 
 type ClassRow = DocumentData & { id: string; name?: string; code?: string; grade?: number | string; gradeLevel?: number | string; schoolLevel?: string; homeroomTeacherId?: string };
 type WeekRow = DocumentData & { id: string; weekNumber: number; schoolYearId: string; schoolLevel?: string; status?: string; isLocked?: boolean };
@@ -171,6 +179,7 @@ function HomeroomDisciplineContent() {
   const [checkingHomeroom, setCheckingHomeroom] = useState<boolean>(true);
   const [teacherId, setTeacherId] = useState<string>("");
   const [homeroomClasses, setHomeroomClasses] = useState<ClassRow[]>([]);
+  const [allSecondaryClasses, setAllSecondaryClasses] = useState<ClassRow[]>([]);
   const [activeClassId, setActiveClassId] = useState<string>("");
 
   // Metadata
@@ -218,6 +227,7 @@ function HomeroomDisciplineContent() {
         const allCls = (clsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClassRow[])
           .filter(isSecondaryClass);
         allCls.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setAllSecondaryClasses(allCls);
 
         // Lọc các lớp do giáo viên này làm GVCN
         let myClasses: ClassRow[] = [];
@@ -409,15 +419,57 @@ function HomeroomDisciplineContent() {
 
     const finalScore = 600 + plus - minus;
 
-    // Tính thứ hạng trong khối
+    // Tính thứ hạng trong khối & toàn trường
     let gradeRank = "—";
-    const currentGrade = currentClass?.grade ? String(currentClass.grade) : "";
-    if (allWeekScores.length > 0 && currentGrade) {
-      const gradeScores = allWeekScores.filter((s) => s.grade === currentGrade);
-      gradeScores.sort((a, b) => b.finalScore - a.finalScore);
-      const myIdx = gradeScores.findIndex((s) => s.classId === activeClassId);
-      if (myIdx >= 0) {
-        gradeRank = `#${myIdx + 1} / ${gradeScores.length}`;
+    let schoolRank = "—";
+    const gradeNum = getClassGrade(currentClass);
+    const currentGrade = gradeNum > 0 ? String(gradeNum) : (currentClass?.grade ? String(currentClass.grade) : "");
+
+    const sourceClasses = allSecondaryClasses.length > 0 ? allSecondaryClasses : homeroomClasses;
+    if (sourceClasses.length > 0 && activeClassId) {
+      // Hợp nhất điểm tạm tính của tất cả các lớp trong tuần để đối soát thứ hạng
+      const classScoresList = sourceClasses.map((cls) => {
+        if (cls.id === activeClassId) {
+          return {
+            classId: cls.id,
+            grade: String(getClassGrade(cls) || cls.grade || ""),
+            finalScore,
+            totalMinus: minus,
+          };
+        }
+        const record = allWeekScores.find((s) => s.classId === cls.id);
+        return {
+          classId: cls.id,
+          grade: String(getClassGrade(cls) || cls.grade || record?.grade || ""),
+          finalScore: record ? (Number(record.finalScore) || 600) : 600,
+          totalMinus: record ? (Number(record.totalMinus) || 0) : 0,
+        };
+      });
+
+      const sortRanking = (
+        a: { finalScore: number; totalMinus: number },
+        b: { finalScore: number; totalMinus: number }
+      ) => {
+        if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
+        return a.totalMinus - b.totalMinus;
+      };
+
+      // 1. Thứ hạng trong khối
+      if (currentGrade) {
+        const gradeList = classScoresList.filter((item) => item.grade === currentGrade);
+        gradeList.sort(sortRanking);
+        const gIdx = gradeList.findIndex((item) => item.classId === activeClassId);
+        if (gIdx >= 0) {
+          gradeRank = `#${gIdx + 1} / ${gradeList.length}`;
+        }
+      }
+
+      // 2. Thứ hạng toàn trường
+      const schoolList = [...classScoresList];
+      schoolList.sort(sortRanking);
+      const sIdx = schoolList.findIndex((item) => item.classId === activeClassId);
+      if (sIdx >= 0) {
+        schoolRank = `#${sIdx + 1} / ${schoolList.length}`;
       }
     }
 
@@ -429,8 +481,10 @@ function HomeroomDisciplineContent() {
       violatorStudentCount: violatorSet.size,
       rewardCount,
       gradeRank,
+      schoolRank,
+      currentGrade,
     };
-  }, [approvedEntries, allWeekScores, currentClass, activeClassId]);
+  }, [approvedEntries, allWeekScores, currentClass, activeClassId, allSecondaryClasses, homeroomClasses]);
 
   // Danh sách vi phạm đã lọc
   const filteredEntries = useMemo(() => {
@@ -637,10 +691,11 @@ function HomeroomDisciplineContent() {
           {/* HEADER TRANG */}
           <PageHeader
             eyebrow="Giáo viên chủ nhiệm"
-            title={`Kỷ luật & Thi đua: Lớp ${currentClass?.name || "Chủ nhiệm"}`}
+            title={`Kỷ luật & Thi đua: ${formatClassName(currentClass?.name || currentClass?.code || "Chủ nhiệm")}`}
             description="Theo dõi điểm thi đua, học sinh vi phạm của lớp mình; gửi khiếu nại phản hồi khi phát hiện sai sót và xuất Excel bảng điểm theo phân quyền."
             actions={
               <div className="flex items-center gap-2">
+                <AdminFeatureLockButton featureKey="homeroom_discipline" />
                 <Button
                   variant="primary"
                   size="sm"
@@ -655,6 +710,7 @@ function HomeroomDisciplineContent() {
             }
           />
 
+          <FeatureLockGuard featureKey="homeroom_discipline">
           {/* KIỂM TRA PHÂN CÔNG CHỦ NHIỆM */}
           {checkingHomeroom ? (
             <Card className="p-8 text-center space-y-3">
@@ -692,7 +748,7 @@ function HomeroomDisciplineContent() {
                         >
                           {homeroomClasses.map((c) => (
                             <option key={c.id} value={c.id}>
-                              Lớp {c.name}
+                              {formatClassName(c.name || c.code)}
                             </option>
                           ))}
                         </select>
@@ -779,10 +835,12 @@ function HomeroomDisciplineContent() {
                 <Card className="p-3.5 border bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 text-center">
                   <div className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase flex items-center justify-center gap-1">
                     <Trophy className="h-3.5 w-3.5" />
-                    Hạng khối {currentClass?.grade}
+                    Hạng khối {kpiStats.currentGrade || currentClass?.grade || "—"}
                   </div>
                   <div className="text-2xl font-black text-amber-700 dark:text-amber-300 mt-1">{kpiStats.gradeRank}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{isWeekLocked ? "Chính thức" : "Tạm tính"}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    Toàn trường: <strong className="text-amber-800 dark:text-amber-200">{kpiStats.schoolRank}</strong> ({isWeekLocked ? "Chính thức" : "Tạm tính"})
+                  </div>
                 </Card>
 
                 {/* 5. SỐ LƯỢT VI PHẠM */}
@@ -1247,6 +1305,7 @@ function HomeroomDisciplineContent() {
               </div>
             </Modal>
           )}
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

@@ -21,6 +21,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { firebaseStorage, firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
@@ -350,9 +351,18 @@ export default function TeacherLeaveRequestsPage() {
           eyebrow="Nghỉ phép"
           title="Đơn nghỉ phép"
           description="Tạo đơn xin nghỉ phép theo tiết dạy và theo dõi kết quả phê duyệt của Ban Giám hiệu hoặc Tổ trưởng chuyên môn."
-          actions={<Button onClick={openNewRequest} disabled={contextLoading || Boolean(error)}><CirclePlus className="h-4 w-4" />Tạo đơn nghỉ phép</Button>}
+          actions={
+            <div className="flex items-center gap-2">
+              <AdminFeatureLockButton featureKey="teacher_leave_requests" />
+              <Button onClick={openNewRequest} disabled={contextLoading || Boolean(error)}>
+                <CirclePlus className="h-4 w-4" />
+                Tạo đơn nghỉ phép
+              </Button>
+            </div>
+          }
         />
 
+        <FeatureLockGuard featureKey="teacher_leave_requests">
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
         <Card className="overflow-hidden">
@@ -419,6 +429,7 @@ export default function TeacherLeaveRequestsPage() {
             {formError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{formError}</div> : null}
           </form>
         </Modal>
+        </FeatureLockGuard>
       </Shell>
     </RoleGuard>
   );

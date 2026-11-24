@@ -16,6 +16,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Card, EmptyState, Input, Label, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
 import { firebaseDataErrorMessage } from "@/lib/firebase/errors";
@@ -175,8 +176,10 @@ export default function TeacherAttendancePage() {
           eyebrow="Chấm công"
           title="Chấm công giảng dạy"
           description="Theo dõi tiết dạy thực tế theo thời khóa biểu. Thù lao giảng dạy được tính dựa trên các tiết đã được đối soát và xác nhận hoàn thành."
+          actions={<AdminFeatureLockButton featureKey="teacher_attendance" />}
         />
 
+        <FeatureLockGuard featureKey="teacher_attendance">
         {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
         <div className="mb-5 grid gap-4 md:grid-cols-5">
@@ -238,6 +241,7 @@ export default function TeacherAttendancePage() {
           <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><CalendarDays className="h-5 w-5" /></div><div><p className="font-semibold">Tiết chưa đối soát</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Các tiết dạy theo thời khóa biểu trong tháng đang chờ Ban Giám hiệu hoặc bộ phận quản lý rà soát và xác nhận hoàn thành.</p></div></div></Card>
           <Card className="p-5"><div className="flex gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></div><div><p className="font-semibold">Tiết đã xác nhận</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Tiết dạy đã được đối soát thành công (dạy theo lịch hoặc dạy thay), đủ điều kiện kết chuyển vào bảng tổng hợp thù lao tháng.</p></div></div></Card>
         </div>
+        </FeatureLockGuard>
       </Shell>
     </RoleGuard>
   );

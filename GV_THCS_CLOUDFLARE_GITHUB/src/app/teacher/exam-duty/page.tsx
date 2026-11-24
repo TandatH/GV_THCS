@@ -44,6 +44,7 @@ import {
 } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { getExamSwapCandidates, requestExamSwap } from "@/lib/firebase/callables";
 import { firestore } from "@/lib/firebase/client";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
@@ -276,7 +277,9 @@ export default function TeacherExamDutyPage() {
           <PageHeader
             title="Lịch Coi Thi Của Tôi"
             description="Xem chi tiết các ca coi thi được phân công, phòng thi và gửi yêu cầu đổi ca khi cần thiết."
+            actions={<AdminFeatureLockButton featureKey="teacher_exam_duty" />}
           />
+          <FeatureLockGuard featureKey="teacher_exam_duty">
           <Button variant="secondary" disabled={!duties.length} onClick={() => exportTeacherDutyScheduleExcel({
             teacherName, sessionName: "Các đợt kiểm tra được phân công",
             duties: duties.map((duty) => ({ date: duty.date, shiftNumber: duty.shiftNumber,
@@ -506,6 +509,7 @@ export default function TeacherExamDutyPage() {
               </div>
             )}
           </Modal>
+          </FeatureLockGuard>
         </div>
       </Shell>
     </RoleGuard>

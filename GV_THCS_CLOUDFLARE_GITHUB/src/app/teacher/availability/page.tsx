@@ -11,6 +11,7 @@ import { Shell } from "@/components/shell";
 import { Badge, Button, Card, EmptyState, Skeleton } from "@/components/ui";
 import { RoleGuard } from "@/features/auth/role-guard";
 import { useAuth } from "@/features/auth/use-auth";
+import { AdminFeatureLockButton, FeatureLockGuard } from "@/lib/feature-locks";
 import { firebaseFunctions, firestore } from "@/lib/firebase/client";
 import { firebaseErrorMessage } from "@/lib/firebase/callables";
 import { getCurrentTeacherContext } from "@/lib/firebase/current-teacher";
@@ -324,9 +325,15 @@ export default function AvailabilityPage() {
           eyebrow="Lịch cá nhân"
           title="Đăng ký khung giờ trống"
           description="Dành cho giáo viên thỉnh giảng. Hệ thống sử dụng các khung giờ đã được phê duyệt để xếp lịch giảng dạy và đảm bảo không trùng lịch."
-          actions={<Badge tone={reviewTone}>{reviewLabel}</Badge>}
+          actions={
+            <div className="flex items-center gap-2">
+              <AdminFeatureLockButton featureKey="teacher_availability" />
+              <Badge tone={reviewTone}>{reviewLabel}</Badge>
+            </div>
+          }
         />
 
+        <FeatureLockGuard featureKey="teacher_availability">
         {contextLoading ? (
           <Card className="p-5"><Skeleton className="h-72 w-full" /></Card>
         ) : teacherType !== "thinh_giang" ? (
@@ -456,6 +463,7 @@ export default function AvailabilityPage() {
             </div>
           </Card>
         )}
+        </FeatureLockGuard>
       </Shell>
     </RoleGuard>
   );
