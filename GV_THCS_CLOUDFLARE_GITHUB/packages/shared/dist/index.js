@@ -1292,7 +1292,7 @@ export const examStudentAttendanceStatuses = [
     "absent_without_reason",
 ];
 export const examSessionSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     code: z.string().trim().min(2, "Mã đợt thi tối thiểu 2 ký tự").max(30),
     name: z.string().trim().min(3, "Tên đợt kiểm tra tối thiểu 3 ký tự").max(150),
     schoolYearId: z.string().trim().min(1, "Vui lòng chọn năm học"),
@@ -1303,10 +1303,10 @@ export const examSessionSchema = z.object({
     endDate: z.string().date(),
     status: z.enum(examSessionStatuses).default("draft"),
     seatingArrangementType: z.enum(seatingArrangementTypes).default("mixed_grade_abc"),
-    maxStudentsPerRoom: z.number().int().min(10).max(60).default(24),
-    mergeRemainderStudents: z.boolean().default(false),
-    supervisorsPerRoom: z.number().int().min(1).max(3).default(2),
-    description: z.string().trim().max(500).optional().default(""),
+    maxStudentsPerRoom: z.preprocess((val) => (val === null || val === "" || val === undefined ? 24 : Number(val)), z.number().int().min(10, "Sĩ số tối thiểu là 10").max(500, "Sĩ số tối đa là 500").default(24)),
+    mergeRemainderStudents: z.preprocess((val) => Boolean(val), z.boolean().default(false)),
+    supervisorsPerRoom: z.preprocess((val) => (val === null || val === "" || val === undefined ? 2 : Number(val)), z.number().int().min(1, "Số giám thị mỗi phòng tối thiểu là 1").max(3, "Số giám thị mỗi phòng tối đa là 3").default(2)),
+    description: z.preprocess((val) => (val === null ? "" : val), z.string().trim().max(500).optional().default("")),
     createdAt: z.unknown().optional(),
     createdBy: z.string().optional().default(""),
     updatedAt: z.unknown().optional(),
@@ -1314,7 +1314,7 @@ export const examSessionSchema = z.object({
     isActive: z.boolean().default(true),
 }).refine((value) => value.startDate <= value.endDate, { path: ["endDate"], message: "Ngày kết thúc phải từ ngày bắt đầu trở đi" });
 export const examSlotSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     name: z.string().trim().min(1).max(100),
     date: z.string().date(),
@@ -1334,7 +1334,7 @@ export const examSlotSchema = z.object({
     }
 });
 export const examSubjectSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     subjectId: z.string().trim().min(1),
     subjectName: z.string().trim().min(1),
@@ -1352,7 +1352,7 @@ export const examSubjectSchema = z.object({
     isActive: z.boolean().default(true),
 });
 export const examRoomSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     slotId: z.string().trim().min(1),
     examSubjectId: z.string().trim().min(1),
@@ -1372,7 +1372,7 @@ export const examRoomSchema = z.object({
     isActive: z.boolean().default(true),
 });
 export const examStudentAssignmentSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     examRoomId: z.string().trim().min(1),
     slotId: z.string().trim().min(1),
@@ -1395,7 +1395,7 @@ export const examStudentAssignmentSchema = z.object({
     isActive: z.boolean().default(true),
 });
 export const examSupervisorAssignmentSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     slotId: z.string().trim().min(1),
     examRoomId: z.string().trim().min(1),
@@ -1414,7 +1414,7 @@ export const examSupervisorAssignmentSchema = z.object({
     isActive: z.boolean().default(true),
 });
 export const examSwapRequestSchema = z.object({
-    id: z.string().optional(),
+    id: z.preprocess((val) => (val === null || val === "" ? undefined : val), z.string().optional()),
     sessionId: z.string().trim().min(1),
     requesterTeacherId: z.string().trim().min(1),
     requesterTeacherName: z.string().trim().min(1),
@@ -1526,4 +1526,179 @@ export function validateSupervisorEligibility(params) {
         };
     }
     return { eligible: true };
+}
+// ============================================================================
+// 10. SCHEMA & TYPES: QUẢN LÝ ĐIỂM SỐ & CẢNH BÁO HỌC SINH YẾU (GRADES & WARNINGS)
+// ============================================================================
+export const gradePeriodTypes = ["regular", "midterm", "final", "monthly"];
+export const gradePeriodStatuses = ["draft", "published", "locked"];
+export const gradePeriodSchema = z.object({
+    id: z.string().optional(),
+    name: z.string().trim().min(2, "Tên đợt điểm phải có ít nhất 2 ký tự").max(150),
+    schoolYearId: z.string().trim().min(1, "Vui lòng chọn năm học"),
+    semesterId: z.string().trim().min(1, "Vui lòng chọn học kỳ"),
+    periodType: z.enum(gradePeriodTypes).default("midterm"),
+    schoolLevel: z.enum(["primary", "secondary", "all"]).default("secondary"),
+    status: z.enum(gradePeriodStatuses).default("published"),
+    startDate: z.string().date().optional().or(z.literal("")),
+    endDate: z.string().date().optional().or(z.literal("")),
+    notes: z.string().trim().max(1000).optional().default(""),
+});
+export const evaluationTypes = ["score", "comment"];
+export const commentGrades = ["pass", "fail"];
+export const studentGradeSchema = z.object({
+    id: z.string().optional(),
+    periodId: z.string().trim().min(1, "Vui lòng chọn đợt điểm"),
+    schoolYearId: z.string().trim().min(1),
+    semesterId: z.string().trim().min(1),
+    classId: z.string().trim().min(1, "Vui lòng chọn lớp"),
+    className: z.string().trim().min(1),
+    studentId: z.string().trim().min(1, "Thiếu ID học sinh"),
+    studentCode: z.string().trim().min(1, "Thiếu mã học sinh").toUpperCase(),
+    studentName: z.string().trim().min(1, "Thiếu họ tên học sinh"),
+    subjectId: z.string().trim().min(1, "Vui lòng chọn môn học"),
+    subjectCode: z.string().trim().min(1).toUpperCase(),
+    subjectName: z.string().trim().min(1),
+    score: z.number().min(0, "Điểm không được nhỏ hơn 0").max(10, "Điểm không được lớn hơn 10").nullish(),
+    evaluationType: z.enum(evaluationTypes).default("score"),
+    commentGrade: z.enum(commentGrades).optional(),
+    isWeak: z.boolean().default(false),
+    note: z.string().trim().max(500).optional().default(""),
+});
+export const studentPeriodSummarySchema = z.object({
+    id: z.string().optional(),
+    periodId: z.string().trim().min(1),
+    schoolYearId: z.string().trim().min(1),
+    semesterId: z.string().trim().min(1),
+    classId: z.string().trim().min(1),
+    className: z.string().trim().min(1),
+    studentId: z.string().trim().min(1),
+    studentCode: z.string().trim().min(1).toUpperCase(),
+    studentName: z.string().trim().min(1),
+    subjectScores: z.record(z.string(), z.object({
+        subjectId: z.string(),
+        subjectCode: z.string(),
+        subjectName: z.string(),
+        score: z.number().nullable().optional(),
+        commentGrade: z.enum(commentGrades).optional(),
+        isWeak: z.boolean(),
+    })),
+    averageScore: z.number().min(0).max(10).nullable().optional(),
+    weakSubjectCount: z.number().int().min(0).default(0),
+    weakSubjectNames: z.array(z.string()).default([]),
+    hasWeakSubjects: z.boolean().default(false),
+});
+export const reminderStatuses = ["pending", "reminded", "parent_contacted", "resolved"];
+export const gradeReminderSchema = z.object({
+    id: z.string().optional(),
+    periodId: z.string().trim().min(1),
+    classId: z.string().trim().min(1),
+    studentId: z.string().trim().min(1),
+    studentCode: z.string().trim().min(1).toUpperCase(),
+    studentName: z.string().trim().min(1),
+    homeroomTeacherId: z.string().trim().min(1),
+    weakSubjects: z.array(z.object({
+        subjectName: z.string(),
+        score: z.union([z.number(), z.string()]),
+    })).default([]),
+    reminderContent: z.string().trim().min(1, "Nội dung nhắc nhở không được để trống").max(2000),
+    status: z.enum(reminderStatuses).default("pending"),
+    parentPhone: z.string().trim().optional().default(""),
+    parentFeedback: z.string().trim().max(1000).optional().default(""),
+});
+export function isGradeWeak(score, commentGrade) {
+    if (commentGrade === "fail")
+        return true;
+    if (typeof score === "number" && !isNaN(score)) {
+        return score < 5.0;
+    }
+    return false;
+}
+export function generateZaloReminderMessage(params) {
+    const { studentName, className, periodName, weakSubjects } = params;
+    const list = weakSubjects.map((s) => `- ${s.subjectName}: ${s.score} điểm`).join("\n");
+    return `Kính gửi Quý Phụ huynh em ${studentName} (Lớp ${className}),
+
+Giáo viên chủ nhiệm xin thông báo kết quả học tập của em trong đợt "${periodName}". Hiện tại em đang gặp khó khăn ở một số môn học sau:
+${list}
+
+Kính mong Quý Phụ huynh cùng phối hợp với nhà trường động viên, nhắc nhở và đôn đốc em ôn tập thêm để cải thiện kết quả học tập trong thời gian tới.
+Trân trọng cảm ơn Quý Phụ huynh!`;
+}
+export function getClassGrade(classItem) {
+    if (!classItem)
+        return 0;
+    const explicit = Number(classItem.grade ?? classItem.gradeLevel);
+    if (Number.isInteger(explicit) && explicit >= 1 && explicit <= 9)
+        return explicit;
+    const match = String(classItem.name || classItem.code || "").match(/(?:lớp\s*|k)?([1-9])/i);
+    return match ? Number(match[1]) : 0;
+}
+export function isHomeroomOrNonGradedSubject(name, code) {
+    const normName = (name || "").toLowerCase().trim();
+    const normCode = (code || "").toLowerCase().trim();
+    const keywords = [
+        "sinh hoạt lớp", "sinh hoat lop", "shl", "tiết sinh hoạt", "tiet sinh hoat",
+        "chào cờ", "chao co", "cc", "hoạt động tập thể", "hoat dong tap the",
+    ];
+    return keywords.some((k) => normName.includes(k) || normCode === k);
+}
+export function getSubjectGrade(subject) {
+    if (Array.isArray(subject.applicableGrades) && subject.applicableGrades.length > 0) {
+        return subject.applicableGrades;
+    }
+    const explicit = Number(subject.grade ?? subject.gradeLevel);
+    if (Number.isInteger(explicit) && explicit >= 1 && explicit <= 9)
+        return explicit;
+    // Trích xuất số khối từ tên hoặc mã môn, ví dụ: "Toán 6" -> 6, "Tin học 6" -> 6, "Khoa Học Tự Nhiên 6" -> 6, "KHTN-HÓA 8" -> 8
+    const match = String(subject.name || subject.code || "").match(/(?:^|\s|-|_)([1-9])(?:\s|$)/);
+    if (match)
+        return Number(match[1]);
+    return null;
+}
+export function isSubjectMatchingClassGrade(subject, targetGrade) {
+    if (subject.isActive === false)
+        return false;
+    if (isHomeroomOrNonGradedSubject(subject.name || "", subject.code))
+        return false;
+    if (targetGrade <= 0)
+        return true;
+    const subjGrade = getSubjectGrade(subject);
+    if (subjGrade === null) {
+        return true; // Môn chung không gắn số khối cụ thể
+    }
+    if (Array.isArray(subjGrade)) {
+        return subjGrade.includes(targetGrade);
+    }
+    return subjGrade === targetGrade;
+}
+export function getSubjectPriority(name) {
+    const n = (name || "").toLowerCase();
+    if (n.includes("toán") || n.includes("toan"))
+        return 1;
+    if (n.includes("ngữ văn") || n.includes("ngu van") || n.includes("văn"))
+        return 2;
+    if (n.includes("tiếng anh") || n.includes("tieng anh") || n.includes("ngoại ngữ"))
+        return 3;
+    if (n.includes("khoa học tự nhiên") || n.includes("khtn"))
+        return 4;
+    if (n.includes("vật lí") || n.includes("vật lý") || n.includes("hóa") || n.includes("sinh học"))
+        return 4.5;
+    if (n.includes("lịch sử") || n.includes("địa lí") || n.includes("địa lý") || n.includes("lsđl"))
+        return 5;
+    if (n.includes("giáo dục công dân") || n.includes("gdcd"))
+        return 6;
+    if (n.includes("tin học") || n.includes("tin"))
+        return 7;
+    if (n.includes("công nghệ"))
+        return 8;
+    if (n.includes("thể chất") || n.includes("gdtc") || n.includes("thể dục"))
+        return 9;
+    if (n.includes("âm nhạc") || n.includes("mỹ thuật") || n.includes("mĩ thuật") || n.includes("nghệ thuật"))
+        return 10;
+    if (n.includes("hđtn") || n.includes("trải nghiệm") || n.includes("hướng nghiệp"))
+        return 11;
+    if (n.includes("gdđp") || n.includes("địa phương"))
+        return 12;
+    return 99;
 }

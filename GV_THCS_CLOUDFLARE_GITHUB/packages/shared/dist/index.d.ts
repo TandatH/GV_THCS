@@ -840,7 +840,7 @@ export type ExamSwapStatus = (typeof examSwapStatuses)[number];
 export declare const examStudentAttendanceStatuses: readonly ["present", "absent_with_reason", "absent_without_reason"];
 export type ExamStudentAttendanceStatus = (typeof examStudentAttendanceStatuses)[number];
 export declare const examSessionSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     code: z.ZodString;
     name: z.ZodString;
     schoolYearId: z.ZodString;
@@ -864,10 +864,10 @@ export declare const examSessionSchema: z.ZodObject<{
         by_class: "by_class";
         mixed_grade_abc: "mixed_grade_abc";
     }>>;
-    maxStudentsPerRoom: z.ZodDefault<z.ZodNumber>;
-    mergeRemainderStudents: z.ZodDefault<z.ZodBoolean>;
-    supervisorsPerRoom: z.ZodDefault<z.ZodNumber>;
-    description: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    maxStudentsPerRoom: z.ZodPreprocess<z.ZodDefault<z.ZodNumber>, unknown>;
+    mergeRemainderStudents: z.ZodPreprocess<z.ZodDefault<z.ZodBoolean>, unknown>;
+    supervisorsPerRoom: z.ZodPreprocess<z.ZodDefault<z.ZodNumber>, unknown>;
+    description: z.ZodPreprocess<z.ZodDefault<z.ZodOptional<z.ZodString>>, unknown>;
     createdAt: z.ZodOptional<z.ZodUnknown>;
     createdBy: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     updatedAt: z.ZodOptional<z.ZodUnknown>;
@@ -885,7 +885,7 @@ export interface ExamSession extends z.infer<typeof examSessionSchema>, AuditFie
     };
 }
 export declare const examSlotSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     name: z.ZodString;
     date: z.ZodString;
@@ -904,7 +904,7 @@ export interface ExamSlot extends z.infer<typeof examSlotSchema>, AuditFields {
     id: string;
 }
 export declare const examSubjectSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     subjectId: z.ZodString;
     subjectName: z.ZodString;
@@ -926,7 +926,7 @@ export interface ExamSubject extends z.infer<typeof examSubjectSchema>, AuditFie
     id: string;
 }
 export declare const examRoomSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     slotId: z.ZodString;
     examSubjectId: z.ZodString;
@@ -954,7 +954,7 @@ export interface ExamRoom extends z.infer<typeof examRoomSchema>, AuditFields {
     id: string;
 }
 export declare const examStudentAssignmentSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     examRoomId: z.ZodString;
     slotId: z.ZodString;
@@ -985,7 +985,7 @@ export interface ExamStudentAssignment extends z.infer<typeof examStudentAssignm
     id: string;
 }
 export declare const examSupervisorAssignmentSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     slotId: z.ZodString;
     examRoomId: z.ZodString;
@@ -1017,7 +1017,7 @@ export interface ExamSupervisorAssignment extends z.infer<typeof examSupervisorA
     id: string;
 }
 export declare const examSwapRequestSchema: z.ZodObject<{
-    id: z.ZodOptional<z.ZodString>;
+    id: z.ZodPreprocess<z.ZodOptional<z.ZodString>, unknown>;
     sessionId: z.ZodString;
     requesterTeacherId: z.ZodString;
     requesterTeacherName: z.ZodString;
@@ -1072,3 +1072,169 @@ export declare function validateSupervisorEligibility(params: {
     eligible: boolean;
     reason?: string;
 };
+export declare const gradePeriodTypes: readonly ["regular", "midterm", "final", "monthly"];
+export type GradePeriodType = (typeof gradePeriodTypes)[number];
+export declare const gradePeriodStatuses: readonly ["draft", "published", "locked"];
+export type GradePeriodStatus = (typeof gradePeriodStatuses)[number];
+export declare const gradePeriodSchema: z.ZodObject<{
+    id: z.ZodOptional<z.ZodString>;
+    name: z.ZodString;
+    schoolYearId: z.ZodString;
+    semesterId: z.ZodString;
+    periodType: z.ZodDefault<z.ZodEnum<{
+        regular: "regular";
+        midterm: "midterm";
+        final: "final";
+        monthly: "monthly";
+    }>>;
+    schoolLevel: z.ZodDefault<z.ZodEnum<{
+        primary: "primary";
+        secondary: "secondary";
+        all: "all";
+    }>>;
+    status: z.ZodDefault<z.ZodEnum<{
+        draft: "draft";
+        published: "published";
+        locked: "locked";
+    }>>;
+    startDate: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    endDate: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+    notes: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+}, z.core.$strip>;
+export type GradePeriodInput = z.infer<typeof gradePeriodSchema>;
+export interface GradePeriod extends GradePeriodInput, AuditFields {
+    id: string;
+}
+export declare const evaluationTypes: readonly ["score", "comment"];
+export type EvaluationType = (typeof evaluationTypes)[number];
+export declare const commentGrades: readonly ["pass", "fail"];
+export type CommentGrade = (typeof commentGrades)[number];
+export declare const studentGradeSchema: z.ZodObject<{
+    id: z.ZodOptional<z.ZodString>;
+    periodId: z.ZodString;
+    schoolYearId: z.ZodString;
+    semesterId: z.ZodString;
+    classId: z.ZodString;
+    className: z.ZodString;
+    studentId: z.ZodString;
+    studentCode: z.ZodString;
+    studentName: z.ZodString;
+    subjectId: z.ZodString;
+    subjectCode: z.ZodString;
+    subjectName: z.ZodString;
+    score: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    evaluationType: z.ZodDefault<z.ZodEnum<{
+        score: "score";
+        comment: "comment";
+    }>>;
+    commentGrade: z.ZodOptional<z.ZodEnum<{
+        pass: "pass";
+        fail: "fail";
+    }>>;
+    isWeak: z.ZodDefault<z.ZodBoolean>;
+    note: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+}, z.core.$strip>;
+export type StudentGradeInput = z.infer<typeof studentGradeSchema>;
+export interface StudentGrade extends StudentGradeInput {
+    id: string;
+    updatedAt?: unknown;
+    updatedBy: string;
+}
+export declare const studentPeriodSummarySchema: z.ZodObject<{
+    id: z.ZodOptional<z.ZodString>;
+    periodId: z.ZodString;
+    schoolYearId: z.ZodString;
+    semesterId: z.ZodString;
+    classId: z.ZodString;
+    className: z.ZodString;
+    studentId: z.ZodString;
+    studentCode: z.ZodString;
+    studentName: z.ZodString;
+    subjectScores: z.ZodRecord<z.ZodString, z.ZodObject<{
+        subjectId: z.ZodString;
+        subjectCode: z.ZodString;
+        subjectName: z.ZodString;
+        score: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        commentGrade: z.ZodOptional<z.ZodEnum<{
+            pass: "pass";
+            fail: "fail";
+        }>>;
+        isWeak: z.ZodBoolean;
+    }, z.core.$strip>>;
+    averageScore: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    weakSubjectCount: z.ZodDefault<z.ZodNumber>;
+    weakSubjectNames: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    hasWeakSubjects: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>;
+export type StudentPeriodSummaryInput = z.infer<typeof studentPeriodSummarySchema>;
+export interface StudentPeriodSummary extends StudentPeriodSummaryInput {
+    id: string;
+    updatedAt?: unknown;
+    updatedBy: string;
+}
+export declare const reminderStatuses: readonly ["pending", "reminded", "parent_contacted", "resolved"];
+export type ReminderStatus = (typeof reminderStatuses)[number];
+export declare const gradeReminderSchema: z.ZodObject<{
+    id: z.ZodOptional<z.ZodString>;
+    periodId: z.ZodString;
+    classId: z.ZodString;
+    studentId: z.ZodString;
+    studentCode: z.ZodString;
+    studentName: z.ZodString;
+    homeroomTeacherId: z.ZodString;
+    weakSubjects: z.ZodDefault<z.ZodArray<z.ZodObject<{
+        subjectName: z.ZodString;
+        score: z.ZodUnion<readonly [z.ZodNumber, z.ZodString]>;
+    }, z.core.$strip>>>;
+    reminderContent: z.ZodString;
+    status: z.ZodDefault<z.ZodEnum<{
+        pending: "pending";
+        reminded: "reminded";
+        parent_contacted: "parent_contacted";
+        resolved: "resolved";
+    }>>;
+    parentPhone: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+    parentFeedback: z.ZodDefault<z.ZodOptional<z.ZodString>>;
+}, z.core.$strip>;
+export type GradeReminderInput = z.infer<typeof gradeReminderSchema>;
+export interface GradeReminder extends GradeReminderInput {
+    id: string;
+    createdAt?: unknown;
+    updatedAt?: unknown;
+}
+export declare function isGradeWeak(score?: number | null, commentGrade?: CommentGrade): boolean;
+export declare function generateZaloReminderMessage(params: {
+    studentName: string;
+    className: string;
+    periodName: string;
+    weakSubjects: Array<{
+        subjectName: string;
+        score: number | string;
+    }>;
+}): string;
+export declare function getClassGrade(classItem?: {
+    name?: string;
+    code?: string;
+    grade?: unknown;
+    gradeLevel?: unknown;
+    [key: string]: any;
+} | null): number;
+export declare function isHomeroomOrNonGradedSubject(name: string, code?: string): boolean;
+export declare function getSubjectGrade(subject: {
+    name?: string;
+    code?: string;
+    grade?: unknown;
+    gradeLevel?: unknown;
+    applicableGrades?: number[];
+    [key: string]: any;
+}): number | number[] | null;
+export declare function isSubjectMatchingClassGrade(subject: {
+    name?: string;
+    code?: string;
+    grade?: unknown;
+    gradeLevel?: unknown;
+    applicableGrades?: number[];
+    isActive?: boolean;
+    [key: string]: any;
+}, targetGrade: number): boolean;
+export declare function getSubjectPriority(name: string): number;
