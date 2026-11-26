@@ -13,6 +13,7 @@ import { firestore } from "@/lib/firebase/client";
 export type FeatureKey =
   | "homeroom_discipline"
   | "homeroom_grades"
+  | "homeroom_activity_book"
   | "competition_leaderboard"
   | "discipline_record"
   | "competition_review"
@@ -64,6 +65,13 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Lớp chủ nhiệm — Sổ điểm & Cảnh báo",
     description: "GVCN xem ma trận điểm, cảnh báo học sinh yếu và gửi nhắc nhở phụ huynh.",
     path: "/teacher/homeroom/grades",
+    category: "chu_nhiem",
+  },
+  {
+    key: "homeroom_activity_book",
+    label: "Sổ Sinh Hoạt GVCN (Báo cáo tuần)",
+    description: "GVCN điền form hoặc chụp ảnh sổ sinh hoạt hàng tuần gửi Hiệu trưởng/BGH xem và nhận xét.",
+    path: "/teacher/homeroom/activity-book",
     category: "chu_nhiem",
   },
 
