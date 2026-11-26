@@ -2105,6 +2105,103 @@ export function getSubjectPriority(name: string): number {
   return 99;
 }
 
+// ============================================================================
+// 10. SCHEMA & TYPES: SỔ SINH HOẠT GVCN (HOMEROOM WEEKLY REPORT)
+// ============================================================================
+
+export const homeroomSubmissionTypes = ["form_only", "photo_only", "hybrid"] as const;
+export type HomeroomSubmissionType = (typeof homeroomSubmissionTypes)[number];
+
+export const homeroomReportStatuses = ["draft", "submitted", "reviewed"] as const;
+export type HomeroomReportStatus = (typeof homeroomReportStatuses)[number];
+
+export const homeroomPrincipalRatings = [
+  "excellent",
+  "good",
+  "satisfactory",
+  "needs_improvement",
+] as const;
+export type HomeroomPrincipalRating = (typeof homeroomPrincipalRatings)[number];
+
+export const homeroomPrincipalRatingLabels: Record<HomeroomPrincipalRating, string> = {
+  excellent: "Tốt / Xuất sắc",
+  good: "Khá",
+  satisfactory: "Đạt yêu cầu",
+  needs_improvement: "Cần chấn chỉnh",
+};
+
+export const homeroomReportFormSchema = z.object({
+  meetingDate: z.string().trim().max(30).optional().default(""),
+  totalStudents: z.number().int().min(0).max(100).default(0),
+  presentCount: z.number().int().min(0).max(100).default(0),
+  absentWithPermission: z.string().trim().max(1000).optional().default(""),
+  absentWithoutPermission: z.string().trim().max(1000).optional().default(""),
+  tardyCount: z.number().int().min(0).max(500).default(0),
+  disciplineOverview: z.string().trim().max(3000).optional().default(""),
+  disciplineRankOrScore: z.string().trim().max(120).optional().default(""),
+  notableViolations: z.string().trim().max(3000).optional().default(""),
+  academicOverview: z.string().trim().max(3000).optional().default(""),
+  goodSessionsCount: z.number().int().min(0).max(100).default(0),
+  badSessionsCount: z.number().int().min(0).max(100).default(0),
+  commendations: z.string().trim().max(2500).optional().default(""),
+  parentCoordination: z.string().trim().max(2500).optional().default(""),
+  movementActivities: z.string().trim().max(2500).optional().default(""),
+  nextWeekPlan: z.string().trim().max(3000).optional().default(""),
+  teacherRecommendations: z.string().trim().max(2500).optional().default(""),
+});
+
+export type HomeroomReportFormData = z.infer<typeof homeroomReportFormSchema>;
+
+export const homeroomReportPhotoSchema = z.object({
+  photoId: z.string().trim().min(1),
+  url: z.string().trim().min(1),
+  storagePath: z.string().trim().min(1),
+  fileName: z.string().trim().min(1),
+  caption: z.string().trim().max(300).optional().default(""),
+  pageOrder: z.number().int().min(1).max(20),
+  uploadedAt: z.string().trim().min(1),
+  sizeBytes: z.number().int().min(0),
+});
+
+export type HomeroomReportPhoto = z.infer<typeof homeroomReportPhotoSchema>;
+
+export const homeroomPrincipalFeedbackSchema = z.object({
+  reviewedByUid: z.string().trim().min(1),
+  reviewedByName: z.string().trim().min(1),
+  reviewedAt: z.unknown().optional(),
+  feedbackContent: z.string().trim().max(3000),
+  rating: z.enum(homeroomPrincipalRatings).optional(),
+  isAcknowledgedByTeacher: z.boolean().optional().default(false),
+  acknowledgedAt: z.unknown().optional(),
+});
+
+export type HomeroomPrincipalFeedback = z.infer<typeof homeroomPrincipalFeedbackSchema>;
+
+export interface HomeroomWeeklyReport {
+  id: string; // `${schoolYearId}_w${weekNumber}_${classId}`
+  schoolYearId: string;
+  weekKey: string; // `${schoolYearId}_w${weekNumber}`
+  weekId?: string; // Optional link to disciplineWeeks doc id
+  weekNumber: number;
+  classId: string;
+  className: string;
+  grade: number;
+  teacherId: string;
+  teacherName: string;
+  submissionType: HomeroomSubmissionType;
+  status: HomeroomReportStatus;
+  formData?: HomeroomReportFormData;
+  photos?: HomeroomReportPhoto[];
+  photoNote?: string;
+  principalFeedback?: HomeroomPrincipalFeedback;
+  submittedAt?: unknown;
+  createdAt?: unknown;
+  createdBy?: string;
+  updatedAt?: unknown;
+  updatedBy?: string;
+}
+
+
 
 
 
